@@ -1,45 +1,68 @@
+# Full stack — CoralOS + seller + buyer + api-ts + web
+# Usage: docker compose up
+# Then open: http://localhost:3000
+#
+# Navigate between tracks using the nav bar:
+#   /track-1  Pay-Per-Call (seller + buyer loop)
+#   /track-2  Agent Trading (same, longer interval)
+#   /track-3  Consumer Checkout (connect Phantom)
+#
+# Runs Track 1 agents by default.
+# For a different track: SERVICE=coingecko docker compose up
+
 services:
-  # ── TypeScript API ────────────────────────────────────────────────────────
+
+  # ── CoralOS (launches seller-agent + buyer-agent as Docker containers) ──────
+  coral:
+    image: ghcr.io/coral-protocol/coral-server:latest
+    container_name: coral
+    ports:
+      - "5555:5555"
+    environment:
+      - CONFIG_FILE_PATH=/config/config.toml
+      # Seller
+      - SELLER_WALLET=${WALLET}
+      - PRICE_SOL=${PRICE_SOL:-0.0001}
+      - SERVICE=${SERVICE:-jupiter}
+      - SOLANA_RPC_URL=${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+      - HELIUS_API_KEY=${HELIUS_API_KEY}
+      - JUPITER_API_KEY=${JUPITER_API_KEY}
+      - NEWS_API_KEY=${NEWS_API_KEY}
+      # Buyer
+      - BUYER_KEYPAIR_B58=${BUYER_KEYPAIR_B58}
+      - BUYER_MAX_SOL=${BUYER_MAX_SOL:-0.001}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Helius monitor
+      - WALLET=${WALLET}
+      - AMOUNT_SOL=${PRICE_SOL:-0.0001}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./docs/coral/track-1-config.toml:/config/config.toml:ro
+      - ./coral-agents:/agents:ro
+    restart: unless-stopped
+
+  # ── Express API ──────────────────────────────────────────────────────────────
   api-ts:
-    build:
-      context: .
-      dockerfile: api-ts/Dockerfile
+    image: ghcr.io/trilltino/api-ts:latest
+    container_name: api-ts
     ports:
       - "8081:8081"
     environment:
       - HELIUS_API_KEY=${HELIUS_API_KEY}
       - SOLANA_RPC_URL=${SOLANA_RPC_URL:-https://api.devnet.solana.com}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+      - WALLET=${WALLET}
 
-  # ── Web frontend ──────────────────────────────────────────────────────────
+  # ── Next.js web (all 3 track pages + marketplace) ───────────────────────────
   web:
-    build:
-      context: web
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_CORAL_SERVER=http://api-ts:8081
-        - NEXT_PUBLIC_HELIUS_RPC=${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+    image: ghcr.io/trilltino/web:latest
+    container_name: web
     ports:
       - "3000:3000"
-    depends_on:
-      api-ts:
-        condition: service_healthy
-
-  # ── CoralOS multi-agent swarm ─────────────────────────────────────────────
-  coral:
-    image: ghcr.io/coral-protocol/coral-server:latest
-    container_name: coral-test
-    ports:
-      - "5555:5555"
     environment:
-      - CONFIG_FILE_PATH=/config/config.toml
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ./docs/coral/config.toml:/config/config.toml:ro
-      - ./coral-agents:/agents:ro
-    profiles: [coral]
-    restart: unless-stopped
+      - NEXT_PUBLIC_CORAL_SERVER=http://coral:5555
+      - NEXT_PUBLIC_API_SERVER=http://api-ts:8081
+      - NEXT_PUBLIC_SELLER_WALLET=${WALLET}
+      - NEXT_PUBLIC_PRICE_SOL=${PRICE_SOL:-0.0001}
+    depends_on:
+      - coral
+      - api-ts

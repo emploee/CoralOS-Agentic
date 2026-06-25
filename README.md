@@ -1,162 +1,141 @@
-# pay — Solana Agent Economy Starter
+# solana_coralOS — Solana Agent Economy Starter
 
-Agents request, pay, and settle on-chain automatically — no human in the loop.
+Agents request, pay, and settle on-chain automatically. Two ready-to-fork tracks where every
+payment is a **real on-chain Solana transaction** (devnet):
 
-Three ready-to-fork tracks: autonomous agent APIs, agent-to-agent trading, and consumer checkout with Phantom. Every payment is a real on-chain Solana transaction.
+- **Track 1 — Pay-Per-Call:** an LLM buyer agent hits a paywall (HTTP 402), decides to pay, and
+  settles in SOL. The seller verifies on-chain, then delivers.
+- **Track 2 — Consumer Checkout:** a human connects Phantom, clicks Pay, and gets the result —
+  no login, no API key, just a wallet.
+
+---
+
+## 🔑 Keys & accounts you need
+
+Everything is **devnet** and **free**. You bring your own keys in a local `.env` — none are in the
+repo. `scripts/setup.js` generates the Solana wallets for you, so you mostly just fund them.
+
+### Required
+
+| What | For | How to get it |
+|------|-----|---------------|
+| **Devnet SOL** (2 wallets) | both tracks — paying + receiving | `node scripts/setup.js` generates a buyer + seller keypair into `.env` and prints two addresses. **Fund both** at [faucet.solana.com](https://faucet.solana.com) (1 SOL each, free). |
+| **Anthropic API key** | Track 1 — the LLM buyer *decides* to pay (and the seller's optional inference service) | Free-tier key at [console.anthropic.com](https://console.anthropic.com). Set `ANTHROPIC_API_KEY` in `.env`. *(The on-chain payment itself works without it — this is only the "agent reasons about paying" step.)* |
+| **Phantom wallet** | Track 2 — the human signs the payment | [phantom.com](https://phantom.com) browser extension, switched to **Devnet**. Not an API key — it's the wallet that signs. |
+
+### Optional (free fallbacks — skip and it still runs)
+
+| Key | For | Get it |
+|-----|-----|--------|
+| `HELIUS_API_KEY` | faster/reliable devnet RPC | [helius.dev](https://helius.dev) — falls back to public devnet |
+| `JUPITER_API_KEY` | higher rate limits on the Jupiter price service | [jup.ag/developers](https://jup.ag/developers) |
+| `NEWS_API_KEY` | only if you set `SERVICE=news` | [newsapi.org](https://newsapi.org) |
+
+> **Don't have an Anthropic key but have an OpenAI/Codex one?** The LLM step is Anthropic-only
+> today — open an issue or swap the call in `coral-agents/buyer-agent/src/llm_buyer.ts`.
 
 ---
 
 ## Prerequisites
 
 - [Node.js 20+](https://nodejs.org)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (running)
-- [Phantom wallet](https://phantom.app) browser extension — Track 3 only
-
----
+- [Phantom wallet](https://phantom.com) (Track 2 only), set to **Devnet**
 
 ## Quick start
 
 ```sh
-git clone https://github.com/trilltino/pay
-cd pay
+git clone https://github.com/trilltino/solana_coralOS
+cd solana_coralOS
+
+# 1. Generate devnet wallets + write .env  (prints two addresses to fund)
 cd scripts && npm install && cd ..
 node scripts/setup.js
+
+# 2. Fund both printed addresses at https://faucet.solana.com (1 SOL each)
+
+# 3. Add your Anthropic key to .env (for Track 1's LLM buyer)
+#    ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-The setup script generates two devnet wallets and writes your `.env`. It will print two wallet addresses — **fund both at [faucet.solana.com](https://faucet.solana.com)** (1 SOL each), then pick a track and run:
-
-```sh
-cd examples/track-1-pay-per-call
-docker compose up
-```
-
-Docker pulls the pre-built images from `ghcr.io/trilltino` automatically — no build step needed.
-
-Optional keys for better performance (not required to run):
-
-```sh
-JUPITER_API_KEY=   # jup.ag/developers — higher rate limits
-HELIUS_API_KEY=    # helius.dev — faster RPC
-```
+Then pick a track below.
 
 ---
 
 ## Track 1 — Pay-Per-Call API
 
-An autonomous buyer agent continuously pays a seller agent for Jupiter DEX swap quotes. No human involved — both agents run in Docker, talk over CoralOS, and settle on Solana devnet.
-
-```
-Buyer agent → "request SOL to USDC quote"
-Seller agent → Solana Pay URL
-Buyer agent → pays 0.0001 SOL on-chain
-Seller agent → verifies tx → delivers Jupiter quote
-```
-
-**Run it:**
+An LLM buyer agent hits a data endpoint, gets `402 Payment Required`, decides to pay, signs a SOL
+transfer on devnet, and re-requests with the payment as proof. The seller confirms it on-chain
+(`findReference` / `validateTransfer`) and delivers.
 
 ```sh
 cd examples/track-1-pay-per-call
-docker compose up
+cp ../../.env .env          # reuse the generated wallets; add ANTHROPIC_API_KEY
+npm install
+npm run server              # terminal 1 — the 402 seller
+npm run buyer               # terminal 2 — the LLM buyer pays, then gets data
 ```
 
-**Open:** [http://localhost:3000/track-1](http://localhost:3000/track-1)
+> **Verified live on devnet:** the full loop settles on-chain (tx
+> [3g2wQri9…](https://explorer.solana.com/tx/3g2wQri9w9y3B6dJ1xyvk4L43o8BsbvgafqcE9oTgNkzroXzSe6UmdUTrenbebxKPsZ7mdDaLUx7HPSoRHxfTG1U?cluster=devnet)).
 
-You'll see a live feed of requests, on-chain payment signatures, and delivered quotes.
-
-**Fork it** — change what the seller sells in one file:
+**Fork it** — change what the seller sells in one function:
 
 ```typescript
-// coral-agents/seller-agent/src/service.ts
-export async function deliverService(request: string) {
-  // ← your service here
-}
+// coral-agents/seller-agent/src/service.ts → deliverService(request)
+//   built-in options via SERVICE env: jupiter | coingecko | news | inference (a Claude completion)
 ```
 
 ---
 
-## Track 2 — Agent-to-Agent Trading
+## Track 2 — Consumer Checkout
 
-Same as Track 1 but the buyer loops every 30 seconds, building up a trade history. Useful for demonstrating recurring autonomous payments or a simple data subscription model.
-
-**Run it:**
+A human connects Phantom and pays with one click. The **server builds the transaction**, Phantom
+signs and sends it, the server confirms on-chain and delivers.
 
 ```sh
-cd examples/track-2-agent-trading
-docker compose up
+cd examples/track-2-consumer-checkout
+cp ../../.env .env          # reuse the generated SELLER_WALLET
+npm install
+npm run server              # checkout server on :3010
+# then open web/index.html in a browser with Phantom (Devnet) installed
 ```
 
-**Open:** [http://localhost:3000/track-2](http://localhost:3000/track-2)
-
-Side-by-side live logs for seller and buyer. Every payment links to Solana Explorer.
-
-**Fork it** — same `service.ts` entrypoint as Track 1. Change `BUYER_REQUEST` in `coral-agents/buyer-agent/src/goal.ts` to change what the buyer asks for.
+**Fork it** — change the deliverable in `server.ts → deliver(city)` (default: live weather).
 
 ---
 
-## Track 3 — Consumer Checkout
-
-A human connects Phantom, picks a topic, and clicks Pay. The payment settles on-chain and the result is delivered instantly — no backend login, no API key, just a wallet.
-
-**Run it:**
-
-```sh
-cd examples/track-3-consumer-checkout
-docker compose up
-```
-
-**Open:** [http://localhost:3000/track-3](http://localhost:3000/track-3)
-
-Connect Phantom (set to Devnet), pick a topic, click Pay 0.00005 SOL. You'll see the tx confirmed and the result appear.
-
-**Fork it** — same `service.ts` as above. Change the `TOPICS` array in `web/app/track-3/page.tsx` to match your service.
-
----
-
-## Repo Layout
+## Repo layout
 
 | Directory | Purpose |
 |-----------|---------|
 | `coral-agents/seller-agent/` | Sells data for SOL — fork `src/service.ts` |
-| `coral-agents/buyer-agent/` | Pays autonomously — fork `src/goal.ts` |
-| `api-ts/` | Express REST API on port 8081 |
-| `sdk/agent-core-ts/` | Agent runtime: CoralOS MCP, Solana Pay, messaging |
-| `web/` | Next.js frontend — `/track-1`, `/track-2`, `/track-3` |
-| `examples/` | One `docker-compose.yml` per track |
-| `docs/` | CoralOS config and design docs |
+| `coral-agents/buyer-agent/` | LLM buyer that decides + pays — `src/llm_buyer.ts`, `src/goal.ts` |
+| `coral-agents/echo-agent/` | Minimal MCP agent (proves CoralOS connectivity) |
+| `sdk/agent-core-ts/` | Agent runtime: `AgentManager`, `Strategy`, MessageBus, CoralOS MCP, strategies |
+| `api-ts/` | Express REST API (:8081) wrapping the runtime |
+| `web/` | Next.js frontend — `/track-1`, `/track-2` |
+| `examples/track-1-pay-per-call/` | Self-contained 402 seller + LLM buyer + on-chain verify |
+| `examples/track-2-consumer-checkout/` | Self-contained checkout server + framework-free Phantom demo |
+| `scripts/` | `setup.js` (wallet generation) + smoke tests |
 
 ---
 
-## How the payment cycle works
-
-```
-Buyer sends "request <query>" → Seller
-Seller replies with solana:<wallet>?amount=0.0001&memo=pay-<id>
-Buyer signs + broadcasts the transaction on devnet
-Buyer sends "paid <sig> memo=pay-<id>" → Seller
-Seller calls connection.getTransaction(sig) — verifies amount + recipient
-Seller delivers the data
-```
-
-All verification happens on-chain. No off-chain trust required.
-
----
-
-## Development (without Docker)
+## Development
 
 ```sh
-# API server
+# API server + web
 cd api-ts && npm install && npm run dev    # :8081
-
-# Web
 cd web && npm install && npm run dev       # :3000
 
-# Type check everything
+# Typecheck (clean across all packages)
 cd sdk/agent-core-ts && npm run typecheck
 cd api-ts && npm run typecheck
-cd web && npm run typecheck
 ```
 
----
+> **CoralOS:** agents can coordinate over a real CoralOS server (MCP) — proven working. CoralOS's
+> *native* payment rail (x402/CORAL token) is **not** used here: it's half-built upstream, so this
+> kit settles in plain SOL, which works end-to-end. See `.claude/IMPLEMENTATION_SPEC.md` for the
+> full investigation.
 
 ## License
 

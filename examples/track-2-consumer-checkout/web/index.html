@@ -1,0 +1,107 @@
+<!doctype html>
+<!--
+  Consumer Checkout — framework-free Phantom demo (Track 2).
+
+  The entire human-payment flow in one readable file: connect Phantom → ask the
+  server to build a transfer → Phantom signs & sends → poll status → render.
+  No framework, no build step. Open with `file://` (or any static host) after
+  starting the track server (`npm run server`).
+
+  Solana web3 is loaded from a CDN; the server endpoint defaults to :3010.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Consumer Checkout — Solana Pay</title>
+  <script src="https://unpkg.com/@solana/web3.js@1.98.0/lib/index.iife.min.js"></script>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, sans-serif; background:#0a0a0f; color:#e5e7eb;
+           display:flex; min-height:100vh; align-items:center; justify-content:center; margin:0; }
+    .card { background:#12121a; border:1px solid #1e1e2e; border-radius:14px; padding:28px;
+            width:360px; }
+    h1 { font-size:18px; margin:0 0 2px; }
+    .muted { color:#6b7280; font-size:12px; }
+    button { width:100%; margin-top:16px; padding:12px; border:0; border-radius:9px;
+             background:#9945FF; color:#fff; font-size:14px; font-weight:600; cursor:pointer; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    input { width:100%; box-sizing:border-box; margin-top:12px; padding:10px; border-radius:8px;
+            border:1px solid #1e1e2e; background:#0d0d15; color:#e5e7eb; }
+    pre { background:#0d0d15; border-radius:8px; padding:12px; font-size:12px; overflow:auto;
+          color:#34d399; margin-top:14px; }
+    a { color:#9945FF; font-size:11px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Live Weather</h1>
+    <div class="muted" id="price">Solana devnet · one-click pay</div>
+    <input id="city" placeholder="City (e.g. London)" value="London" />
+    <button id="pay">Connect Phantom &amp; Pay</button>
+    <pre id="out" style="display:none"></pre>
+  </div>
+
+  <script>
+    const SERVER = (location.search.match(/server=([^&]+)/) || [])[1]
+      ? decodeURIComponent(location.search.match(/server=([^&]+)/)[1])
+      : 'http://localhost:3010'
+    const RPC = 'https://api.devnet.solana.com'
+    const AGENT = 'weather-agent'
+    const { Connection, Transaction } = solanaWeb3
+    const out = document.getElementById('out')
+    const btn = document.getElementById('pay')
+    const show = (o) => { out.style.display = 'block'; out.textContent = typeof o === 'string' ? o : JSON.stringify(o, null, 2) }
+
+    // Fetch storefront info up front.
+    fetch(`${SERVER}/checkout/${AGENT}`).then(r => r.json()).then(info => {
+      document.getElementById('price').textContent =
+        `${(info.priceLamports / 1e9).toFixed(5)} SOL · Solana devnet`
+    }).catch(() => {})
+
+    btn.onclick = async () => {
+      const provider = window.phantom?.solana
+      if (!provider?.isPhantom) { show('Phantom wallet not found — install it and reload.'); return }
+      btn.disabled = true
+      try {
+        const { publicKey } = await provider.connect()
+        const account = publicKey.toBase58()
+
+        // 1. Server builds the unsigned transfer.
+        show('Building transaction…')
+        const { transaction, error } = await fetch(`${SERVER}/checkout/${AGENT}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account }),
+        }).then(r => r.json())
+        if (error) throw new Error(error)
+
+        // 2. Phantom signs and sends.
+        show('Waiting for Phantom…')
+        const tx = Transaction.from(solanaWeb3.Buffer ? solanaWeb3.Buffer.from(transaction, 'base64')
+                                                      : Uint8Array.from(atob(transaction), c => c.charCodeAt(0)))
+        const { signature } = await provider.signAndSendTransaction(tx)
+        show(`Broadcast: ${signature}\nConfirming…`)
+
+        // 3. Poll the server until it confirms on-chain and delivers.
+        const city = document.getElementById('city').value || 'London'
+        for (let i = 0; i < 20; i++) {
+          await new Promise(r => setTimeout(r, 1500))
+          const s = await fetch(`${SERVER}/checkout/status/${signature}?q=${encodeURIComponent(city)}`).then(r => r.json())
+          if (s.status === 'confirmed') {
+            out.textContent =
+              `✅ Paid — sig ${signature.slice(0, 16)}…\n\n` + JSON.stringify(s.result, null, 2)
+            out.insertAdjacentHTML('beforeend',
+              `\n\n` + `<a href="https://explorer.solana.com/tx/${signature}?cluster=devnet" target="_blank">view on explorer ↗</a>`)
+            return
+          }
+          if (s.status === 'failed' || s.status === 'error') throw new Error(s.error || s.status)
+        }
+        throw new Error('timed out waiting for confirmation')
+      } catch (e) {
+        show('Error: ' + (e?.message || e))
+      } finally {
+        btn.disabled = false
+      }
+    }
+  </script>
+</body>
+</html>

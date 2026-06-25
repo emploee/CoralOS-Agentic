@@ -1,0 +1,19 @@
+{
+  "name": "track-2-consumer-checkout",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "server": "tsx server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.0",
+    "express": "^4.18.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsx": "^4.7.0",
+    "@types/node": "^20.0.0",
+    "@types/express": "^4.17.0"
+  }
+}

@@ -1,95 +1,61 @@
 # Track 2 — Consumer Checkout
 
-> **Thesis:** A human connects Phantom and pays with one click. Zero friction — no wallet
-> address to copy, no QR to scan, no `solana:` URL to see. They just click Pay.
+> **Thesis:** A human connects Phantom and pays with one click. Zero friction — no wallet address
+> to copy, no QR to scan. They just click Pay and get the thing.
 
-This is the **human → agent** track. CoralOS's x402/CORAL economy is for *agent* payments, so
-it doesn't apply here — a person is paying. The right protocol is Solana Pay
-**Transaction Request**: the server builds the transaction, Phantom signs it.
-
----
-
-## Transfer Request vs Transaction Request
-
-The repo's current `web/` flow uses a **Transfer Request** (`solana:<pubkey>?amount=X`) — the
-browser builds the transaction client-side. That works, but the server can't control what gets
-signed.
-
-This track uses a **Transaction Request** instead. Confirmed against
-`ref/solana-pay/typescript/packages/solana-pay/core/src/` (`fetchTransaction`, `parseURL`,
-`encodeURL`, `plugins/merchant.ts`):
+The **human → agent** track (Track 1 is agent → agent). Uses the "server builds the transaction,
+the wallet signs it" pattern: the server hands the browser an unsigned transfer, Phantom signs and
+sends it, the server confirms on-chain and delivers. Because the *server* builds the transaction,
+you can put anything in it — an SPL transfer, an Anchor instruction, a batch — and Phantom just
+signs what it's handed.
 
 ```
-Browser                          Server (checkout route)
-───────────────────              ─────────────────────────────
-GET  /checkout/:agentId      →   { label: "Weather Agent", icon }
-POST /checkout/:agentId      →   build Transaction:
-  { account: <buyer_pubkey> }    SystemProgram.transfer(buyer → seller, lamports)
-                                 + reference key embedded
-                             ←   { transaction: <base64> }
+Browser (web/index.html)             Server (server.ts)
+────────────────────────             ──────────────────────────────
+GET  /checkout/:agentId          →   { label, priceLamports, sellerWallet }
+POST /checkout/:agentId {account}→   build SystemProgram.transfer(buyer→seller) → { transaction: base64 }
 Phantom.signAndSendTransaction
-poll GET /checkout/status/:sig → watchReference() confirms on-chain
-                             ←   { status: "confirmed", result }
+GET  /checkout/status/:sig       →   getTransaction(sig) confirms on-chain → { status, result }
 ```
-
-Because the **server** builds the transaction, you can embed anything in it — an SPL token
-transfer, an Anchor instruction, a multi-instruction batch. Phantom just signs what it's handed.
-
-**Payment confirmation:** use `watchReference()` (subscription) rather than polling
-`findReference()` — it fires the instant the reference key appears on-chain, so the result
-renders sub-second.
 
 ---
 
 ## Run it
 
-### Minimal (single HTML file, no framework)
-
 ```sh
-cp .env.example .env          # fill SELLER_WALLET, HELIUS_API_KEY
-cd ../../api-ts && npm install && npm run dev   # Express API on :8081 (entry: src/index.ts)
-# back here: open web/index.html in a browser with Phantom installed
+cp .env.example .env          # SELLER_WALLET (devnet pubkey to receive payment)
+npm install && npm run server # checkout server on :3010
+# then open web/index.html in a browser with Phantom (devnet) installed
+#   — or point it at a remote server:  web/index.html?server=http://host:3010
 ```
 
-The `web/index.html` here is intentionally framework-free — wallet-adapter via CDN — so you can
-read the entire Phantom integration in one file. The production version is the Next.js app at
-the repo root (`web/app/track-2/page.tsx`).
-
-### Full Next.js page
-
-```sh
-docker compose up
-# open http://localhost:3000/track-2
-```
+The full Next.js version of this flow also lives at `web/app/track-2/page.tsx` (run the root
+`web/` app with `npm run dev`).
 
 ---
 
 ## The fork point
 
 ```
-api-ts/src/checkout.ts  →  what the buyer receives after payment confirms
+server.ts  →  deliver(city)   — what the human receives after payment confirms
 ```
 
-Default returns live weather. Swap for gated content, an AI image, a generated report — any
-deliverable a human would pay a few cents for.
+Default returns live weather (open-meteo, no key). Swap for gated content, an AI image, a
+generated report — any deliverable a human would pay a few cents for.
 
 ---
 
 ## Files
 
 ```
-web/index.html      Framework-free Phantom + Transaction Request demo   [to build]
-docker-compose.yml  Full Next.js stack                                  ✓
-```
-
-Server routes live in `api-ts/src/checkout.ts` (shared with the Next.js page):
-```
-GET  /api/v1/checkout/:agentId         → { label, icon }
-POST /api/v1/checkout/:agentId         → { transaction: base64 }   (server builds tx)
-GET  /api/v1/checkout/status/:sig      → { status, result }        (watchReference)
+server.ts        Checkout server: build-tx + on-chain-confirm + deliver   ✓
+web/index.html   Framework-free Phantom demo (whole flow in one file)      ✓
+package.json     express + @solana/web3.js                                 ✓
+docker-compose.yml  Full Next.js stack                                     ✓
 ```
 
 ## Env
 
-`SELLER_WALLET` (recipient pubkey), `HELIUS_API_KEY` (RPC + watchReference). No buyer keypair —
-the human's Phantom wallet signs.
+`SELLER_WALLET` (recipient pubkey) and optionally `PRICE_SOL` (default 0.00005) /
+`SOLANA_RPC_URL` (default public devnet). **No buyer keypair** — the human's Phantom wallet signs.
+Devnet only.

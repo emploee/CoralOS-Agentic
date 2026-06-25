@@ -64,6 +64,7 @@
   .bubble .from{font-size:11px;color:var(--muted-2);margin-bottom:3px;font-weight:600}
   .bubble.buyer{background:rgba(153,69,255,.10);border:1px solid rgba(153,69,255,.22);margin-right:auto;border-bottom-left-radius:4px}
   .bubble.seller{background:#13131c;border:1px solid var(--line);margin-left:auto;border-bottom-right-radius:4px}
+  .bubble .muted{color:var(--muted)}
 
   a{color:var(--brand);text-decoration:none} a:hover{text-decoration:underline}
   pre{background:#0a0a10;border:1px solid var(--line);border-radius:9px;padding:11px;margin:7px 0 0;overflow:auto;font-size:12px;color:var(--green);white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,monospace}
@@ -81,8 +82,8 @@
     <b style="color:var(--text)">agent</b> or a <b style="color:var(--text)">human</b> — same on-chain settlement, two front doors.</p>
 
   <div class="tabs">
-    <button id="tabAuto" class="active" onclick="showTab('auto')">🤖 Autonomous</button>
-    <button id="tabHuman" onclick="showTab('human')">🙋 Checkout</button>
+    <button id="tabAuto" class="active" onclick="showTab('auto')">Autonomous</button>
+    <button id="tabHuman" onclick="showTab('human')">Checkout</button>
   </div>
 
   <!-- ── AUTONOMOUS (agent → agent) ── -->
@@ -110,9 +111,9 @@
     <div class="card" id="orderCard" style="opacity:.45;pointer-events:none">
       <div class="label">2 · Choose a service</div>
       <div class="svc" id="svc">
-        <label class="opt sel"><span class="ic">📈</span><span><span class="t">Jupiter quote</span><br><span class="d">live SOL→USDC swap price</span></span><input type="radio" name="s" value="jupiter" checked><span class="chk"></span></label>
-        <label class="opt"><span class="ic">🪙</span><span><span class="t">CoinGecko price</span><br><span class="d">live SOL price in USD</span></span><input type="radio" name="s" value="coingecko"><span class="chk"></span></label>
-        <label class="opt"><span class="ic">🧠</span><span><span class="t">Claude inference</span><br><span class="d">an AI completion</span></span><input type="radio" name="s" value="inference"><span class="chk"></span></label>
+        <label class="opt sel"><span><span class="t">Jupiter quote</span><br><span class="d">live SOL→USDC swap price</span></span><input type="radio" name="s" value="jupiter" checked><span class="chk"></span></label>
+        <label class="opt"><span><span class="t">CoinGecko price</span><br><span class="d">live SOL price in USD</span></span><input type="radio" name="s" value="coingecko"><span class="chk"></span></label>
+        <label class="opt"><span><span class="t">Claude inference</span><br><span class="d">an AI completion</span></span><input type="radio" name="s" value="inference"><span class="chk"></span></label>
       </div>
       <div class="quote" id="quote">
         <div class="row"><span>Pay to (seller)</span><b id="recipient">—</b></div>
@@ -162,21 +163,44 @@ async function pollFeed(){
 function renderFeed(messages){
   const wrap = $('feed'); wrap.innerHTML = ''; let settled = 0
   for(const m of messages){
-    const buyer = m.sender === 'buyer-agent'; const t = m.text; let html
-    if(/^request/i.test(t))                html = `🛒 ${escapeHtml(t.replace(/^request\s*/i,'request: '))}`
-    else if(t.includes('PAYMENT_REQUIRED')){ const a = t.match(/amount=([\d.]+)/)?.[1]; html = `💰 payment required — <b>${a} SOL</b>` }
-    else if(/^paid/i.test(t)){ const sig = t.match(/paid\s+(\S+)/i)?.[1]; html = `✅ paid <a target="_blank" href="https://explorer.solana.com/tx/${sig}?cluster=devnet">${short(sig)} ↗</a>` }
-    else if(/^DELIVERED/i.test(t)){ settled++; html = `📦 delivered<pre>${prettify(t.replace(/^DELIVERED\s*/i,''))}</pre>` }
-    else if(/^ANALYSIS/i.test(t))           html = `🧠 ${escapeHtml(t.replace(/^ANALYSIS\s*/i,''))}`
-    else                                    html = escapeHtml(t.slice(0,200))
+    const buyer = m.sender === 'buyer-agent'; const t = m.text; let body
+    if(/^request/i.test(t)){
+      body = `Requests <b>${escapeHtml(t.replace(/^request\s*/i,''))}</b>`
+    } else if(t.includes('PAYMENT_REQUIRED')){
+      const a = t.match(/amount=([\d.]+)/)?.[1]
+      body = `Asks for payment — <b>${a} SOL</b>`
+    } else if(/^paid/i.test(t)){
+      const sig = t.match(/paid\s+(\S+)/i)?.[1]
+      body = `Paid on-chain — <a target="_blank" href="https://explorer.solana.com/tx/${sig}?cluster=devnet">view transaction</a>`
+    } else if(/^DELIVERED/i.test(t)){
+      settled++
+      body = `Delivered the result${renderResult(t.replace(/^DELIVERED\s*/i,''))}`
+    } else if(/^ANALYSIS/i.test(t)){
+      const s = t.replace(/^ANALYSIS\s*/i,'').trim()
+      if(/^received:/i.test(s)) continue            // skip the no-LLM-key fallback echo
+      body = `Summarises it: ${escapeHtml(s)}`
+    } else {
+      continue
+    }
     const b = document.createElement('div'); b.className = `bubble ${buyer?'buyer':'seller'}`
-    b.innerHTML = `<div class="from">${buyer?'🤖 buyer-agent':'🏪 seller-agent'}</div>${html}`
+    b.innerHTML = `<div class="from">${buyer?'Buyer':'Seller'}</div>${body}`
     wrap.appendChild(b)
   }
   $('tally').innerHTML = settled
-    ? `<span class="g"></span> ${settled} settlement${settled>1?'s':''} on-chain — agents paying each other autonomously`
-    : `<span class="g"></span> agents connecting… first cycle in a few seconds`
+    ? `<span class="g"></span> ${settled} payment${settled>1?'s':''} settled on-chain — the agents are trading with no human involved`
+    : `<span class="g"></span> agents connecting… first payment in a few seconds`
   wrap.scrollTop = wrap.scrollHeight
+}
+
+// Render a delivered result as a readable line (or pretty JSON for unknown shapes).
+function renderResult(raw){
+  try{
+    const d = JSON.parse(raw)
+    if(d.inAmount && d.outAmount) return `: <b>${escapeHtml(d.inAmount)} → ${escapeHtml(d.outAmount)}</b>`
+    if(d.usd != null)             return `: <b>$${escapeHtml(String(d.usd))}</b> ${escapeHtml(d.coin||'')}`
+    if(d.completion)              return `<div class="muted" style="margin-top:5px">${escapeHtml(d.completion)}</div>`
+    return `<pre>${escapeHtml(JSON.stringify(d, null, 2))}</pre>`
+  }catch{ return `<pre>${escapeHtml(String(raw))}</pre>` }
 }
 
 // ════ HUMAN CHECKOUT ════

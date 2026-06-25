@@ -58,4 +58,6 @@ services:
     depends_on:
       - coral
     restart: unless-stopped
-    # The bridge self-serves the Phantom checkout UI at http://localhost:3010.
+    # Serve the UI from the host so edits show on refresh (no rebuild). Self-served at :3010.
+    volumes:
+      - ./examples/agent-economy/bridge/web:/app/web:ro

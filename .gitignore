@@ -39,3 +39,6 @@ coverage*.json
 
 # Reference repos cloned for analysis (not part of project)
 ref/
+
+# Generated wallet addresses (user-specific)
+WALLETS.txt

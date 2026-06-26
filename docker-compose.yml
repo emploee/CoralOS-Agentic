@@ -39,9 +39,11 @@ services:
       - ./coral-agents:/agents:ro
     restart: unless-stopped
 
-  # ── Human front door — puppet bridge that injects orders as user-proxy ──────
+  # ── Human front door — bridge that builds + serves the React UI and the order API ──
   bridge:
-    build: ./examples/agent-economy/bridge
+    build:
+      context: ./examples/agent-economy        # so the image can build ./web (the React UI)
+      dockerfile: bridge/Dockerfile
     container_name: bridge
     ports:
       - "3010:3010"
@@ -58,6 +60,5 @@ services:
     depends_on:
       - coral
     restart: unless-stopped
-    # Serve the UI from the host so edits show on refresh (no rebuild). Self-served at :3010.
-    volumes:
-      - ./examples/agent-economy/bridge/web:/app/web:ro
+    # The React UI is built into the image (see bridge/Dockerfile) and served at :3010.
+    # For live UI edits, run `npm run dev` in examples/agent-economy/web (Vite proxies to :3010).

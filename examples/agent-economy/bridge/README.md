@@ -5,16 +5,21 @@ represents them: it injects their order into a CoralOS session **as the `user-pr
 puppet API), routed to the same `seller-agent` the autonomous buyer uses. The human pays the
 seller's Solana Pay URL with Phantom; the seller verifies on-chain and delivers.
 
-It also **self-serves** the checkout UI, so there's no separate frontend to run.
+It also **serves the demo UI** — the React app in `../web` (built into the bridge image), so there's
+no separate frontend to run in production.
 
 ## Run
 
 ```sh
 # prereq: docker compose up -d coral   (from repo root)
 npm install
-SELLER_WALLET=<devnet pubkey> npm start     # bridge on :3010, serves the UI
+SELLER_WALLET=<devnet pubkey> npm start     # bridge on :3010 (serves /web — the built React app)
 # open http://localhost:3010 with Phantom (Devnet)
 ```
+
+Running `npm start` bare-metal serves whatever is in `./web` (empty until the React build is copied
+there). The normal path is `docker compose up -d bridge`, whose image builds the React UI into `/app/web`.
+For live UI work, run `npm run dev` in `../web` (Vite proxies to this bridge).
 
 (Via the root `docker compose up -d bridge`, the env comes from `.env` automatically.)
 
@@ -29,10 +34,13 @@ Browser → POST /order/:reference/paid { sig }       → seller verifies on-cha
 ## Files
 
 ```
-server.ts       puppet bridge (inject as user-proxy) + order endpoints; self-serves web/
-web/index.html  framework-free Phantom checkout (web3 via CDN, one file)
+server.ts       puppet bridge (inject as user-proxy) + order/autonomous endpoints; serves ./web
+web/            the built React UI (copied in by bridge/Dockerfile; source lives in ../web)
 smoke.ts        headless test — pays from the .env keypair in place of the Phantom click
 ```
+
+> The React source is `examples/agent-economy/web/`; the zero-build single-file version is
+> `examples/agent-economy/quickstart/minimal-ui.html`.
 
 ## Why read replies from session state
 

@@ -1,7 +1,12 @@
 # Building the React Frontend — end to end
 
-A complete, copy-paste guide to replacing the single-file demo UI with a proper **Vite + React +
-TypeScript + Solana wallet-adapter** app — the polished showcase. Every file is here.
+A complete, copy-paste guide to the **Vite + React + TypeScript + Solana wallet-adapter** app — the
+polished showcase. Every file is here.
+
+> ✅ **This is already built and is now the default UI** at `examples/agent-economy/web/`. The bridge
+> builds and serves it at `:3010` (multi-stage `bridge/Dockerfile`). The steps below are how it was
+> assembled — use them to understand, extend, or rebuild it. The old single-file UI is preserved as
+> `examples/agent-economy/quickstart/minimal-ui.html`.
 
 **The one principle:** the backend does not change. React calls the exact same bridge endpoints the
 single-file UI does. You're swapping *how it looks*, not *how it works*.
@@ -382,28 +387,43 @@ cd examples/agent-economy/web && npm run dev
 Test both tabs: **Autonomous** (click Run → feed populates) and **Checkout** (connect Phantom on
 Devnet → Buy → timeline → result).
 
-## Step 8 — Production: let the bridge serve the build
-Build to static files and have the bridge serve them (same-origin, no proxy needed).
+## Step 8 — Production: the bridge image builds + serves it (this is how it's wired)
+The React build is **baked into the bridge image** via a multi-stage `bridge/Dockerfile`, so
+`docker compose up -d coral bridge` serves the UI at `:3010` with no manual build step. No
+`server.ts` change is needed — the bridge already serves `/app/web`, and the Dockerfile copies the
+React `dist` there.
 
-```sh
-cd examples/agent-economy/web && npm run build      # → web/dist/
+**`bridge/Dockerfile`** (multi-stage):
+```dockerfile
+# 1) Build the React app → /web/dist
+FROM node:20-slim AS web
+WORKDIR /web
+COPY web/package.json ./
+RUN npm install --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
+
+# 2) Bridge runtime — serves /app/web (the React build)
+FROM node:20-slim
+WORKDIR /app
+COPY bridge/package.json ./
+RUN npm install --omit=optional
+COPY bridge/ .
+COPY --from=web /web/dist ./web
+CMD ["npx", "tsx", "server.ts"]
 ```
 
-Add one line to **`bridge/server.ts`** (before the existing `express.static(webDir)`), so the React
-build is primary and the single-file stays as a fallback at `/minimal.html`:
-```ts
-// serve the React build if it exists (prod), else fall back to the single-file UI
-const reactDist = join(dirname(fileURLToPath(import.meta.url)), '..', 'web', 'dist')
-app.use(express.static(reactDist))
-```
-And mount it into the bridge container in **`docker-compose.yml`**:
+The build context must include `web/`, so **`docker-compose.yml`** points the bridge build one level
+up (and a `.dockerignore` keeps the context lean):
 ```yaml
-    volumes:
-      - ./examples/agent-economy/bridge/web:/app/web:ro
-      - ./examples/agent-economy/web/dist:/app/../web/dist:ro   # the React build
+  bridge:
+    build:
+      context: ./examples/agent-economy
+      dockerfile: bridge/Dockerfile
 ```
-*(Or simpler: set Vite's `build.outDir` to `../bridge/web` to overwrite the served dir directly — but
-then keep a copy of the single-file first; see Step 9.)*
+First `up` is slower (it installs + builds the UI inside the image); after that it's cached. To rebuild
+after UI changes: `docker compose up -d --build bridge` — or just use `npm run dev` (Step 7) while
+developing.
 
 ## Step 9 — Keep the single-file as the minimal reference
 Don't delete it — it's the no-build, readable fallback and the quickstart UI. Move it:

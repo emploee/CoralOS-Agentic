@@ -1,0 +1,11 @@
+# Build context for the bridge image (context = examples/agent-economy).
+# Only web/ and bridge/ are COPYed; keep the context lean and never ship host node_modules/builds.
+**/node_modules
+**/dist
+**/target
+**/.anchor
+**/*.log
+autonomous
+config
+escrow
+quickstart

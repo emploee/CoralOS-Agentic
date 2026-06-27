@@ -28,18 +28,18 @@ FUND BOTH with devnet SOL — the only way is the web faucet (sign in with GitHu
 CLI/RPC airdrops are gated):
 
   https://faucet.solana.com
-
-The Checkout door also uses your own Phantom wallet — set Phantom to Devnet and
-fund that separately.
 `
   writeFileSync(walletsPath, block)
   console.log('\n' + block)
   console.log(`(saved to WALLETS.txt${fresh ? ' · keys written to .env' : ' · re-read from .env'})`)
   console.log(`
-Then start the economy:
-  bash build-agents.sh                                # build the agent images
-  docker compose up -d coral bridge                  # coral-server + the bridge (:3010)
-  open http://localhost:3010                          # click "Run" in the Autonomous tab
+Next: add your LLM key to .env (ANTHROPIC_API_KEY=…, or LLM_PROVIDER=openai + OPENAI_API_KEY),
+fund the two wallets above, then run the demo:
+
+  npm run dev          # builds the images, starts coral, opens the dashboard
+                       # (or: just dev — or the README "by hand" path)
+
+Then click "Start a market" in the dashboard.
 `)
 }
 
@@ -61,11 +61,18 @@ const buyer = Keypair.generate()
 const sellerPubkey = seller.publicKey.toBase58()
 const buyerPubkey = buyer.publicKey.toBase58()
 
-let env = readFileSync(examplePath, 'utf8')
-env = env
-  .replace(/^WALLET=.*$/m, `WALLET=${sellerPubkey}`)
-  .replace(/^BUYER_KEYPAIR_B58=.*$/m, `BUYER_KEYPAIR_B58=${bs58.encode(buyer.secretKey)}`)
-  .replace(/^SOLANA_RPC_URL=.*$/m, 'SOLANA_RPC_URL=https://api.devnet.solana.com')
+/** Set or append `KEY=value` without disturbing the rest of the file. */
+function setKv(text, key, value) {
+  const re = new RegExp(`^${key}=.*$`, 'm')
+  return re.test(text) ? text.replace(re, `${key}=${value}`) : `${text.replace(/\s*$/, '\n')}${key}=${value}\n`
+}
+
+// Base on an existing .env (preserve any keys the user already added — e.g. ANTHROPIC_API_KEY);
+// otherwise start from the documented template.
+let env = existsSync(envPath) ? readFileSync(envPath, 'utf8') : readFileSync(examplePath, 'utf8')
+env = setKv(env, 'WALLET', sellerPubkey)
+env = setKv(env, 'BUYER_KEYPAIR_B58', bs58.encode(buyer.secretKey))
+env = setKv(env, 'SOLANA_RPC_URL', 'https://api.devnet.solana.com')
 writeFileSync(envPath, env)
 
 report(sellerPubkey, buyerPubkey, true)

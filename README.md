@@ -38,9 +38,34 @@ Everything runs on **devnet** — free play money, real on-chain settlement. Key
 
 ## Quick start
 
-**Three ways, same result.** The first needs only **Node + Docker** — no extra tools.
+### 1. Set up (once)
 
-### Path A — one command, no `just` (recommended)
+```sh
+git clone https://github.com/trilltino/solana_coralOS.git && cd solana_coralOS
+node scripts/setup.js          # creates .env + two devnet wallets (also saved to WALLETS.txt)
+```
+
+Open the generated `.env` and add your LLM key — the agents need it to bid:
+
+```ini
+ANTHROPIC_API_KEY=sk-ant-…     # the default brain
+# …or flip the whole market to OpenAI (no code change):
+# LLM_PROVIDER=openai
+# OPENAI_API_KEY=…
+```
+
+Then **fund both** printed wallet addresses at [faucet.solana.com](https://faucet.solana.com) (GitHub
+sign-in — the only devnet faucet that works). Re-running `setup.js` re-reads your `.env`, so it never
+clobbers the key you just added.
+
+> In a hurry? Jump to `npm run dev` below — it runs `setup.js` as its first step, so you can drop your
+> key into `.env` and fund the wallets while it builds, then click **"Start a market"**.
+
+### 2. Run it — three ways, same result
+
+The first needs only **Node + Docker** — no extra tools.
+
+#### Path A — one command, no `just` (recommended)
 
 ```sh
 npm run dev        # = node scripts/demo.js
@@ -52,15 +77,15 @@ dashboard**. It prints **two wallet addresses**; **fund both** at
 then click **"Start a market"** in the dashboard. The mint step is **fault-tolerant**: if TxLINE or
 funding is unavailable it skips cleanly and the dashboard opens for the **generic** market instead.
 
-### Path B — with `just`
+#### Path B — with `just`
 
-Same chain, if you have [`just`](https://github.com/casey/just) installed:
+Same chain via the [task runner](#task-runner-just-optional) (install + all recipes below):
 
 ```sh
 just dev           # `just` on its own lists every recipe (doctor, logs, down…)
 ```
 
-### Path C — by hand
+#### Path C — by hand
 
 ```sh
 npm install --prefix scripts                                          # script deps (web3.js, bs58)
@@ -72,6 +97,35 @@ node scripts/dashboard.js                                             # feed + d
 ```
 
 > Stuck? `node scripts/doctor.js` checks Docker, Node, wallet funding, and that coral is up. More in [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+
+## Task runner: `just` (optional)
+
+Every step above is a plain `node`/`npm`/`docker` command, so [`just`](https://github.com/casey/just)
+is never required — but the [`justfile`](justfile) bundles them into short recipes. Install it once:
+
+```sh
+winget install Casey.Just     # Windows
+brew install just             # macOS (Homebrew)
+cargo install just            # any platform with Rust  ·  other installs: github.com/casey/just#installation
+```
+
+Then run a recipe (or `just` on its own to list them all):
+
+| Recipe | What it does |
+|--------|--------------|
+| `just dev` | the full one-shot demo: `down` → `setup` → `build` → `clean` → `up` → mint a TxLINE token → open the dashboard |
+| `just setup` | generate the two devnet wallets into `.env` |
+| `just build` | build the seller + buyer Docker images (personas reuse the seller image) |
+| `just up` / `just down` | start / stop coral-server (the MCP coordinator) |
+| `just market` | launch one market session (buyer + persona sellers) — raw transcript in the container logs |
+| `just dashboard` | feed server + React UI; opens the browser → "Start a market" |
+| `just mint` | mint a fresh TxLINE free-tier token into `.env` (short-lived; `just dev` already does this) |
+| `just doctor` | readiness check — Docker, Node, wallet funding, coral up |
+| `just clean` | remove orphaned coral-spawned agent containers |
+| `just logs` | tail coral-server logs |
+
+On Windows the recipes run through `cmd.exe` (set at the top of the justfile) so `&&` and `cd` behave
+like a POSIX shell.
 
 ## What you'll see
 

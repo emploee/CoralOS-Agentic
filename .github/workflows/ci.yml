@@ -19,8 +19,8 @@ jobs:
       - run: cd packages/agent-runtime && npm run typecheck
       - run: cd packages/agent-runtime && npm test
 
-  agent-economy:
-    name: Agent Economy (agents + examples)
+  agents-and-examples:
+    name: Agents + examples (typecheck + tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,11 +35,11 @@ jobs:
         run: cd coral-agents/buyer-agent && npm install && npm run typecheck && npm test
       - name: broker (typecheck + tests)
         run: cd coral-agents/broker && npm install && npm run typecheck && npm test
-      - name: echo-agent
-        run: cd coral-agents/echo-agent && npm install && npm run typecheck
-      - name: bridge
-        run: cd examples/agent-economy/bridge && npm install && npm run typecheck
-      - name: autonomous
-        run: cd examples/agent-economy/autonomous && npm install && npm run typecheck
-      - name: quickstart
-        run: cd examples/agent-economy/quickstart && npm install && npm run typecheck
+      - name: marketplace launcher (typecheck)
+        run: cd examples/marketplace && npm install && npm run typecheck
+      - name: marketplace feed (typecheck + tests)
+        run: cd examples/marketplace/feed && npm install && npm run typecheck && npm test
+      - name: marketplace web (typecheck)
+        run: cd examples/marketplace/web && npm install && npm run typecheck
+      - name: txodds (typecheck)
+        run: cd examples/txodds && npm install && npm run typecheck

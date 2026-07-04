@@ -134,8 +134,9 @@ await startCoralAgent({ agentName }, async (ctx) => {
 | Agent                                                 | Role                                                                                        | Coral features it leans on                                                                                                                                                                     |
 | ----------------------------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [buyer-agent](coral-agents/buyer-agent/src/index.ts)   | broadcasts `WANT`, collects bids, awards, settles                                          | `createThread('market', sellers)`, `waitForAgent` (wait for sellers to come online, [index.ts:96-99](coral-agents/buyer-agent/src/index.ts#L96-L99)), a timed `waitForMention` bid window |
-| [seller-agent](coral-agents/seller-agent/src/index.ts) | bids on `WANT`s it can serve, delivers on funded escrow                                    | the plain `waitForMention → parse → reply` loop; **self-selection** (only bids on services in its inventory)                                                                          |
-| seller-worldcup                                       | the World Cup specialist persona                                                            | **same image**, different `coral-agent.toml` defaults — personas are config, not code                                                                                                 |
+| [seller-agent](coral-agents/seller-agent/src/index.ts) | bids on `WANT`s it can serve, delivers on funded escrow through a **harness adapter** ([packages/harness-runtime](packages/harness-runtime/README.md): `node-llm` / `claude-code` / any CLI) | the plain `waitForMention → parse → reply` loop; **self-selection** (only bids on services in its inventory)                                                                          |
+| seller personas                                       | `seller-worldcup` (oracle), `seller-scribe` + `seller-claude` (freelance), `seller-moves` + `seller-stats` (research) | **same image**, different `coral-agent.toml` defaults — personas are config, not code                                                                                                 |
+| [verifier-agent](coral-agents/verifier-agent/src/index.ts) | independent delivery check: `VERIFY` in → `VERIFIED pass\|fail` out; the buyer gates release on it. Keyless, walletless | the loop; addressed by name from the buyer's thread                                                                                                                                    |
 | [broker](coral-agents/broker/src/index.ts)             | buys upstream, resells at a markup (two settlements)                                        | **one private thread per seller** + `waitForMentionInThread` to correlate quotes (§5.5)                                                                                               |
 | [user_proxy](coral-agents/user_proxy/agent.py)         | a **Python** agent that idles as a named session member so a human can be impersonated | proves polyglot sessions + the puppet API (§5.7)                                                                                                                                              |
 | echo-agent                                            | minimal test agent                                                                          | the loop, nothing else                                                                                                                                                                         |
@@ -273,25 +274,38 @@ Sessions are created under a **namespace** (`create_if_not_exists`), gated by a 
 
 ## 6. End-to-end: one round, mapped to Coral primitives
 
+The verifier-gated flow (the freelancer/research markets; the plain round is the same minus the
+`VERIFY` leg — **validated live on devnet, both the settle path and the refuse path**):
+
 ```
-buyer-agent   createThread("market", [sellers])              → coral_create_thread
-buyer-agent   WANT round=1 service=txline arg="edge 187…"    → coral_send_message  @sellers
-seller-*      (each blocked in)                                 coral_wait_for_mention
-seller-worldcup  BID round=1 price=0.00045 by=seller-worldcup → coral_send_message  @buyer
-buyer-agent   (collects bids for a window, LLM picks best)
-buyer-agent   AWARD round=1 to=seller-worldcup                → coral_send_message  @winner
-seller-worldcup  ESCROW_REQUIRED round=1 reference=<sha256> … → coral_send_message  @buyer
+buyer-agent   createThread("market", [sellers, verifier])     → coral_create_thread
+buyer-agent   WANT round=1 service=… arg=… budget=…           → coral_send_message  @sellers
+seller-*      (each blocked in)                                  coral_wait_for_mention
+seller-*      BID round=1 price=… by=… note=…                 → coral_send_message  @buyer
+buyer-agent   (collects bids for a window; LLM picks best value,
+               weighing ledger reputation; cheapest fallback)
+buyer-agent   AWARD round=1 to=<winner> reason="…"            → coral_send_message  @winner
+winner        ESCROW_REQUIRED round=1 reference=<sha256> …    → coral_send_message  @buyer
+buyer-agent   policy check: caps, payout + award-price binding   enforce()  (in-process)
    ── buyer deposits into the Solana arbiter escrow (OFF Coral, on devnet) ──
-buyer-agent   DEPOSITED round=1 reference=<R> vault=<PDA> …   → coral_send_message  @seller
-seller-worldcup  verifies funded escrow on-chain, delivers:
-                 DELIVERED round=1 {teams, fair line, read}   → coral_send_message  @buyer
-   ── buyer (or arbiter) releases escrow to the seller (OFF Coral, on devnet) ──
-buyer-agent   ARBITER_RELEASED round=1 sig=<tx>              → coral_send_message  @seller
+buyer-agent   DEPOSITED round=1 reference=<R> vault=<PDA> …   → coral_send_message  @winner
+winner        verifies funded escrow on-chain, runs its HARNESS
+              adapter, delivers:
+              DELIVERED round=1 <hash-bound payload>          → coral_send_message  @buyer
+buyer-agent   VERIFY round=1 sha=… payload=…                  → coral_send_message  @verifier
+verifier      deterministic checks (hash, structure) + LLM judge
+verifier      VERIFIED round=1 verdict=pass|fail reason="…"   → coral_send_message  @buyer
+buyer-agent   policy check: verifier gate                        enforce()  (in-process)
+   ── on pass: release escrow to the seller (OFF Coral, on devnet) ──
+   ── on fail/timeout: NO release — funds refundable after the deadline ──
+buyer-agent   ARBITER_RELEASED round=1 sig=<tx>               → coral_send_message  @winner
+feed          persists the round to the run ledger (runs/…)      extended-state poll
 ```
 
-Every line left of the arrow that isn't marked "OFF Coral" is a Coral MCP tool call. The two "OFF Coral"
-steps are pure Solana ([escrow](examples/txodds/escrow/README.md)) — the clean seam between
-**coordination (Coral)** and **settlement (Solana)**.
+Every line with an arrow is a Coral MCP tool call. The "OFF Coral" steps are pure Solana
+([escrow](examples/txodds/escrow/README.md)); the `enforce()` steps are the in-process
+[policy choke point](packages/agent-runtime/src/policy/policy.ts) — the clean seam between
+**coordination (Coral)**, **settlement (Solana)**, and **policy (yours)**.
 
 ---
 
@@ -308,6 +322,14 @@ steps are pure Solana ([escrow](examples/txodds/escrow/README.md)) — the clean
 - **Coral moves strings; the kit owns the grammar.** The [market protocol](packages/agent-runtime/src/market/protocol.ts)
   and the sha256-bound escrow `reference` live in *your* code, so you can fork the product without
   touching the transport.
+- **Harnesses never hold keys.** A seller's work may run in an external process (headless Claude Code,
+  any CLI — [packages/harness-runtime](packages/harness-runtime/README.md)), but only the *agent*
+  process signs Solana transactions; the harness only produces hash-bound artifacts.
+- **Policy is a choke point, not scattered checks.** Every buyer deposit/release passes
+  [`enforce()`](packages/agent-runtime/src/policy/policy.ts) — spend caps, payout + award-price
+  binding, service allowlist, verifier gate — one place to read what an agent may never do.
+- **Devnet by default, everywhere value moves.** `solanaConnection()` throws on a mainnet RPC unless
+  `ALLOW_MAINNET=1`.
 
 ---
 
@@ -378,8 +400,7 @@ the doc page that shows you how.
 See also: [coral-agents/buyer-agent/README.md](coral-agents/buyer-agent/README.md),
 [coral-agents/seller-agent/README.md](coral-agents/seller-agent/README.md),
 [coral-agents/verifier-agent/README.md](coral-agents/verifier-agent/README.md),
-[coral-agents/broker/README.md](coral-agents/broker/README.md), the implementation walkthrough in
-[CORAL-IMPLEMENTATION.md](CORAL-IMPLEMENTATION.md), and the round walkthrough in
+[coral-agents/broker/README.md](coral-agents/broker/README.md), and the round walkthrough in
 [examples/txodds/coral/README.md](examples/txodds/coral/README.md).
 
 ---

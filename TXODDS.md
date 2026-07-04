@@ -11,11 +11,11 @@
 
 ## The three tracks
 
-| Track | Prize | What it rewards |
-|---|---|---|
-| **Prediction Markets & Settlement** *(flagship)* | **$18,000** | Markets, resolution and settlement on verifiable World Cup data: outcome markets, oracle tooling, on-chain proof integrations. |
-| **Trading Tools & Agents** | **$16,000** | Autonomous agents that ingest TxODDS' live odds and scores, detect signals, run strategies, and execute decisions without manual input. |
-| **Consumer & Fan Experiences** | **$16,000** | Fan-facing apps, games, bots, or social experiences that use TxODDS' live match data to update instantly during games and keep fans engaged. |
+| Track                                                    | Prize             | What it rewards                                                                                                                              |
+| -------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Prediction Markets & Settlement** *(flagship)* | **$18,000** | Markets, resolution and settlement on verifiable World Cup data: outcome markets, oracle tooling, on-chain proof integrations.               |
+| **Trading Tools & Agents**                         | **$16,000** | Autonomous agents that ingest TxODDS' live odds and scores, detect signals, run strategies, and execute decisions without manual input.      |
+| **Consumer & Fan Experiences**                     | **$16,000** | Fan-facing apps, games, bots, or social experiences that use TxODDS' live match data to update instantly during games and keep fans engaged. |
 
 ## Why this kit is a head start
 
@@ -81,12 +81,12 @@ this shape.
 
 ## Where you actually fork
 
-| To build… | Touch | Run |
-|---|---|---|
-| a market / oracle / settlement | [`agent/service.ts`](examples/txodds/agent/service.ts) + `escrow/` (deployed) | `npm run dev`, `npm run marketplace` |
-| a trading / signal agent | `deliverService()` + [`coral-agents/`](coral-agents) personas + buyer criteria | `npm run marketplace`, `npm run demo:coral` |
-| a fan app / game / bot | [`examples/*/web`](examples) + [`server/proxy.ts`](examples/txodds/server/proxy.ts) | `npm run marketplace:web`, `npm run agent-economy:web` |
-| the LLM behind any of them | `LLM_PROVIDER=venice` (free credits) — see [LLM.md](LLM.md) | — |
+| To build…                     | Touch                                                                                 | Run                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| a market / oracle / settlement | [`agent/service.ts`](examples/txodds/agent/service.ts) + `escrow/` (deployed)      | `npm run dev`, `npm run marketplace`                   |
+| a trading / signal agent       | `deliverService()` + [`coral-agents/`](coral-agents) personas + buyer criteria     | `npm run marketplace`, `npm run demo:coral`            |
+| a fan app / game / bot         | [`examples/*/web`](examples) + [`server/proxy.ts`](examples/txodds/server/proxy.ts) | `npm run marketplace:web`, `npm run agent-economy:web` |
+| the LLM behind any of them     | `LLM_PROVIDER=venice` (free credits) — see [LLM.md](LLM.md)                         | —                                                         |
 
 Every command self-installs on first run — see the **[Run the examples](README.md)** table.
 

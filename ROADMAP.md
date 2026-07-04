@@ -1,12 +1,19 @@
-# PLAN.md — From Paid-Agent Demo to Agent-Commerce Operating Layer
+# ROADMAP.md — the agent-commerce layer: build record + what's next
+
+> **Status: phases 0–6 below are shipped** (per-phase ✅ notes inline), and the loop is
+> **validated live on devnet** — both the settle path and the verifier-refused path. What remains
+> is the stretch list inside each phase and the [Future](#future-explicitly-out-of-scope-for-now)
+> section. This doc is the build record + roadmap; the user-facing story is in the
+> [README](README.md).
 
 ## Thesis
 
-This repo already owns the hard economic primitive: **WANT → BID → AWARD → DEPOSITED →
-DELIVERED → RELEASED**, settled by a deployed Solana escrow + arbiter. What it pays today is
-"an LLM returns a string." The upgrade is to make the thing being paid a **real agent harness
-doing real work** — Claude Code, Hermes, Delve-style research swarms, Pi-Factory-style software
-teams — with an auditable trace of what the harness actually did for the money.
+This repo owns the hard economic primitive: **WANT → BID → AWARD → DEPOSITED →
+DELIVERED → RELEASED**, settled by a deployed Solana escrow + arbiter. Originally what it paid
+for was "an LLM returns a string." The upgrade tracked here made the thing being paid a **real
+agent harness doing real work** — Claude Code today; Hermes, Delve-style research swarms,
+Pi-Factory-style software teams via the same adapter seam — with an auditable trace of what the
+harness actually did for the money.
 
 > **This repo = market + payment + escrow.**
 > **Harness bridge = any external coding/research agent can join the Coral market.**

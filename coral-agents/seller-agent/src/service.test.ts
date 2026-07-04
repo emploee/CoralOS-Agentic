@@ -19,7 +19,31 @@ describe('deliverService txline-only routing', () => {
 
   it('rejects legacy generic services', async () => {
     const out = JSON.parse(await deliverService('coingecko eth'))
-    expect(out).toEqual({ error: 'unsupported service', service: 'coingecko', supported: ['txline'] })
+    expect(out).toEqual({ error: 'unsupported service', service: 'coingecko', supported: ['txline', 'freelance'] })
+  })
+
+  it('freelance without an LLM key returns an honest error payload (verifier fails it, no release)', async () => {
+    const out = JSON.parse(await deliverService('freelance landing-page-hero-copy'))
+    expect(out.service).toBe('freelance')
+    expect(out.brief).toBe('landing-page-hero-copy')
+    expect(out.error).toContain('llm unavailable')
+  })
+
+  it('freelance with a (mocked) LLM delivers the deliverable JSON', async () => {
+    process.env.LLM_PROVIDER = 'openai'
+    process.env.OPENAI_API_KEY = 'k'
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: '{"deliverable":"Ship faster with agents","notes":"hero copy"}' } }],
+      }),
+    })) as unknown as typeof fetch
+
+    const out = JSON.parse(await deliverService('freelance landing-page-hero-copy'))
+    expect(out).toMatchObject({
+      service: 'freelance',
+      result: { deliverable: 'Ship faster with agents', notes: 'hero copy' },
+    })
   })
 
   it('returns fixtures from TxLINE', async () => {

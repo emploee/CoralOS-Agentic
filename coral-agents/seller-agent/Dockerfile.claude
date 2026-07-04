@@ -1,0 +1,10 @@
+# seller-agent with the Claude Code CLI baked in — the HARNESS=claude-code seller.
+# Build from repo root (AFTER building the base image with build-agents.sh):
+#   docker build -f coral-agents/seller-agent/Dockerfile.claude -t seller-agent-claude:0.1.0 .
+#
+# The container needs ANTHROPIC_API_KEY at runtime for headless `claude -p`
+# (pass it as a session option; see examples/freelancer/start.ts).
+
+FROM seller-agent:0.1.0
+RUN npm install -g @anthropic-ai/claude-code
+ENV HARNESS=claude-code

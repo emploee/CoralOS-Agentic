@@ -33,6 +33,11 @@ VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (
 LLM_PROVIDER = { type = "string", default = "", description = "anthropic (default) | openai | venice" }
 LLM_MODEL = { type = "string", default = "", description = "Override the LLM model id" }
 TRACE = { type = "string", default = "", description = "Set to 1 to log settlement checks" }
+HARNESS = { type = "string", default = "node-llm", description = "Harness adapter doing the work: node-llm | claude-code | cli (see packages/harness-runtime)" }
+HARNESS_CMD = { type = "string", default = "", description = "HARNESS=cli only: the harness argv (JSON array or space-split; {prompt} substitutes the order)" }
+HARNESS_NAME = { type = "string", default = "", description = "HARNESS=cli only: label for the harness in logs/ledger" }
+HARNESS_TIMEOUT_MS = { type = "f64", default = 300000, description = "Kill an external harness order after this long" }
+CLAUDE_CODE_MAX_TURNS = { type = "string", default = "6", description = "HARNESS=claude-code: agentic turn budget per order" }
 
 [runtimes.docker]
 image = "seller-agent:0.1.0"

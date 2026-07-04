@@ -29,6 +29,14 @@ BID_WINDOW_MS = { type = "f64", default = 5000, description = "How long to colle
 CYCLE_INTERVAL_MS = { type = "f64", default = 30000, description = "Delay between market rounds" }
 SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }
 SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter (default) | direct legacy base escrow" }
+VERIFIER_AGENT = { type = "string", default = "", description = "Name of the independent verifier agent; when set, release is gated on its VERIFIED pass" }
+VERIFY_WINDOW_MS = { type = "f64", default = 20000, description = "How long to wait for the verifier's verdict before leaving funds in escrow" }
+WANT_FEED_URL = { type = "string", default = "", description = "Event mode: poll this URL for the next job (research market watcher) instead of rotating BUYER_ARGS" }
+POLICY_MAX_SOL_PER_ROUND = { type = "f64", default = 0, description = "Spend cap per deposit in SOL (0/unset = the round budget)" }
+POLICY_MAX_SOL_PER_SESSION = { type = "f64", default = 0, description = "Cumulative session spend cap in SOL (unset = uncapped)" }
+POLICY_SERVICES = { type = "string", default = "", description = "Service allowlist for deposits, csv (unset = the BUYER_SERVICE)" }
+POLICY_MIN_INTERVAL_MS = { type = "f64", default = 0, description = "Minimum ms between deposits (unset = no rate limit)" }
+REPUTATION_URL = { type = "string", default = "", description = "The feed's /api/reputation - per-seller track record from the run ledger, weighed at award time" }
 ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key (default brain for best-value selection)" }
 OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key - set with LLM_PROVIDER=openai to flip the brain" }
 VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits) - set with LLM_PROVIDER=venice to flip the brain" }

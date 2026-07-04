@@ -4,12 +4,18 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Mirror repo layout so "file:../../packages/agent-runtime" resolves correctly
+# Mirror repo layout so the "file:../../packages/*" deps resolve correctly
 COPY packages/agent-runtime/package.json packages/agent-runtime/package-lock.json* ./packages/agent-runtime/
 RUN cd packages/agent-runtime && npm install --ignore-scripts
 COPY packages/agent-runtime/tsconfig.json ./packages/agent-runtime/
 COPY packages/agent-runtime/src/ ./packages/agent-runtime/src/
 RUN cd packages/agent-runtime && npx tsc
+
+COPY packages/harness-runtime/package.json packages/harness-runtime/package-lock.json* ./packages/harness-runtime/
+RUN cd packages/harness-runtime && npm install --ignore-scripts --install-links
+COPY packages/harness-runtime/tsconfig.json ./packages/harness-runtime/
+COPY packages/harness-runtime/src/ ./packages/harness-runtime/src/
+RUN cd packages/harness-runtime && npx tsc
 
 # --install-links copies the SDK into node_modules instead of symlinking
 COPY coral-agents/seller-agent/package.json coral-agents/seller-agent/package-lock.json* ./coral-agents/seller-agent/

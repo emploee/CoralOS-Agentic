@@ -28,9 +28,13 @@ not the human buyer wallet.
 | File | Role |
 |---|---|
 | `src/index.ts` | Market loop and arbiter-aware funding verification |
-| `src/bidder.ts` | LLM bid proposal with code-enforced floor/budget |
 | `src/escrow.ts` | Read-only escrow funding check |
 | `src/service.ts` | TxODDS delivery: fixtures, odds, edge |
+
+Bidding and delivery run through a **harness adapter** (`@pay/harness-runtime`, picked with
+`HARNESS=<name>`, default `node-llm`): the adapter prices work and produces the hash-bound
+delivery; this agent keeps the wallet, the market protocol, and the escrow checks. The LLM bidder
+with code-enforced floor/budget lives there now (`quote.ts`).
 
 `src/payment.ts` and `src/replay.ts` remain for the older direct-pay helpers and tests, but they are
 not part of the TxODDS CoralOS seller loop.
@@ -38,7 +42,7 @@ not part of the TxODDS CoralOS seller loop.
 ## Env
 
 `SELLER_WALLET`, `AGENT_NAME`, `SERVICES=txline`, `FLOOR_SOL`, `PERSONA`, `SETTLEMENT_MODE=arbiter`,
-`ESCROW_DEADLINE_SECS`, `SOLANA_RPC_URL`, and `TXLINE_API_KEY`.
+`ESCROW_DEADLINE_SECS`, `SOLANA_RPC_URL`, `TXLINE_API_KEY`, and `HARNESS` (default `node-llm`).
 
 For live analysis set an LLM key — the kit's LLM is **Venice AI** (`LLM_PROVIDER=venice` + `VENICE_API_KEY`;
 new accounts get $50 free via code `IMPERIAL50` at [venice.ai/settings/api](https://venice.ai/settings/api)).

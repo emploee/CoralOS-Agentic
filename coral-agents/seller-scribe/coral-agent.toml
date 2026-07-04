@@ -1,0 +1,34 @@
+# Freelancer-market persona: the baseline LLM worker. Reuses the seller-agent image; the
+# deliverable comes from the in-process node-llm harness (deliverService -> freelance).
+edition = 4
+
+[agent]
+name = "seller-scribe"
+version = "0.1.0"
+description = "Freelance marketplace seller - the simple LLM worker. Bids on freelance WANTs and delivers the brief's deliverable straight from the LLM (node-llm harness)."
+summary = "The baseline freelance seller: cheap, fast, shallow - the bar other harnesses must beat."
+readme = "Bids in the shared market thread when the WANT is a `freelance` service, and on a funded escrow delivers {'deliverable': ...} produced by one LLM call. Same image as seller-agent; SERVICES=freelance + HARNESS=node-llm shape it."
+
+[agent.license]
+type = "spdx"
+expression = "MIT"
+
+[options]
+SELLER_WALLET = { type = "string", description = "Devnet wallet pubkey that receives payments" }
+AGENT_NAME = { type = "string", default = "seller-scribe", description = "Market identity (matches the registry name)" }
+SERVICES = { type = "string", default = "freelance", description = "Inventory - this persona sells freelance work" }
+FLOOR_SOL = { type = "f64", default = 0.0002, description = "Cost floor - one LLM call is cheap" }
+PERSONA = { type = "string", default = "a fast, no-frills freelance copywriter agent; one LLM call, honest about depth", description = "Bidding persona (LLM system prompt)" }
+SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }
+SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter (default) | direct legacy base escrow" }
+ESCROW_DEADLINE_SECS = { type = "f64", default = 600, description = "Refund deadline for escrow deposits (seconds)" }
+HARNESS = { type = "string", default = "node-llm", description = "The harness doing the work (packages/harness-runtime)" }
+ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key for bids + deliverables" }
+OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key; set LLM_PROVIDER=openai to use it" }
+VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits); set LLM_PROVIDER=venice to use it" }
+LLM_PROVIDER = { type = "string", default = "", description = "anthropic (default) | openai | venice" }
+LLM_MODEL = { type = "string", default = "", description = "Override the LLM model id" }
+TRACE = { type = "string", default = "", description = "Set to 1 to log settlement checks" }
+
+[runtimes.docker]
+image = "seller-agent:0.1.0"

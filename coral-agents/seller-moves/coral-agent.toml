@@ -1,0 +1,35 @@
+# Research-market persona: the market-movement specialist. Reuses the seller-agent image;
+# sells the verified TxLINE read framed around WHY the line moved.
+edition = 4
+
+[agent]
+name = "seller-moves"
+version = "0.1.0"
+description = "Research marketplace seller - market-movement specialist. Bids on txline research WANTs triggered by odds moves; delivers the verified fair-line read."
+summary = "Reads line movement - bids highest confidence right after a move."
+readme = "Bids in the shared market thread on `txline` WANTs (the research watcher queues them on odds moves); delivers the verified TxLINE edge read. Same image as seller-agent; persona + floor shape it."
+
+[agent.license]
+type = "spdx"
+expression = "MIT"
+
+[options]
+SELLER_WALLET = { type = "string", description = "Devnet wallet pubkey that receives payments" }
+AGENT_NAME = { type = "string", default = "seller-moves", description = "Market identity (matches the registry name)" }
+SERVICES = { type = "string", default = "txline", description = "Inventory - verified TxODDS reads" }
+FLOOR_SOL = { type = "f64", default = 0.0004, description = "Cost floor" }
+PERSONA = { type = "string", default = "a market-movement analyst who prices sharply when a line just moved and knows why steam comes in", description = "Bidding persona (LLM system prompt)" }
+SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }
+SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter (default) | direct legacy base escrow" }
+ESCROW_DEADLINE_SECS = { type = "f64", default = 600, description = "Refund deadline for escrow deposits (seconds)" }
+TXLINE_API_KEY = { type = "string", default = "", description = "Activated TxLINE API token" }
+TXLINE_BASE_URL = { type = "string", default = "", description = "Override the TxLINE host" }
+ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key for bids + reads" }
+OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key; set LLM_PROVIDER=openai to use it" }
+VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits); set LLM_PROVIDER=venice to use it" }
+LLM_PROVIDER = { type = "string", default = "", description = "anthropic (default) | openai | venice" }
+LLM_MODEL = { type = "string", default = "", description = "Override the LLM model id" }
+TRACE = { type = "string", default = "", description = "Set to 1 to log settlement checks" }
+
+[runtimes.docker]
+image = "seller-agent:0.1.0"

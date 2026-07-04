@@ -18,6 +18,7 @@
 import {
   startCoralAgent, complete, parseJsonReply, loadKeypairB58,
   formatWant, parseBid, parseEscrowRequired, formatAward, formatDeposited,
+  formatVerify, parseVerified, sha256Hex, enforce, policyFromEnv,
   selectBids, pickCheapest, verb, messageRound,
   type Bid, type EscrowTerms, type CoralAgentContext,
 } from '@pay/agent-runtime'
@@ -27,7 +28,8 @@ import {
   ARBITER_PROGRAM_ID, ensureArbiterConfig, ensureArbiterFunded, makeArbiter,
   openArbitrated, arbitrateRelease, arbitratedEscrowPda,
 } from './arbiter.js'
-import { payoutMatches } from './guard.js'
+import { fetchNextWant } from './wantFeed.js'
+import { fetchReputationLines } from './reputation.js'
 
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
 const BUDGET = Number(process.env.BUYER_MAX_SOL ?? '0.001')
@@ -44,21 +46,40 @@ const SELLERS = (process.env.MARKET_SELLERS ?? 'seller-worldcup,seller-fast,sell
 // to deposit to an ESCROW_REQUIRED whose seller= pubkey differs - binding the award to the payout.
 const EXPECTED_SELLER_WALLET = process.env.SELLER_WALLET ?? ''
 const SETTLEMENT_MODE = (process.env.SETTLEMENT_MODE ?? 'arbiter').toLowerCase()
+// Independent delivery verification (coral-agents/verifier-agent): when set, the buyer hands each
+// delivery to this agent and releases ONLY on a VERIFIED pass - no verdict means funds stay in
+// escrow, refundable after the deadline.
+const VERIFIER = process.env.VERIFIER_AGENT ?? ''
+const VERIFY_WINDOW_MS = Number(process.env.VERIFY_WINDOW_MS ?? '20000')
+// Event mode (the research market): poll this feed for the next job instead of rotating BUYER_ARGS.
+const WANT_FEED = process.env.WANT_FEED_URL ?? ''
+// Track record from the run ledger (the feed's /api/reputation): history shapes who wins awards.
+const REPUTATION_URL = process.env.REPUTATION_URL ?? ''
 const trace = process.env.TRACE === '1'
+
+// The fund-moving choke point (POLICY_* env): spend caps, service allowlist, payout binding,
+// post-award price binding, rate limit, verifier gate. Every deposit/release passes through it.
+const policy = policyFromEnv(process.env, {
+  budgetSol: BUDGET,
+  service: SERVICE,
+  ...(EXPECTED_SELLER_WALLET ? { expectedPayout: EXPECTED_SELLER_WALLET } : {}),
+})
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const expl = (kind: 'tx' | 'address', id: string) => `https://explorer.solana.com/${kind}/${id}?cluster=devnet`
 
 /** Best-value selection via LLM; deterministic cheapest fallback. Returns the winner + its reasoning. */
-async function pickWinner(pool: Bid[]): Promise<{ winner: Bid; reason?: string }> {
+async function pickWinner(pool: Bid[], repLines?: string): Promise<{ winner: Bid; reason?: string }> {
   if (pool.length === 1) return { winner: pool[0] }
   try {
     const system =
-      'You are a buyer choosing the best-value bid for a Solana data service. ' +
-      'Reply ONLY with JSON {"by": "<seller name>", "reason": "<short>"}.'
+      'You are a buyer choosing the best-value bid for a Solana data service. Weigh price against ' +
+      'each seller\'s track record when one is given - a cheap seller that fails verification or ' +
+      'no-shows is not a bargain. Reply ONLY with JSON {"by": "<seller name>", "reason": "<short>"}.'
     const user =
       `service=${SERVICE} arg=${ARG} budget=${BUDGET}\nbids:\n` +
-      pool.map((b) => `- ${b.by}: ${b.priceSol} SOL${b.note ? ` (${b.note})` : ''}`).join('\n')
+      pool.map((b) => `- ${b.by}: ${b.priceSol} SOL${b.note ? ` (${b.note})` : ''}`).join('\n') +
+      (repLines ? `\ntrack record (derived from the run ledger):\n${repLines}` : '')
     const parsed = parseJsonReply<{ by?: string; reason?: string }>(await complete({ system, user, maxTokens: 100 }))
     const chosen = pool.find((b) => b.by === parsed?.by)
     if (chosen) {
@@ -93,23 +114,41 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
   const arbiter = SETTLEMENT_MODE === 'arbiter' ? loadKeypairB58('ARBITER_KEYPAIR_B58') : null
   console.error(`[buyer] market buyer - wallet=${buyer.publicKey.toBase58()} budget=${BUDGET} sellers=[${SELLERS.join(',')}]`)
 
-  for (const s of SELLERS) {
-    try { await ctx.waitForAgent(s, 8000) } catch { /* seller may already be present */ }
+  const participants = [...SELLERS, ...(VERIFIER ? [VERIFIER] : [])]
+  for (const s of participants) {
+    try { await ctx.waitForAgent(s, 8000) } catch { /* agent may already be present */ }
   }
-  const thread = await ctx.createThread('market', SELLERS)
+  const thread = await ctx.createThread('market', participants)
   const program = await makeProgram(buyer, RPC)
   if (arbiter) {
     await ensureArbiterConfig(buyer, arbiter.publicKey, RPC)
     await ensureArbiterFunded(buyer, arbiter.publicKey, RPC)
   }
   let round = 0
+  let spentSol = 0
+  let lastDepositAt: number | undefined
 
   while (true) {
     try {
+      let service = SERVICE
+      let arg = ARGS[round % ARGS.length] // rotate fixtures so consecutive rounds differ
+      let budget = BUDGET
+      if (WANT_FEED) {
+        // Event mode: no event, no WANT, no spend.
+        const next = await fetchNextWant(WANT_FEED)
+        if (!next) {
+          if (trace) console.error('[buyer] want feed quiet - sitting this cycle out')
+          await sleep(CYCLE_MS)
+          continue
+        }
+        service = next.service ?? SERVICE
+        arg = next.arg
+        budget = Math.min(BUDGET, next.budgetSol ?? BUDGET)
+        if (next.note) console.error(`[buyer] event: ${next.note}`)
+      }
       round++
-      const arg = ARGS[(round - 1) % ARGS.length] // rotate fixtures so consecutive rounds differ
-      if (trace) console.error(`[buyer] round ${round}: WANT ${SERVICE} ${arg} budget=${BUDGET}`)
-      await ctx.send(formatWant({ round, service: SERVICE, arg, budgetSol: BUDGET }), thread, SELLERS)
+      if (trace) console.error(`[buyer] round ${round}: WANT ${service} ${arg} budget=${budget}`)
+      await ctx.send(formatWant({ round, service, arg, budgetSol: budget }), thread, SELLERS)
 
       // -- collect competing bids during the window --------------------------
       const bids: Bid[] = []
@@ -123,15 +162,21 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
       const pool = selectBids(bids, round)
       if (pool.length === 0) { console.error(`[buyer] round ${round}: NO_SELLERS`); await sleep(CYCLE_MS); continue }
 
-      // -- award the best value ----------------------------------------------
-      const { winner, reason } = await pickWinner(pool)
+      // -- award the best value (price × track record) -------------------------
+      const repLines = REPUTATION_URL ? await fetchReputationLines(REPUTATION_URL) : undefined
+      const { winner, reason } = await pickWinner(pool, repLines)
       await ctx.send(formatAward(round, winner.by, reason), thread, [winner.by])
 
       // -- settle through escrow: deposit -> DEPOSITED -> wait DELIVERED -> release
       const terms = await waitFor<EscrowTerms>(ctx, round, parseEscrowRequired, 15_000)
       if (!terms) { console.error(`[buyer] round ${round}: no escrow terms from ${winner.by}`); await sleep(CYCLE_MS); continue }
-      if (!payoutMatches(terms.seller, EXPECTED_SELLER_WALLET)) {
-        console.error(`[buyer] round ${round}: escrow payout ${terms.seller} != expected ${EXPECTED_SELLER_WALLET} - skipping`)
+      // One choke point for everything that must be true before funds move (subsumes payoutMatches).
+      const depositDecision = enforce({
+        kind: 'deposit', round, service, amountSol: terms.amountSol, payout: terms.seller,
+        awardedPriceSol: winner.priceSol, spentSol, ...(lastDepositAt != null ? { lastDepositAt } : {}), now: Date.now(),
+      }, policy)
+      if (!depositDecision.ok) {
+        console.error(`[buyer] round ${round}: POLICY refused deposit - ${depositDecision.violations.join('; ')}`)
         await sleep(CYCLE_MS); continue
       }
 
@@ -148,7 +193,9 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
       } else {
         depositSig = await deposit(program, buyer, seller, reference, terms.amountSol, terms.deadlineSecs)
       }
-      console.error(`[buyer] round ${round}: DEPOSITED ${terms.amountSol} SOL -> ${winner.by}`)
+      spentSol += terms.amountSol
+      lastDepositAt = Date.now()
+      console.error(`[buyer] round ${round}: DEPOSITED ${terms.amountSol} SOL -> ${winner.by} (session spend ${spentSol.toFixed(6)} SOL)`)
       if (trace) {
         if (requestedSettlement === 'arbiter' && vault) {
           console.error(`[buyer]   arbiter: ${expl('address', ARBITER_PROGRAM_ID.toBase58())}`)
@@ -174,10 +221,30 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
 
       const delivered = await waitFor(ctx, round, (t) => {
         const r = messageRound(t)
-        return verb(t) === 'DELIVERED' && r != null ? { round: r } : null
+        if (verb(t) !== 'DELIVERED' || r == null) return null
+        return { round: r, payload: t.replace(/^DELIVERED\s+round=\d+\s*/i, '').trim() }
       }, 30_000)
 
       if (delivered) {
+        let verified: 'pass' | 'fail' | undefined
+        if (VERIFIER) {
+          // Hand the exact artifact (content-hashed) to the independent verifier.
+          const sha = sha256Hex(delivered.payload)
+          await ctx.send(formatVerify({ round, service, arg, sha, payload: delivered.payload }), thread, [VERIFIER])
+          const verdict = await waitFor(ctx, round, parseVerified, VERIFY_WINDOW_MS)
+          verified = verdict?.verdict
+          if (verdict) console.error(`[buyer] round ${round}: verifier ${verdict.by} says ${verdict.verdict}${verdict.reason ? ` (${verdict.reason})` : ''}`)
+        }
+        // Same choke point on the way out: release only passes policy (verifier gate when configured).
+        const releaseDecision = enforce({ kind: 'release', round, ...(verified ? { verified } : {}) }, policy)
+        if (!releaseDecision.ok) {
+          console.error(
+            `[buyer] round ${round}: POLICY refused release - ${releaseDecision.violations.join('; ')}` +
+            ' - funds stay in escrow, refundable after the deadline',
+          )
+          await sleep(CYCLE_MS)
+          continue
+        }
         const releaseSig = requestedSettlement === 'arbiter' && arbiter
           ? await arbitrateRelease(makeArbiter(arbiter, RPC), arbiter, seller, reference)
           : await release(program, buyer, seller, reference)

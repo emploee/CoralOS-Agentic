@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest'
-import { pickProvider, parseJsonReply } from './complete.js'
+import { describe, it, expect, afterEach, vi } from 'vitest'
+import { pickProvider, parseJsonReply, complete } from './complete.js'
 
 const env = { ...process.env }
 afterEach(() => {
@@ -37,6 +37,28 @@ describe('pickProvider', () => {
     delete process.env.OPENAI_API_KEY
     delete process.env.VENICE_API_KEY
     expect(pickProvider()).toBe('anthropic')
+  })
+})
+
+describe('complete model resolution', () => {
+  it('an empty LLM_MODEL (coral manifests default unset options to "") falls back to the provider default', async () => {
+    delete process.env.LLM_PROVIDER
+    delete process.env.OPENAI_API_KEY
+    delete process.env.VENICE_API_KEY
+    process.env.ANTHROPIC_API_KEY = 'k'
+    process.env.LLM_MODEL = '' // what a container gets from an unset manifest option
+    let sentModel = ''
+    const realFetch = global.fetch
+    global.fetch = vi.fn(async (_url: unknown, init?: { body?: string }) => {
+      sentModel = JSON.parse(init?.body ?? '{}').model
+      return { ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }
+    }) as unknown as typeof fetch
+    try {
+      await complete({ system: 's', user: 'u' })
+    } finally {
+      global.fetch = realFetch
+    }
+    expect(sentModel).toBe('claude-haiku-4-5-20251001') // not "" (which Anthropic 400s)
   })
 })
 

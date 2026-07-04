@@ -1,0 +1,23 @@
+{
+  "name": "@pay/harness-runtime",
+  "version": "0.1.0",
+  "description": "Harness adapter SDK - one interface so the market doesn't care if a seller is a prompt or a factory",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pay/agent-runtime": "file:../agent-runtime"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.0.0",
+    "vitest": "^1.6.0"
+  }
+}

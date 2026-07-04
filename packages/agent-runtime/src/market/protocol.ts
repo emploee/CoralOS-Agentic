@@ -10,6 +10,8 @@
  *   AWARD  round=<n> to=<seller>                                 buyer  -> market, @winner
  *   ESCROW_REQUIRED round=<n> reference=<R> seller=<addr> amount=<sol> deadline=<secs>  seller -> buyer
  *   DEPOSITED round=<n> reference=<R> buyer=<addr> sig=<sig>     buyer  -> seller
+ *   VERIFY   round=<n> sha=<hash> service=<name> arg=<token> payload=<raw>  buyer -> verifier
+ *   VERIFIED round=<n> verdict=pass|fail by=<verifier> [sha=<hash>] [reason="..."]  verifier -> buyer
  *   (then DELIVERED / RELEASED / REFUNDED reuse the round tag)
  */
 
@@ -156,6 +158,60 @@ export function parseDeposited(text: string): Deposited | null {
     ...(vault ? { vault } : {}),
     ...(arbiter ? { arbiter } : {}),
   }
+}
+
+// -- VERIFY / VERIFIED -------------------------------------------------------------
+// The verifier round-trip: the buyer hands the delivered payload (with its content hash) to an
+// independent verifier agent; release is gated on the verdict. This is the arbiter's 3rd-signer
+// role surfaced into the market protocol.
+
+export interface VerifyRequest {
+  round: number
+  service: string
+  arg: string
+  /** sha256 hex of `payload` as the buyer received it — the verifier recomputes and compares. */
+  sha: string
+  /** The raw DELIVERED payload (last field on the wire; may contain spaces). */
+  payload: string
+}
+
+export interface Verdict {
+  round: number
+  verdict: 'pass' | 'fail'
+  by: string
+  sha?: string
+  reason?: string
+}
+
+export function formatVerify(v: VerifyRequest): string {
+  return `VERIFY round=${v.round} sha=${v.sha} service=${v.service} arg=${v.arg} payload=${v.payload}`
+}
+export function parseVerify(text: string): VerifyRequest | null {
+  if (verb(text) !== 'VERIFY') return null
+  const round = num(text, 'round')
+  const sha = tok(text, 'sha')
+  const service = tok(text, 'service')
+  const arg = tok(text, 'arg')
+  const payload = text.match(/payload=([\s\S]+)$/)?.[1]?.trim()
+  if (round == null || !sha || !service || arg == null || !payload) return null
+  return { round, service, arg, sha, payload }
+}
+
+export function formatVerified(v: Verdict): string {
+  const parts = [`VERIFIED round=${v.round}`, `verdict=${v.verdict}`, `by=${v.by}`]
+  if (v.sha) parts.push(`sha=${v.sha}`)
+  if (v.reason) parts.push(`reason="${v.reason.replace(/"/g, "'")}"`)
+  return parts.join(' ')
+}
+export function parseVerified(text: string): Verdict | null {
+  if (verb(text) !== 'VERIFIED') return null
+  const round = num(text, 'round')
+  const verdict = tok(text, 'verdict')
+  const by = tok(text, 'by')
+  if (round == null || !by || (verdict !== 'pass' && verdict !== 'fail')) return null
+  const sha = tok(text, 'sha')
+  const reason = text.match(/reason="([^"]*)"/)?.[1]
+  return { round, verdict, by, ...(sha ? { sha } : {}), ...(reason ? { reason } : {}) }
 }
 
 // -- selection -------------------------------------------------------------------

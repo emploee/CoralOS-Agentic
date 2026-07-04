@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { decideBid, type SellerConfig } from './bidder.js'
+import { decideBid } from './quote.js'
+import type { SellerConfig } from './types.js'
 import type { Want } from '@pay/agent-runtime'
 
 const cfg: SellerConfig = { name: 'seller-x', services: ['helius-risk'], floorSol: 0.0004, persona: 'test' }

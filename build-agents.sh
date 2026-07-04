@@ -22,16 +22,33 @@ build_buyer() {
   echo "    buyer-agent:0.1.0 done"
 }
 
+build_verifier() {
+  echo "==> Building verifier-agent:0.1.0"
+  docker build -f "$ROOT/coral-agents/verifier-agent/Dockerfile" -t verifier-agent:0.1.0 "$ROOT"
+  echo "    verifier-agent:0.1.0 done (gates release in the freelancer market)"
+}
+
+build_claude_seller() {
+  echo "==> Building seller-agent-claude:0.1.0 (base seller image + Claude Code CLI)"
+  docker build -f "$ROOT/coral-agents/seller-agent/Dockerfile.claude" -t seller-agent-claude:0.1.0 "$ROOT"
+  echo "    seller-agent-claude:0.1.0 done (the HARNESS=claude-code seller)"
+}
+
 case "${1:-all}" in
-  seller) build_seller ;;
-  buyer)  build_buyer ;;
+  seller)   build_seller ;;
+  buyer)    build_buyer ;;
+  verifier) build_verifier ;;
+  claude)   build_seller; build_claude_seller ;;
   all)
     build_seller
     build_buyer
+    build_verifier
     echo ""
-    echo "Both agent images built. Run a CoralOS round:"
+    echo "Agent images built. Run a CoralOS round:"
     echo "  docker compose up -d coral"
-    echo "  cd examples/txodds && npm run coral"
+    echo "  cd examples/txodds && npm run coral        # World Cup oracle round"
+    echo "  cd examples/freelancer && npm start        # verifier-gated freelancer market"
+    echo "Optional Claude Code seller: bash build-agents.sh claude"
     ;;
-  *) echo "Usage: bash build-agents.sh [seller|buyer|all]"; exit 1 ;;
+  *) echo "Usage: bash build-agents.sh [seller|buyer|verifier|claude|all]"; exit 1 ;;
 esac

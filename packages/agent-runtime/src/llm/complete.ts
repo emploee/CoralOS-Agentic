@@ -41,7 +41,8 @@ export interface CompleteOpts {
  */
 export async function complete(opts: CompleteOpts): Promise<string> {
   const provider = pickProvider()
-  const model = opts.model ?? process.env.LLM_MODEL ?? DEFAULT_MODEL[provider]
+  // `||` not `??`: coral manifests default unset options to "" — an empty LLM_MODEL must not win.
+  const model = opts.model || process.env.LLM_MODEL || DEFAULT_MODEL[provider]
   const maxTokens = opts.maxTokens ?? 512
   const trace = process.env.TRACE === '1'
   if (trace) console.error(`[llm] provider=${provider} model=${model}`)

@@ -104,6 +104,10 @@ const shortAddr = (a) => (a ? `${String(a).slice(0, 4)}...${String(a).slice(-4)}
 const addrLink = (a) => `https://explorer.solana.com/address/${a}?cluster=devnet`
 const txLink = (s) => `https://explorer.solana.com/tx/${s}?cluster=devnet`
 const DEVNET_RPC = 'https://api.devnet.solana.com'
+const fmtTime = (s) => {
+  try { return new Date(s).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }
+  catch { return s || '-' }
+}
 
 // Detect an injected browser wallet (Phantom / Solflare) - no wallet-adapter needed for a no-build app.
 function getWallet() {
@@ -281,6 +285,54 @@ function SettleResult({ r }) {
       <a href=${addrLink(ESCROW_PROGRAM)} target="_blank" rel="noreferrer">escrow program open</a></div>`
 }
 
+function RunsPanel({ runs, selectedRun, onSelect, onGrade, grading }) {
+  const top = selectedRun ?? runs?.[0]
+  const outcome = top?.outcome
+  return html`
+    <section class="runs">
+      <div class="runs-head">
+        <div>
+          <h3>Runs</h3>
+          <p>Each paid read persists its request, delivered answer, escrow receipts, and reality grade when available.</p>
+        </div>
+        <button class="grade-btn" disabled=${grading} onClick=${onGrade}>${grading ? 'checking...' : 'grade reality'}</button>
+      </div>
+      ${!runs && html`<p class="muted">loading run ledger...</p>`}
+      ${runs && !runs.length && html`<p class="muted">No paid runs yet. Pick a live fixture and let the auto-settle complete.</p>`}
+      ${runs?.length > 0 && html`
+        <div class="runs-grid">
+          <div class="run-list">
+            ${runs.map((r) => html`
+              <button key=${r.runId} class=${'run-row' + (top?.runId === r.runId ? ' on' : '')} onClick=${() => onSelect(r)}>
+                <span class="run-id">#${r.round}</span>
+                <span class="run-main">${r.want?.arg ?? 'txline read'}</span>
+                <span class=${'run-status ' + r.status}>${r.status}</span>
+                <span class="run-time">${fmtTime(r.updatedAt)}</span>
+              </button>`)}
+          </div>
+          ${top && html`
+            <div class="run-detail">
+              <div class="rd-top">
+                <span class="bind-tag">${top.runId}</span>
+                <span>${top.escrow?.amountSol ?? top.want?.budgetSol ?? SETTLE_SOL} SOL</span>
+              </div>
+              <p class="rd-call">${top.delivery?.data?.analysis?.call ?? 'delivery not recorded'}</p>
+              <div class="rd-lines">
+                <span>request <b>${top.want?.arg}</b></span>
+                ${top.delivery?.sha256 && html`<span>delivery sha <b>${shortAddr(top.delivery.sha256)}</b></span>`}
+                ${top.escrow?.reference && html`<span>escrow ref <b>${shortAddr(top.escrow.reference)}</b></span>`}
+                ${outcome && html`<span>reality <b>${outcome.status === 'graded'
+                  ? `${outcome.actual?.winner ?? 'unknown'} - ${outcome.correct === true ? 'hit' : outcome.correct === false ? 'miss' : 'unscored'}`
+                  : 'pending'}</b></span>`}
+              </div>
+              <div class="rd-txs">
+                ${top.txs?.map((tx) => html`<a key=${tx.kind + tx.sig} href=${tx.explorer} target="_blank" rel="noreferrer">${tx.kind}</a>`)}
+              </div>
+            </div>`}
+        </div>`}
+    </section>`
+}
+
 // Pay for the read yourself with Phantom / Solflare - a real Solana Pay reference-tagged transfer to
 // the seller, verified on-chain by the proxy. The wallet signs; we submit to devnet so the cluster is
 // guaranteed regardless of the wallet's setting. (Needs a Devnet-funded wallet.)
@@ -313,7 +365,7 @@ function PayButton({ fixture }) {
       setSt({ status: 'busy', msg: 'confirming on devnet...' })
       await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed')
 
-      const v = await (await fetch(`${PROXY}/api/pay-verify?sig=${sig}&reference=${intent.reference}&amount=${intent.amountSol}&recipient=${intent.recipient}`)).json()
+      const v = await (await fetch(`${PROXY}/api/pay-verify?sig=${sig}&reference=${intent.reference}&amount=${intent.amountSol}&recipient=${intent.recipient}&fixtureId=${fixture.FixtureId}`)).json()
       setSt({ status: v.ok ? 'ok' : 'error', msg: v.ok ? '' : 'paid, but verification failed', explorer: v.explorer ?? txLink(sig), amountSol: intent.amountSol })
     } catch (e) {
       setSt({ status: 'error', msg: String(e?.message ?? e).slice(0, 100) })
@@ -344,7 +396,28 @@ function App() {
   const [edge, setEdge] = useState(null)
   const [settleRes, setSettleRes] = useState(null)
   const [settling, setSettling] = useState(false)
+  const [runs, setRuns] = useState(null)
+  const [selectedRun, setSelectedRun] = useState(null)
+  const [grading, setGrading] = useState(false)
   const selected = fixtures ? fixtures[idx] : null
+
+  const loadRuns = async () => {
+    try {
+      const d = await (await fetch(`${PROXY}/api/runs`)).json()
+      if (Array.isArray(d)) {
+        setRuns(d)
+        setSelectedRun((r) => r ? (d.find((x) => x.runId === r.runId) ?? d[0] ?? null) : (d[0] ?? null))
+      }
+    } catch {
+      setRuns((r) => r ?? [])
+    }
+  }
+
+  const gradeRuns = async () => {
+    setGrading(true)
+    try { await fetch(`${PROXY}/api/grade-runs`); await loadRuns() }
+    finally { setGrading(false) }
+  }
 
   // load the board: fixtures with verified live odds (inlined). The free World Cup tier's odds are
   // intermittent and the proxy needs a few seconds to subscribe on a cold start, so we KEEP polling
@@ -368,6 +441,14 @@ function App() {
     }
     load()
     return () => { alive = false; if (timer) clearTimeout(timer) }
+  }, [])
+
+  useEffect(() => {
+    let alive = true
+    const tick = async () => { if (alive) await loadRuns() }
+    tick()
+    const timer = setInterval(tick, 8000)
+    return () => { alive = false; clearInterval(timer) }
   }, [])
 
   // odds come inlined on live fixtures (from /api/board); demo fixtures use the baked-in board.
@@ -400,7 +481,7 @@ function App() {
       setSettling(true)
       try {
         const s = await (await fetch(`${PROXY}/api/settle?fixtureId=${selected.FixtureId}&amount=${SETTLE_SOL}`)).json()
-        if (alive) setSettleRes(s)
+        if (alive) { setSettleRes(s); loadRuns() }
       } catch (err) {
         if (alive) setSettleRes({ ok: false, error: String(err) })
       } finally {
@@ -447,6 +528,8 @@ function App() {
             </div>
           </div>
         </section>`}
+
+      <${RunsPanel} runs=${runs} selectedRun=${selectedRun} onSelect=${setSelectedRun} onGrade=${gradeRuns} grading=${grading} />
 
       <h3 class="grid-title">All fixtures - tap a match</h3>
       <div class="grid">

@@ -5,7 +5,7 @@
  * (`@pay/agent-runtime`) — the market wire protocol has one source of truth.
  */
 import {
-  verb, messageRound, parseWant, parseBid, parseAward, parseEscrowRequired, parseDeposited,
+  verb, messageRound, parseWant, parseBid, parseAward, parseEscrowRequired, parseDeposited, parseVerified,
 } from '@pay/agent-runtime'
 
 export interface RawMessage {
@@ -31,6 +31,8 @@ export interface Round {
   escrow?: { reference: string; seller: string; amountSol: number; deadlineSecs: number }
   deposit?: { sig: string; buyer: string }
   delivered?: { raw: string; data?: unknown }
+  /** The independent verifier's verdict (release is gated on it when a verifier is in session). */
+  verification?: { verdict: 'pass' | 'fail'; by: string; reason?: string }
   release?: { sig: string }
   refunded?: boolean
   status: RoundStatus
@@ -80,6 +82,14 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     const dep = parseDeposited(text)
     if (dep) { const r = get(dep.round); r.deposit = { sig: dep.sig, buyer: dep.buyer }; if (r.status !== 'settled') r.status = 'deposited'; continue }
 
+    const verified = parseVerified(text)
+    if (verified) {
+      get(verified.round).verification = {
+        verdict: verified.verdict, by: verified.by, ...(verified.reason ? { reason: verified.reason } : {}),
+      }
+      continue
+    }
+
     const v = verb(text)
     const r = messageRound(text)
     if (v === 'DELIVERED' && r != null) {
@@ -87,7 +97,8 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
       const raw = text.replace(/^DELIVERED\s+round=\d+\s*/i, '').trim()
       round.delivered = { raw, data: tryJson(raw) }
       if (round.status !== 'settled') round.status = 'delivered'
-    } else if (v === 'RELEASED' && r != null) {
+    } else if ((v === 'RELEASED' || v === 'ARBITER_RELEASED') && r != null) {
+      // the buyer emits ARBITER_RELEASED in arbiter mode (the default) — same settled state
       const round = get(r)
       const sig = text.match(/sig=(\S+)/)?.[1]
       if (sig) round.release = { sig }

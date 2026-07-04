@@ -1,5 +1,6 @@
 /**
- * LLM bidding - the seller's brain in the marketplace.
+ * LLM bidding - the seller's brain in the marketplace (moved here from coral-agents/seller-agent so
+ * every harness adapter shares the same code-enforced economics).
  *
  * On a WANT, the seller asks the LLM whether to bid and at what price, given its persona and cost
  * floor. The model PROPOSES; this code ENFORCES the economics, mirroring llm_buyer.ts:
@@ -9,27 +10,15 @@
  * A prompt injection inside a WANT therefore can't make the seller bid at a loss.
  */
 import { complete, parseJsonReply, type Want, type CompleteOpts } from '@pay/agent-runtime'
-
-export interface SellerConfig {
-  name: string
-  services: string[]
-  floorSol: number
-  persona: string
-}
-
-export interface BidDecision {
-  bid: boolean
-  priceSol: number
-  note: string
-}
+import type { SellerConfig, BidDecision } from './types.js'
 
 /** Build a seller's market config from its env (set per persona in coral-agent.toml). */
-export function sellerConfigFromEnv(name: string): SellerConfig {
+export function sellerConfigFromEnv(name: string, env: NodeJS.ProcessEnv = process.env): SellerConfig {
   return {
     name,
-    services: (process.env.SERVICES ?? 'txline').split(',').map((s) => s.trim()).filter(Boolean),
-    floorSol: Number(process.env.FLOOR_SOL ?? '0.0003'),
-    persona: process.env.PERSONA ?? 'a TxODDS specialist selling verified fair-line reads',
+    services: (env.SERVICES ?? 'txline').split(',').map((s) => s.trim()).filter(Boolean),
+    floorSol: Number(env.FLOOR_SOL ?? '0.0003'),
+    persona: env.PERSONA ?? 'a TxODDS specialist selling verified fair-line reads',
   }
 }
 

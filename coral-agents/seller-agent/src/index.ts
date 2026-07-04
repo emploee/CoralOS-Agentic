@@ -13,7 +13,7 @@ import { PublicKey } from '@solana/web3.js'
 import {
   startCoralAgent, verb, parseWant, formatBid, parseAward, formatEscrowRequired, parseDeposited,
 } from '@pay/agent-runtime'
-import { decideBid, sellerConfigFromEnv } from './bidder.js'
+import { adapterFromEnv, sellerConfigFromEnv } from '@pay/harness-runtime'
 import { makeProgram, isFunded } from './escrow.js'
 import { deliverService } from './service.js'
 
@@ -24,6 +24,8 @@ const ESCROW_DEADLINE_SECS = Number(process.env.ESCROW_DEADLINE_SECS ?? '600')
 const SETTLEMENT_MODE = (process.env.SETTLEMENT_MODE ?? 'arbiter').toLowerCase() === 'direct' ? 'direct' : 'arbiter'
 const cfg = sellerConfigFromEnv(NAME)
 const trace = process.env.TRACE === '1'
+// The harness does the work; this agent keeps the wallet, the protocol, and the escrow checks.
+const adapter = adapterFromEnv(deliverService)
 
 interface Quote { service: string; arg: string; priceSol: number }
 const quoted = new Map<number, Quote>()
@@ -38,7 +40,7 @@ function boundReference(order: Quote & { round: number }): string {
 }
 
 await startCoralAgent({ agentName: NAME }, async (ctx) => {
-  console.error(`[${NAME}] ready: services=[${cfg.services.join(',')}] floor=${cfg.floorSol} settlement=${SETTLEMENT_MODE} wallet=${SELLER_WALLET}`)
+  console.error(`[${NAME}] ready: services=[${cfg.services.join(',')}] floor=${cfg.floorSol} settlement=${SETTLEMENT_MODE} harness=${adapter.name} wallet=${SELLER_WALLET}`)
 
   while (true) {
     try {
@@ -49,7 +51,7 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
 
       const want = parseWant(text)
       if (want) {
-        const decision = await decideBid(want, cfg)
+        const decision = await adapter.quote(want, cfg)
         if (decision.bid) {
           quoted.set(want.round, { service: want.service, arg: want.arg, priceSol: decision.priceSol })
           await ctx.reply(mention, formatBid({
@@ -104,8 +106,11 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
           }
           awarded.delete(deposited.reference)
           if (trace) console.error(`[${NAME}] escrow funded via ${deposited.settlement ?? 'direct'} -> delivering round ${deposited.round}`)
-          const result = await deliverService(`${order.service} ${order.arg}`.trim())
-          await ctx.reply(mention, `DELIVERED round=${deposited.round} ${result}`)
+          const delivery = await adapter.run(
+            { round: deposited.round, service: order.service, arg: order.arg, priceSol: order.priceSol, reference: deposited.reference },
+            trace ? (e) => console.error(`[${NAME}] harness ${e.kind}${e.text ? `: ${e.text}` : ''}`) : undefined,
+          )
+          await ctx.reply(mention, `DELIVERED round=${deposited.round} ${delivery.payload}`)
         } catch (e) {
           await ctx.reply(mention, `ERROR: settlement failed - ${(e as Error).message}`)
         }

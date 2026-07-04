@@ -29,9 +29,12 @@ is **Venice AI** (free credits; `LLM_PROVIDER` also accepts `openai`/`anthropic`
 |-----------|---------|
 | `examples/txodds/` | The World Cup Oracle (the headline example). `agent/` (`edge.ts` — the verified-odds→LLM-call transform; `service.ts` — the `deliverService` fork point; `escrow.ts` — the buyer-side escrow client), `server/` (`mint.ts`, `proxy.ts` — the live data + escrow proxy), `web/` (the no-build React app), `escrow/` (the Anchor escrow + arbiter programs — the settlement spine). |
 | `examples/agent-economy/` | **Three front doors** on CoralOS (needs Docker): `autonomous/` (agent→agent purchase), `bridge/` (HTTP bridge + React checkout — the human front door), `quickstart/` (bare 402 pay-per-call, no Docker/CoralOS), `web/` (3-tab dashboard), `config/coral.toml`. Escrow references point at `examples/txodds/escrow/`. |
-| `examples/marketplace/` | **Competitive bidding market** (needs Docker): `start.ts` launches a buyer + persona sellers in one CoralOS session; `feed/` (SSE feed folding session state into rounds, with tests), `web/` (React visualizer + Playwright tests). Settles via the escrow. |
-| `packages/agent-runtime/` | The runtime, one folder each under `src/`: the LLM provider shim (`llm/`), Solana Pay + devnet guard (`solana/`), a CoralOS MCP client (`coral/`), and the market protocol (`market/`). Root `src/index.ts` re-exports all of them. The oracle uses `llm/` + `solana/`; `coral/` + `market/` power the multi-agent examples. |
-| `coral-agents/` | The agents coral-server launches per session: `buyer-agent`, `seller-agent` (+ the `seller-worldcup` persona), plus `broker/` (swarm — buys upstream, resells at a markup, escrow both legs), `echo-agent/` (minimal test agent), `user_proxy/` (the human's puppet for the bridge). |
+| `examples/marketplace/` | **Competitive bidding market** (needs Docker): `start.ts` launches a buyer + persona sellers in one CoralOS session; `feed/` (folds session state into rounds AND persists each round to the **run ledger** `runs/`; serves `/api/runs` + `/api/reputation`; replays a session from disk when coral is down), `web/` (React visualizer + Playwright tests). Settles via the escrow. |
+| `examples/freelancer/` | **Verifier-gated freelancer market** (needs Docker): heterogeneous harnesses (`seller-scribe` node-llm vs `seller-claude` Claude Code) bid on a brief; `verifier-agent` gates the release. |
+| `examples/research/` | **Event-driven research market** (needs Docker + the txodds proxy): `src/watcher.ts` turns live odds moves into queued WANTs (`detectEvents`, tested); the buyer polls it via `WANT_FEED_URL` — quiet board, no spend. |
+| `packages/agent-runtime/` | The runtime, one folder each under `src/`: the LLM provider shim (`llm/`), Solana Pay + devnet guard (`solana/`), a CoralOS MCP client (`coral/`), the market protocol incl. VERIFY/VERIFIED (`market/`), the **run ledger + reputation** (`ledger/`), and the **policy choke point** (`policy/` — spend caps, payout/award-price binding, verifier gate). Root `src/index.ts` re-exports all of them. |
+| `packages/harness-runtime/` | The **harness adapter SDK**: one `HarnessAdapter` interface (`quote`/`run`, hash-bound deliveries, streamed events) so a seller can be a prompt (`node-llm`), headless Claude Code (`claude-code`, Coral MCP config injection), or any CLI (`HARNESS=cli HARNESS_CMD='hermes {prompt}'`). Harness processes never hold keys. Build after agent-runtime. |
+| `coral-agents/` | The agents coral-server launches per session: `buyer-agent` (policy-enforced, verifier-gated, event-mode capable), `seller-agent` (harness-adapter seller; personas `seller-worldcup`/`seller-scribe`/`seller-claude`/`seller-moves`/`seller-stats` reuse its image), `verifier-agent` (independent delivery checks — release gate), plus `broker/` (swarm — buys upstream, resells at a markup, escrow both legs), `echo-agent/` (minimal test agent), `user_proxy/` (the human's puppet for the bridge). |
 | `scripts/` | `txodds.js` (the `npm run dev` launcher — proxy + web + browser) and `setup.js` (devnet wallet generation → `.env`). |
 
 ## Commands
@@ -57,7 +60,8 @@ npm run mint                # mint a fresh TxLINE free-tier token into .env (opt
 cd packages/agent-runtime && npm install
 cd packages/agent-runtime && npm run typecheck
 cd packages/agent-runtime && npm test
-cd packages/agent-runtime && npm run build   # dependents (examples/txodds) need its dist
+cd packages/agent-runtime && npm run build    # dependents (examples/txodds, harness-runtime, agents) need its dist
+cd packages/harness-runtime && npm run build  # after agent-runtime; the seller needs its dist
 ```
 
 ### Typecheck / test the example

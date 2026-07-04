@@ -1,9 +1,10 @@
 /**
- * TxODDS-only seller service.
+ * Seller services.
  *
- * The CoralOS demo sells one thing: a verified TxLINE fair-line read for a fixture. Generic legacy
- * services were useful scaffolding, but they dilute the market story and are intentionally not routed
- * here anymore.
+ * `txline` — the headline product: a verified TxLINE fair-line read for a fixture.
+ * `freelance` — the generic LLM worker (the freelancer market's baseline seller): the brief goes to
+ * the LLM, the deliverable comes back as JSON. Without an LLM key it returns an error payload, which
+ * the verifier fails and the buyer refuses to pay for — no-capability sellers don't get released.
  */
 import { complete, parseJsonReply } from '@pay/agent-runtime'
 
@@ -12,10 +13,31 @@ const TXLINE_BASE = process.env.TXLINE_BASE_URL || 'https://txline-dev.txodds.co
 export async function deliverService(request: string): Promise<string> {
   const [first, ...rest] = request.trim().split(/\s+/).filter(Boolean)
   const service = (first ?? 'txline').toLowerCase()
+  if (service === 'freelance') return freelanceService(rest.join(' '))
   if (service !== 'txline') {
-    return JSON.stringify({ error: 'unsupported service', service, supported: ['txline'] })
+    return JSON.stringify({ error: 'unsupported service', service, supported: ['txline', 'freelance'] })
   }
   return txlineService(rest.join(' '))
+}
+
+async function freelanceService(brief: string): Promise<string> {
+  try {
+    const text = await complete({
+      system:
+        'You are a freelance agent delivering a PAID order. Produce the deliverable for the brief. ' +
+        'Reply ONLY with JSON: {"deliverable": <string or object>, "notes": "<under 15 words>"}.',
+      user: `Brief: ${brief || 'unspecified'}`,
+      maxTokens: 700,
+    })
+    const parsed = parseJsonReply<{ deliverable?: unknown; notes?: string }>(text)
+    return JSON.stringify({
+      service: 'freelance', brief,
+      result: parsed ?? { deliverable: text.trim() },
+    })
+  } catch (e) {
+    // No LLM -> an honest error payload; the verifier fails it and the escrow is never released.
+    return JSON.stringify({ service: 'freelance', brief, error: `llm unavailable: ${(e as Error).message}` })
+  }
 }
 
 async function txlineGet(path: string): Promise<unknown> {

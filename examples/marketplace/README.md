@@ -28,7 +28,7 @@ The escrow program is already deployed to devnet — no `anchor deploy` needed.
 
 ```sh
 (cd examples/txodds && npm run mint)       # one-time: free devnet TxLINE token → .env
-bash build-agents.sh seller buyer          # build the two agent images (sellers reuse the seller image)
+bash build-agents.sh                       # build the agent images (sellers reuse the seller image)
 docker compose up -d coral                 # CoralOS (MCP coordinator)
 cd examples/marketplace && npm install && npm start
 ```
@@ -68,11 +68,19 @@ Watch the auction in a browser instead of the logs — a read-only visualizer (n
 each round's bids, the winner + reasoning, and the escrow settlement with Explorer links:
 
 ```sh
-just feed            # the feed server on :4000 (in another shell)
-just dashboard       # the UI on :5173 → open ?session=<the market session id>
+cd feed && SESSION=<the market session id> npm start   # the feed server on :4000 (another shell)
+npm run marketplace:web                                # from the repo root — the UI on :5173
 ```
 
 It's e2e-tested with fixtures (no devnet needed) — see [`web/`](web/README.md).
+
+The feed also writes every round to the **run ledger** (`runs/<session>/round-<n>/` — want, bids,
+award reasoning, escrow + deposit tx, sha256-bound delivery, verifier verdict, Explorer-linked txs,
+raw transcript), serves `/api/runs` + `/api/reputation`, and **replays a session from disk when
+coral-server is down**. Details: [`feed/`](feed/README.md).
+
+Sibling markets on the same rails: [`../freelancer`](../freelancer/README.md) (harness sellers +
+verifier-gated release) and [`../research`](../research/README.md) (odds events trigger the WANTs).
 
 ## Demo flourishes
 

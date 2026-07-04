@@ -1,14 +1,21 @@
 # buyer-agent
 
-The marketplace buyer broadcasts a `WANT`, collects competing seller bids, awards the best value, and
-settles the winner through the arbiter-gated escrow by default.
+The marketplace buyer broadcasts a `WANT` (or, in event mode, polls a feed for one), collects competing
+seller bids, awards the best value — weighing each seller's ledger-derived track record when
+`REPUTATION_URL` is set — and settles the winner through the arbiter-gated escrow by default.
+**Every deposit and release passes the policy choke point** (`enforce()` from `@pay/agent-runtime`):
+spend caps, service allowlist, payout binding, award-price binding (a seller can't inflate the escrow
+after winning), rate limit, verifier gate.
 
 ```text
 WANT -> BID* -> AWARD
   -> ESCROW_REQUIRED settlement=arbiter reference=<bound order>
+  -> [policy: caps, payout + award-price binding]
   -> ARBITER_OPENED / DEPOSITED vault=<vault PDA>
-  -> DELIVERED
-  -> ARBITER_RELEASED
+  -> DELIVERED (hash-bound payload)
+  -> VERIFY -> VERIFIED pass|fail        (when VERIFIER_AGENT is set)
+  -> [policy: verifier gate]
+  -> ARBITER_RELEASED   (fail/timeout -> funds stay refundable)
 ```
 
 > **CoralOS docs:** these messages ride Coral threads with `@mentions`
@@ -23,16 +30,29 @@ WANT -> BID* -> AWARD
 
 | File | Role |
 |---|---|
-| `src/index.ts` | Market loop: WANT, bid collection, award, arbiter open, delivery wait, release |
+| `src/index.ts` | Market loop: WANT, bid collection, award, policy-gated deposit, delivery wait, verify, policy-gated release |
 | `src/arbiter.ts` | Arbiter wrapper client: config, vault PDA, open, release |
 | `src/escrow.ts` | Legacy direct base escrow client |
-| `src/guard.ts` | Seller payout binding and legacy payment guards |
+| `src/wantFeed.ts` | Event mode: `fetchNextWant()` — poll the research watcher for the next job |
+| `src/reputation.ts` | `fetchReputationLines()` — the feed's `/api/reputation` folded into the award prompt |
+| `src/guard.ts` | Legacy payout guard (subsumed by the policy choke point's `payout-binding` rule) |
 
 ## Env
 
 `BUYER_KEYPAIR_B58` funds the order. `ARBITER_KEYPAIR_B58` signs arbiter release/refund.
 `SELLER_WALLET` binds the payout wallet. `BUYER_SERVICE` defaults to `txline`, `BUYER_ARG` defaults to
 an `edge <fixtureId>` style request, and `MARKET_SELLERS` controls the competing sellers.
+
+New layers (all optional — unset means the classic loop):
+
+- `VERIFIER_AGENT` + `VERIFY_WINDOW_MS` — hand each delivery to this agent and release **only** on a
+  `VERIFIED pass` ([verifier-agent](../verifier-agent/README.md)); no verdict → funds stay refundable.
+- `WANT_FEED_URL` — event mode: poll this URL for the next job instead of rotating `BUYER_ARGS`
+  (the research market's watcher); empty queue → no WANT, no spend.
+- `REPUTATION_URL` — the feed's `/api/reputation`; sellers' run-ledger track records enter the
+  best-value prompt.
+- `POLICY_MAX_SOL_PER_ROUND`, `POLICY_MAX_SOL_PER_SESSION`, `POLICY_SERVICES`,
+  `POLICY_MIN_INTERVAL_MS` — the choke point's knobs (round cap defaults to the budget).
 
 For best-value bid selection set an LLM key — the kit's LLM is **Venice AI** (`LLM_PROVIDER=venice` +
 `VENICE_API_KEY`; new accounts get $50 free via code `IMPERIAL50` at

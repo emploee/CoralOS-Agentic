@@ -17,6 +17,7 @@
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
     "@pay/agent-runtime": "file:../../packages/agent-runtime",
+    "@pay/payment-runtime": "file:../../packages/payment-runtime",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
     "axios": "^1.11.0",

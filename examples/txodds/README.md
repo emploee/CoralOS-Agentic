@@ -70,6 +70,18 @@ On the board you can also click **Pay with Phantom / Solflare** to buy the read 
 **Solana Pay** reference-tagged transfer from your wallet to the seller, verified on-chain by the proxy
 (`/api/pay-intent` + `/api/pay-verify`). Needs a Devnet-funded wallet.
 
+The board also includes **Run Pay.sh procurement demo**. That route calls
+`/api/pay-sh-edge`, has the seller buy simulated upstream context through the shared
+`payment-runtime` Pay.sh rail, writes `PAYMENT_REQUIRED -> PAYMENT_PROOF -> PAYMENT_CONFIRMED` into
+the run transcript, then settles the buyer payment through the same escrow path. Each run folder gets
+a `procurement.json` receipt beside the delivered read and settlement files.
+
+**Every settle leaves a run** — agent-settled or wallet-paid, the proxy persists it to a run ledger
+(`data/txodds-runs/`, session `web-oracle`): the read, the order-bound reference, the txs. The UI's
+**Runs panel** lists them (`/api/runs`, `/api/run?runId=`), and **Grade runs** (`/api/grade-runs`)
+checks each settled read against the **actual match result** once the fixture resolves, writing
+`outcome.json` into the run folder — paid reads graded against reality, not just delivered.
+
 ## CoralOS round (the multi-agent view)
 
 The web demo above is one agent. For the **multi-agent** version - a buyer agent + a World Cup seller

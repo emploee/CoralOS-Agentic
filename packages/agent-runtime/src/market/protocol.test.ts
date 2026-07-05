@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   formatWant, parseWant, formatBid, parseBid, formatAward, parseAward,
   formatEscrowRequired, parseEscrowRequired, formatDeposited, parseDeposited,
+  formatPaymentRequired, parsePaymentRequired, formatPaymentProof, parsePaymentProof,
+  formatPaymentConfirmed, parsePaymentConfirmed, formatSettled, parseSettled,
+  formatRefunded, parseRefunded,
   selectBids, pickCheapest, verb, messageRound,
   type Bid,
 } from './protocol.js'
@@ -44,6 +47,38 @@ describe('AWARD + ESCROW_REQUIRED round-trip', () => {
   it('DEPOSITED', () => {
     const d = { round: 9, reference: 'R3f', buyer: 'BuYeRwa11et', sig: '5h2abc', settlement: 'arbiter' as const, vault: 'VaU1t', arbiter: 'ArB1t3r' }
     expect(parseDeposited(formatDeposited(d))).toEqual(d)
+  })
+})
+
+describe('generic payment messages', () => {
+  it('PAYMENT_REQUIRED', () => {
+    const p = {
+      round: 9,
+      rail: 'x402' as const,
+      amount: '0.05',
+      currency: 'USDC' as const,
+      reference: 'order-9',
+      seller: 'research-agent',
+      url: 'https://seller.example/service/txline-edge',
+      deadlineSecs: 600,
+    }
+    expect(parsePaymentRequired(formatPaymentRequired(p))).toEqual(p)
+  })
+
+  it('PAYMENT_PROOF and PAYMENT_CONFIRMED', () => {
+    const proof = { round: 9, rail: 'pay-sh' as const, reference: 'order-9', proof: 'receipt-1', buyer: 'seller-agent', txSignature: '5sig' }
+    expect(parsePaymentProof(formatPaymentProof(proof))).toEqual(proof)
+
+    const confirmed = { round: 9, rail: 'pay-sh' as const, reference: 'order-9', paid: true, amount: '0.03', currency: 'USDC' as const, txSignature: '5sig' }
+    expect(parsePaymentConfirmed(formatPaymentConfirmed(confirmed))).toEqual(confirmed)
+  })
+
+  it('SETTLED and REFUNDED', () => {
+    const settled = { round: 9, rail: 'spl-usdc' as const, reference: 'order-9', amount: '0.20', currency: 'USDC' as const, txSignature: 'settleSig' }
+    expect(parseSettled(formatSettled(settled))).toEqual(settled)
+
+    const refunded = { round: 10, rail: 'escrow' as const, reference: 'order-10', reason: 'verifier failed' }
+    expect(parseRefunded(formatRefunded(refunded))).toEqual(refunded)
   })
 })
 

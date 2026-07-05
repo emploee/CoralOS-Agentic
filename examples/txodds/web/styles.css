@@ -178,7 +178,7 @@ main { max-width: 1120px; margin: 0 auto; padding: 22px 24px 64px; }
 .pipeline { max-width: 1120px; margin: 0 auto 26px; padding: 0 24px; }
 .pipe-title { font: 700 14px 'Inter', sans-serif; color: var(--text); margin-bottom: 12px; }
 .pipe-title span { color: var(--muted); font-weight: 400; }
-.pipe-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.pipe-steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
 .pipe-step { position: relative; background: var(--card); border: 1px solid var(--card-line); border-radius: 12px; padding: 14px 16px; }
 .pipe-h { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .pipe-ico { font-size: 20px; }
@@ -203,6 +203,12 @@ main { max-width: 1120px; margin: 0 auto; padding: 22px 24px 64px; }
   transition: transform .12s, box-shadow .12s; box-shadow: 0 8px 22px rgba(124,92,255,.3); }
 .pay-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(124,92,255,.45); }
 .pay-btn:disabled { opacity: .65; cursor: default; }
+.pay-sh-btn { font: 700 13px 'Inter', sans-serif; color: #06210f; background: linear-gradient(90deg, var(--sol), #8dfbd0);
+  border: none; border-radius: 10px; padding: 10px 16px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+  transition: transform .12s, box-shadow .12s; box-shadow: 0 8px 22px rgba(20,241,149,.22); }
+.pay-sh-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(20,241,149,.34); }
+.pay-sh-btn:disabled { opacity: .58; cursor: default; }
+.pay-sh-result { flex-basis: 100%; }
 .pay-err { font-size: 12px; color: var(--away); }
 .settled { font-size: 13px; }
 .settled.ok { color: var(--sol); }
@@ -250,6 +256,11 @@ main { max-width: 1120px; margin: 0 auto; padding: 22px 24px 64px; }
 @media (max-width: 720px) {
   .runs-head { flex-direction: column; }
   .runs-grid { grid-template-columns: 1fr; }
+}
+
+@media (min-width: 721px) and (max-width: 980px) {
+  .pipe-steps { grid-template-columns: repeat(2, 1fr); }
+  .pipe-arrow { display: none; }
 }
 
 /* research watcher event badge on a match card ("line moved -> WANT queued") */

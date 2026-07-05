@@ -208,7 +208,7 @@ function EdgeCard({ edge }) {
 }
 
 // the explainer - what the app actually does, end to end, threaded with the selected fixture's numbers
-function Pipeline({ edge, source, settleRes }) {
+function Pipeline({ edge, source, settleRes, procurementRes }) {
   const fav = edge?.fair?.favourite
   const steps = [
     { n: 1, title: 'Verified data',
@@ -220,6 +220,9 @@ function Pipeline({ edge, source, settleRes }) {
     { n: 3, title: 'Settled by a neutral arbiter',
       desc: 'The buyer funds a per-order escrow but cannot unilaterally refund - a trusted neutral arbiter program releases to the seller on verified delivery. The escrow reference is bound to the read (sha256), so the on-chain order IS the data bought. Real devnet txs, linked on Explorer.',
       live: settleRes?.ok ? `${settleRes.amountSol} SOL${settleRes.mode === 'arbiter' ? ' - arbiter' : ''}` : `${SETTLE_SOL} SOL` },
+    { n: 4, title: 'Optional upstream spend',
+      desc: 'The seller can buy an upstream API through the Pay.sh rail before delivery. The run ledger stores PAYMENT_REQUIRED, PAYMENT_PROOF, and PAYMENT_CONFIRMED alongside the escrow settlement.',
+      live: procurementRes?.procurement?.paid ? `${procurementRes.procurement.amount} ${procurementRes.procurement.currency}` : 'Pay.sh' },
   ]
   return html`
     <section class="pipeline">
@@ -230,7 +233,7 @@ function Pipeline({ edge, source, settleRes }) {
             <div class="pipe-h"><span class="pipe-n">0${s.n}</span><span class="pipe-live">${s.live}</span></div>
             <h4>${s.title}</h4>
             <p>${s.desc}</p>
-            ${i < 2 && html`<span class="pipe-arrow">-></span>`}
+            ${i < steps.length - 1 && html`<span class="pipe-arrow">-></span>`}
           </div>`)}
       </div>
     </section>`
@@ -288,6 +291,21 @@ function SettleResult({ r }) {
       <a href=${addrLink(ESCROW_PROGRAM)} target="_blank" rel="noreferrer">escrow program open</a></div>`
 }
 
+function ProcurementResult({ r }) {
+  if (!r) return null
+  if (r.ok) return html`
+    <div class="settled ok pay-sh-result">
+      <div class="settled-line"><span class="bind-tag">Pay.sh</span>
+        seller procured upstream context for <b>${r.procurement?.amount} ${r.procurement?.currency}</b>
+        then settled <b>${r.amountSol} SOL</b> to the seller
+      </div>
+      <div class="settled-line bind">
+        proof <b>${shortAddr(r.procurement?.proof)}</b> stored in the run ledger as PAYMENT_PROOF
+      </div>
+    </div>`
+  return html`<div class="settled sim">Pay.sh demo unavailable${r.error ? ` (${String(r.error).slice(0, 70)})` : ''}</div>`
+}
+
 function RunsPanel({ runs, selectedRun, onSelect, onGrade, grading }) {
   const top = selectedRun ?? runs?.[0]
   const outcome = top?.outcome
@@ -324,6 +342,7 @@ function RunsPanel({ runs, selectedRun, onSelect, onGrade, grading }) {
                 <span>request <b>${top.want?.arg}</b></span>
                 ${top.delivery?.sha256 && html`<span>delivery sha <b>${shortAddr(top.delivery.sha256)}</b></span>`}
                 ${top.escrow?.reference && html`<span>escrow ref <b>${shortAddr(top.escrow.reference)}</b></span>`}
+                ${top.verification?.upstreamPayment?.rail && html`<span>upstream <b>${top.verification.upstreamPayment.rail} ${top.verification.upstreamPayment.amount} ${top.verification.upstreamPayment.currency}</b></span>`}
                 ${outcome && html`<span>reality <b>${outcome.status === 'graded'
                   ? `${outcome.actual?.winner ?? 'unknown'} - ${outcome.correct === true ? 'hit' : outcome.correct === false ? 'miss' : 'unscored'}`
                   : 'pending'}</b></span>`}
@@ -398,6 +417,8 @@ function App() {
   const [loadingOdds, setLoadingOdds] = useState(false)
   const [edge, setEdge] = useState(null)
   const [settleRes, setSettleRes] = useState(null)
+  const [procurementRes, setProcurementRes] = useState(null)
+  const [procuring, setProcuring] = useState(false)
   const [settling, setSettling] = useState(false)
   const [runs, setRuns] = useState(null)
   const [selectedRun, setSelectedRun] = useState(null)
@@ -421,6 +442,21 @@ function App() {
     setGrading(true)
     try { await fetch(`${PROXY}/api/grade-runs`); await loadRuns() }
     finally { setGrading(false) }
+  }
+
+  const runPayShDemo = async () => {
+    if (!selected || source !== 'live') return
+    setProcuring(true)
+    setProcurementRes(null)
+    try {
+      const r = await (await fetch(`${PROXY}/api/pay-sh-edge?fixtureId=${selected.FixtureId}&amount=${SETTLE_SOL}&upstreamUsdc=0.03`)).json()
+      setProcurementRes(r)
+      await loadRuns()
+    } catch (e) {
+      setProcurementRes({ ok: false, error: String(e?.message ?? e) })
+    } finally {
+      setProcuring(false)
+    }
   }
 
   // load the board: fixtures with verified live odds (inlined). The free World Cup tier's odds are
@@ -486,7 +522,7 @@ function App() {
   useEffect(() => {
     if (!selected) return
     let alive = true
-    setEdge(null); setSettleRes(null); setSettling(false)
+    setEdge(null); setSettleRes(null); setProcurementRes(null); setSettling(false)
     ;(async () => {
       // 1) the agent's call
       let e = clientEdge(selected)
@@ -525,7 +561,7 @@ function App() {
         turns it into <b>fair (break-even) odds + a plain read</b>, and gets paid through an on-chain escrow.</p>
     </header>
     <main>
-      <${Pipeline} edge=${edge} source=${source} settleRes=${settleRes} />
+      <${Pipeline} edge=${edge} source=${source} settleRes=${settleRes} procurementRes=${procurementRes} />
       ${!fixtures && html`<p class="muted" style=${{ textAlign: 'center' }}>loading fixtures...</p>`}
       ${selected && html`
         <section class="featured">
@@ -546,6 +582,10 @@ function App() {
                 <span class="spin"></span> agent delivered - arbiter settling ${SETTLE_SOL} SOL in escrow on devnet...
               </div>`}
               ${settleRes && html`<${SettleResult} r=${settleRes} />`}
+              <button class="pay-sh-btn" disabled=${source !== 'live' || procuring} onClick=${runPayShDemo}>
+                ${procuring ? html`<span class="spin"></span> procuring + settling...` : 'Run Pay.sh procurement demo'}
+              </button>
+              ${procurementRes && html`<${ProcurementResult} r=${procurementRes} />`}
               ${selected && html`<${PayButton} fixture=${selected} />`}
             </div>
           </div>

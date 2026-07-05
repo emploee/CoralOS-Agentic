@@ -32,6 +32,7 @@ import {
 } from '@pay/agent-runtime'
 import type { RunRecord, TranscriptEntry, TxEntry } from '@pay/agent-runtime'
 import { analyzeEdge, fairLine } from '../agent/edge.js'
+import { procureTxOddsContext, type PayShProcurement } from '../agent/procurement.js'
 import {
   makeArbiter, initConfig, open as arbiterOpen, arbitrateRelease,
   configPda, vaultPda, arbitratedEscrowPda, ARBITER_PROGRAM_ID,
@@ -257,6 +258,7 @@ function persistWebRun(args: {
   amountSol: number
   fixtureId: string
   payVerify?: any
+  procurement?: PayShProcurement
 }): any {
   const round = latestRound() + 1
   const now = new Date().toISOString()
@@ -283,18 +285,24 @@ function persistWebRun(args: {
       deposit: { sig: args.settle.open?.sig ?? args.settle.deposit?.sig ?? args.payVerify?.sig ?? '', buyer: args.settle.buyer ?? 'browser-wallet' },
     } : undefined,
     delivery: { raw: rawDelivery, data: args.read.delivery, sha256: sha256Hex(rawDelivery) },
-    verification: { verdict: deliveredOk(args.read.delivery) ? 'pass' : 'fail', checked: 'delivery-present' },
+    verification: {
+      verdict: deliveredOk(args.read.delivery) ? 'pass' : 'fail',
+      checked: 'delivery-present',
+      ...(args.procurement ? { upstreamPayment: args.procurement.verification } : {}),
+    },
     txs,
     updatedAt: now,
   }
   const transcript: TranscriptEntry[] = [
     { sender: 'web', text: JSON.stringify(args.read.request) },
+    ...(args.procurement?.messages.map((text) => ({ sender: 'seller-agent', text })) ?? []),
     { sender: 'oracle', text: rawDelivery },
     { sender: 'settlement', text: JSON.stringify(args.settle ?? args.payVerify) },
   ]
   const dir = writeRun(RUNS_DIR, run, transcript)
   fs.writeFileSync(join(dir, 'read_request.json'), JSON.stringify(args.read.request, null, 2) + '\n', 'utf8')
   fs.writeFileSync(join(dir, 'delivered_read.json'), JSON.stringify(args.read.delivery, null, 2) + '\n', 'utf8')
+  if (args.procurement) fs.writeFileSync(join(dir, 'procurement.json'), JSON.stringify(args.procurement, null, 2) + '\n', 'utf8')
   return { ...args.settle, runId: run.runId, runDir: dir }
 }
 
@@ -508,6 +516,40 @@ http
         }
         result = persistWebRun({ read, settle: result, amountSol: amount, fixtureId })
         res.end(JSON.stringify(result))
+      } else if (url.pathname === '/api/pay-sh-edge') {
+        // Seller-style demo: before delivering, the TxODDS seller buys upstream context through the
+        // payment-runtime Pay.sh rail, records the receipt, then settles the buyer payment as usual.
+        const amount = Number(url.searchParams.get('amount') ?? '0.001')
+        const upstreamUsdc = url.searchParams.get('upstreamUsdc') ?? '0.03'
+        const fixtureId = url.searchParams.get('fixtureId') ?? ''
+        const round = latestRound() + 1
+        const read = latestRead.get(fixtureId) ?? await readEdge(fixtureId)
+        const procurement = await procureTxOddsContext({
+          orderId: `${WEB_SESSION}/round-${round}/pay-sh`,
+          round,
+          fixtureId,
+          buyer: 'txodds-seller-agent',
+          seller: 'pay.sh/txodds-context',
+          amount: upstreamUsdc,
+        })
+        let result: any
+        if (arbiterKeypair()) {
+          try { result = await settleViaArbiter(amount, fixtureId, read, round) }
+          catch (e) { result = await settle(amount, fixtureId, read, round); result.arbiterError = (e as Error).message }
+        } else {
+          result = await settle(amount, fixtureId, read, round)
+        }
+        result = persistWebRun({ read, settle: result, amountSol: amount, fixtureId, procurement })
+        res.end(JSON.stringify({
+          ...result,
+          procurement: {
+            provider: procurement.provider,
+            amount: procurement.request.amount,
+            currency: procurement.request.currency,
+            paid: procurement.verification.paid,
+            proof: procurement.verification.proof,
+          },
+        }))
       } else if (url.pathname === '/api/runs') {
         res.end(JSON.stringify(listRuns(RUNS_DIR).filter((r) => r.session === WEB_SESSION).sort((a, b) => b.round - a.round)))
       } else if (url.pathname === '/api/run') {

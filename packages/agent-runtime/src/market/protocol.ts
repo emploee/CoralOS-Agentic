@@ -52,12 +52,79 @@ export interface Deposited {
   arbiter?: string
 }
 
+export type PaymentRailKind =
+  | 'solana-pay'
+  | 'escrow'
+  | 'x402'
+  | 'pay-sh'
+  | 'spl-usdc'
+  | 'allowance'
+  | 'embedded-wallet'
+  | 'payout'
+
+export type PaymentCurrency = 'SOL' | 'USDC' | 'PYUSD' | 'USDG'
+
+export interface PaymentRequired {
+  round: number
+  rail: PaymentRailKind
+  amount: string
+  currency: PaymentCurrency
+  reference: string
+  seller?: string
+  url?: string
+  deadlineSecs?: number
+}
+
+export interface PaymentProof {
+  round: number
+  rail: PaymentRailKind
+  reference: string
+  proof: string
+  buyer?: string
+  txSignature?: string
+}
+
+export interface PaymentConfirmed {
+  round: number
+  rail: PaymentRailKind
+  reference: string
+  paid: boolean
+  amount?: string
+  currency?: PaymentCurrency
+  txSignature?: string
+}
+
+export interface SettlementMessage {
+  round: number
+  rail: PaymentRailKind
+  reference: string
+  amount?: string
+  currency?: PaymentCurrency
+  txSignature?: string
+  reason?: string
+}
+
 const num = (text: string, key: string): number | undefined => {
   const m = text.match(new RegExp(`${key}=([\\d.]+)`))
   return m ? Number(m[1]) : undefined
 }
 const tok = (text: string, key: string): string | undefined =>
   text.match(new RegExp(`${key}=(\\S+)`))?.[1]
+
+const paymentRail = (value: string | undefined): PaymentRailKind | undefined =>
+  value === 'solana-pay' ||
+  value === 'escrow' ||
+  value === 'x402' ||
+  value === 'pay-sh' ||
+  value === 'spl-usdc' ||
+  value === 'allowance' ||
+  value === 'embedded-wallet' ||
+  value === 'payout'
+    ? value
+    : undefined
+
+const paymentCurrency = (value: string | undefined): PaymentCurrency | undefined =>
+  value === 'SOL' || value === 'USDC' || value === 'PYUSD' || value === 'USDG' ? value : undefined
 
 /** The leading verb of a market message (`WANT`, `BID`, ...), or '' if none. */
 export function verb(text: string): string {
@@ -158,6 +225,113 @@ export function parseDeposited(text: string): Deposited | null {
     ...(vault ? { vault } : {}),
     ...(arbiter ? { arbiter } : {}),
   }
+}
+
+// -- generic payment messages -----------------------------------------------------
+export function formatPaymentRequired(p: PaymentRequired): string {
+  const parts = [
+    `PAYMENT_REQUIRED round=${p.round}`,
+    `rail=${p.rail}`,
+    `amount=${p.amount}`,
+    `currency=${p.currency}`,
+    `reference=${p.reference}`,
+  ]
+  if (p.seller) parts.push(`seller=${p.seller}`)
+  if (p.url) parts.push(`url=${p.url}`)
+  if (p.deadlineSecs != null) parts.push(`deadline=${p.deadlineSecs}`)
+  return parts.join(' ')
+}
+
+export function parsePaymentRequired(text: string): PaymentRequired | null {
+  if (verb(text) !== 'PAYMENT_REQUIRED') return null
+  const round = num(text, 'round')
+  const rail = paymentRail(tok(text, 'rail'))
+  const amount = tok(text, 'amount')
+  const currency = paymentCurrency(tok(text, 'currency'))
+  const reference = tok(text, 'reference')
+  if (round == null || !rail || !amount || !currency || !reference) return null
+  const seller = tok(text, 'seller')
+  const url = tok(text, 'url')
+  const deadlineSecs = num(text, 'deadline')
+  return { round, rail, amount, currency, reference, ...(seller ? { seller } : {}), ...(url ? { url } : {}), ...(deadlineSecs != null ? { deadlineSecs } : {}) }
+}
+
+export function formatPaymentProof(p: PaymentProof): string {
+  const parts = [`PAYMENT_PROOF round=${p.round}`, `rail=${p.rail}`, `reference=${p.reference}`, `proof=${p.proof}`]
+  if (p.buyer) parts.push(`buyer=${p.buyer}`)
+  if (p.txSignature) parts.push(`sig=${p.txSignature}`)
+  return parts.join(' ')
+}
+
+export function parsePaymentProof(text: string): PaymentProof | null {
+  if (verb(text) !== 'PAYMENT_PROOF') return null
+  const round = num(text, 'round')
+  const rail = paymentRail(tok(text, 'rail'))
+  const reference = tok(text, 'reference')
+  const proof = tok(text, 'proof')
+  if (round == null || !rail || !reference || !proof) return null
+  const buyer = tok(text, 'buyer')
+  const txSignature = tok(text, 'sig')
+  return { round, rail, reference, proof, ...(buyer ? { buyer } : {}), ...(txSignature ? { txSignature } : {}) }
+}
+
+export function formatPaymentConfirmed(p: PaymentConfirmed): string {
+  const parts = [`PAYMENT_CONFIRMED round=${p.round}`, `rail=${p.rail}`, `reference=${p.reference}`, `paid=${p.paid ? 'true' : 'false'}`]
+  if (p.amount) parts.push(`amount=${p.amount}`)
+  if (p.currency) parts.push(`currency=${p.currency}`)
+  if (p.txSignature) parts.push(`sig=${p.txSignature}`)
+  return parts.join(' ')
+}
+
+export function parsePaymentConfirmed(text: string): PaymentConfirmed | null {
+  if (verb(text) !== 'PAYMENT_CONFIRMED') return null
+  const round = num(text, 'round')
+  const rail = paymentRail(tok(text, 'rail'))
+  const reference = tok(text, 'reference')
+  const paidToken = tok(text, 'paid')
+  if (round == null || !rail || !reference || (paidToken !== 'true' && paidToken !== 'false')) return null
+  const amount = tok(text, 'amount')
+  const currency = paymentCurrency(tok(text, 'currency'))
+  const txSignature = tok(text, 'sig')
+  return { round, rail, reference, paid: paidToken === 'true', ...(amount ? { amount } : {}), ...(currency ? { currency } : {}), ...(txSignature ? { txSignature } : {}) }
+}
+
+export function formatSettled(s: SettlementMessage): string {
+  return formatSettlement('SETTLED', s)
+}
+
+export function parseSettled(text: string): SettlementMessage | null {
+  return parseSettlement('SETTLED', text)
+}
+
+export function formatRefunded(s: SettlementMessage): string {
+  return formatSettlement('REFUNDED', s)
+}
+
+export function parseRefunded(text: string): SettlementMessage | null {
+  return parseSettlement('REFUNDED', text)
+}
+
+function formatSettlement(kind: 'SETTLED' | 'REFUNDED', s: SettlementMessage): string {
+  const parts = [`${kind} round=${s.round}`, `rail=${s.rail}`, `reference=${s.reference}`]
+  if (s.amount) parts.push(`amount=${s.amount}`)
+  if (s.currency) parts.push(`currency=${s.currency}`)
+  if (s.txSignature) parts.push(`sig=${s.txSignature}`)
+  if (s.reason) parts.push(`reason="${s.reason.replace(/"/g, "'")}"`)
+  return parts.join(' ')
+}
+
+function parseSettlement(kind: 'SETTLED' | 'REFUNDED', text: string): SettlementMessage | null {
+  if (verb(text) !== kind) return null
+  const round = num(text, 'round')
+  const rail = paymentRail(tok(text, 'rail'))
+  const reference = tok(text, 'reference')
+  if (round == null || !rail || !reference) return null
+  const amount = tok(text, 'amount')
+  const currency = paymentCurrency(tok(text, 'currency'))
+  const txSignature = tok(text, 'sig')
+  const reason = text.match(/reason="([^"]*)"/)?.[1]
+  return { round, rail, reference, ...(amount ? { amount } : {}), ...(currency ? { currency } : {}), ...(txSignature ? { txSignature } : {}), ...(reason ? { reason } : {}) }
 }
 
 // -- VERIFY / VERIFIED -------------------------------------------------------------

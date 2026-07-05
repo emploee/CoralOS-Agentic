@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runDir, sha256Hex } from '@pay/agent-runtime'
 import { foldRounds, type RawMessage } from './foldRounds.js'
-import { persistRounds, replaySession, toRunRecord, roundTranscript } from './persist.js'
+import { persistRounds, replaySession, replayThreads, toRunRecord, roundTranscript } from './persist.js'
 
 const sellers = ['seller-cheap', 'seller-premium', 'seller-lazy']
 const session = 'e2e-session'
@@ -76,6 +76,20 @@ describe('persist', () => {
 
   it('replay returns null for a session never persisted', () => {
     expect(replaySession(base, 'nope', sellers)).toBeNull()
+    expect(replayThreads(base, 'nope')).toBeNull()
+  })
+
+  it('rebuilds the bus view from persisted transcripts (threads + inferred participants)', () => {
+    const withBus = messages.map((m, i) => ({
+      ...m, threadId: 'market-1', mentions: m.sender === 'buyer-agent' ? ['seller-cheap'] : ['buyer-agent'],
+      timestamp: `2026-07-04T00:00:${String(i).padStart(2, '0')}.000Z`,
+    }))
+    persistRounds(base, session, foldRounds(withBus, sellers), withBus)
+    const threads = replayThreads(base, session)!
+    expect(threads).toHaveLength(1)
+    expect(threads[0].id).toBe('market-1')
+    expect(threads[0].participants).toEqual(expect.arrayContaining(['buyer-agent', 'seller-cheap', 'seller-premium']))
+    expect(threads[0].messages[0].mentions).toBeTruthy()
   })
 
   it('folds a verifier-gated arbiter round to settled, and persists verification.json', () => {

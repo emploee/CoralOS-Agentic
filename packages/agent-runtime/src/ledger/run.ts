@@ -12,6 +12,10 @@ import { createHash } from 'node:crypto'
 export interface TranscriptEntry {
   sender: string
   text: string
+  /** Bus context, when the source (Coral extended state) provides it. */
+  threadId?: string
+  mentions?: string[]
+  timestamp?: string
 }
 
 export interface TxEntry {

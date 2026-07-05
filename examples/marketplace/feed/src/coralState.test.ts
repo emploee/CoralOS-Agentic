@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { collectMessages } from './coralState.js'
+import { collectMessages, collectThreads, collectAgents } from './coralState.js'
 import { foldRounds } from './foldRounds.js'
 
 // A REAL CoralOS extended-state response, captured from a settled devnet round (tests/coral-session.json).
@@ -28,5 +28,25 @@ describe('collectMessages + foldRounds on a REAL coral transcript', () => {
     expect(r.status).toBe('settled')
     expect(r.release?.sig).toBeTruthy()
     expect(r.declined).toContain('seller-lazy') // it sat out coingecko — self-selection
+  })
+
+  it('keeps the bus context on every message (thread id, mentions, timestamp)', () => {
+    expect(messages[0].threadId).toBeTruthy()
+    expect(messages[0].mentions).toEqual(['seller-cheap', 'seller-premium', 'seller-lazy'])
+    expect(messages[0].timestamp).toMatch(/^2026-/)
+  })
+
+  it('exposes threads with participants for the bus view', () => {
+    const threads = collectThreads(state)
+    expect(threads).toHaveLength(1)
+    expect(threads[0].id).toBeTruthy()
+    expect(threads[0].participants.length).toBeGreaterThanOrEqual(3)
+    expect(threads[0].messages.length).toBe(messages.length)
+  })
+
+  it('exposes the agent roster with presence', () => {
+    const agents = collectAgents(state)
+    expect(agents.map((a) => a.name)).toContain('buyer-agent')
+    expect(agents[0].status).toBeTruthy()
   })
 })

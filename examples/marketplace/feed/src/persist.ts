@@ -13,6 +13,7 @@ import {
   type RunRecord, type TranscriptEntry,
 } from '@pay/agent-runtime'
 import { foldRounds, type Round, type RawMessage } from './foldRounds.js'
+import type { BusThread } from './coralState.js'
 
 /** Map one folded Round onto the ledger's RunRecord (content-hashing the delivery). */
 export function toRunRecord(session: string, r: Round): RunRecord {
@@ -60,4 +61,29 @@ export function replaySession(baseDir: string, session: string, sellers: string[
   if (!runs.length) return null
   const messages = runs.flatMap((run) => readRun(baseDir, session, run.round)?.transcript ?? [])
   return foldRounds(messages, sellers)
+}
+
+/**
+ * Rebuild the bus view from persisted transcripts (coral down): group entries by their threadId.
+ * Entries persisted before the bus context existed land in a single "ledger" pseudo-thread.
+ * Participants are inferred (senders + mentioned agents).
+ */
+export function replayThreads(baseDir: string, session: string): BusThread[] | null {
+  const runs = listSessionRuns(baseDir, session)
+  if (!runs.length) return null
+  const entries = runs.flatMap((run) => readRun(baseDir, session, run.round)?.transcript ?? [])
+  const byThread = new Map<string, BusThread>()
+  for (const e of entries) {
+    const id = e.threadId ?? 'ledger'
+    let thread = byThread.get(id)
+    if (!thread) {
+      thread = { id, participants: [], messages: [] }
+      byThread.set(id, thread)
+    }
+    thread.messages.push(e)
+    for (const name of [e.sender, ...(e.mentions ?? [])]) {
+      if (!thread.participants.includes(name)) thread.participants.push(name)
+    }
+  }
+  return [...byThread.values()]
 }

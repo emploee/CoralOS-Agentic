@@ -8,6 +8,10 @@
  *   GET /api/health                  → { ok: true }
  *   GET /api/feed?session=<sid>      → { session, rounds, updatedAt, source }   (session defaults to $SESSION)
  *   GET /api/runs                    → { runs, updatedAt }   — the persisted run ledger
+ *   GET /api/reputation              → { reputation, updatedAt }   — per-seller track record
+ *   GET /api/threads?session=<sid>   → { session, threads, agents, source }   — the Coral bus view
+ *   GET /api/session?session=<sid>   → { session, agents, source }            — roster + presence
+ *   GET /api/events                  → the research watcher's /queue, proxied (WATCHER_BASE, :4600)
  *
  * Every live poll also lands each round in the run ledger (RUNS_DIR, default ../runs): a folder per
  * round with want/bids/award/escrow/delivery/txs JSON + transcript.jsonl. If coral becomes
@@ -27,8 +31,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { listRuns, reputation } from '@pay/agent-runtime'
 import { foldRounds } from './foldRounds.js'
-import { collectMessages } from './coralState.js'
-import { persistRounds, replaySession } from './persist.js'
+import { collectMessages, collectThreads, collectAgents } from './coralState.js'
+import { persistRounds, replaySession, replayThreads } from './persist.js'
 
 const MARKET_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..') // examples/marketplace
 
@@ -41,6 +45,7 @@ const FIXTURE = process.env.FEED_FIXTURE
 const SELLERS = (process.env.MARKET_SELLERS ?? 'seller-cheap,seller-premium,seller-lazy')
   .split(',').map((s) => s.trim()).filter(Boolean)
 const RUNS_DIR = process.env.RUNS_DIR ?? join(MARKET_DIR, 'runs')
+const WATCHER_BASE = process.env.WATCHER_BASE ?? 'http://localhost:4600'
 
 /** Fetch a session's raw extended state — from the FEED_FIXTURE file, else from coral. */
 async function readState(session: string): Promise<unknown> {
@@ -114,6 +119,43 @@ app.get('/api/reputation', (_req, res) => {
     res.json({ reputation: reputation(listRuns(RUNS_DIR)), updatedAt: new Date().toISOString() })
   } catch (e) {
     res.status(500).json({ error: `reputation failed: ${(e as Error).message}` })
+  }
+})
+
+/** The Coral bus view: threads with participants, mentions, timestamps (+ the agent roster). */
+app.get('/api/threads', async (req, res) => {
+  const session = FIXTURE ? 'fixture' : ((req.query.session as string) || DEFAULT_SESSION)
+  if (!FIXTURE && !session) return res.status(400).json({ error: 'no session — pass ?session=<id> or set SESSION' })
+  try {
+    const state = await readState(session)
+    res.json({ session, threads: collectThreads(state), agents: collectAgents(state), source: 'live', updatedAt: new Date().toISOString() })
+  } catch (e) {
+    // Coral unreachable → rebuild threads from the persisted transcripts.
+    const threads = replayThreads(RUNS_DIR, session)
+    if (threads) return res.json({ session, threads, agents: [], source: 'ledger', updatedAt: new Date().toISOString() })
+    res.status(502).json({ error: `threads failed: ${(e as Error).message}` })
+  }
+})
+
+/** Roster + presence — who is in the session and whether coral says they're running. */
+app.get('/api/session', async (req, res) => {
+  const session = FIXTURE ? 'fixture' : ((req.query.session as string) || DEFAULT_SESSION)
+  if (!FIXTURE && !session) return res.status(400).json({ error: 'no session — pass ?session=<id> or set SESSION' })
+  try {
+    res.json({ session, agents: collectAgents(await readState(session)), source: 'live', updatedAt: new Date().toISOString() })
+  } catch (e) {
+    res.status(502).json({ error: `session failed: ${(e as Error).message}` })
+  }
+})
+
+/** The research watcher's event queue, proxied so the browser has one origin. */
+app.get('/api/events', async (_req, res) => {
+  try {
+    const r = await fetch(`${WATCHER_BASE}/queue`)
+    if (!r.ok) throw new Error(`watcher ${r.status}`)
+    res.json(await r.json())
+  } catch {
+    res.json({ queue: [], watcher: 'unreachable', updatedAt: new Date().toISOString() })
   }
 })
 

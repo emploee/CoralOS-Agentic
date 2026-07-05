@@ -45,21 +45,52 @@ function describe(m: FeedMsg): { verb: string; detail?: string } {
   return { verb: t.slice(0, 90) }
 }
 
+/** Label a lane by who talks on it — the broker's fan-out pattern (one private thread per seller). */
+function laneLabel(msgs: FeedMsg[]): string {
+  const members = [...new Set(msgs.map((m) => m.sender))]
+  return members.map((s) => LABEL[s] ?? s).join(' ↔ ')
+}
+
 export function SwarmFeed({ messages }: { messages: FeedMsg[] }) {
   if (!messages.length) {
     return <p className="muted">No messages yet — the swarm takes ~30–60s (it shops two sellers and settles twice).</p>
   }
-  return (
+
+  // Group by Coral thread: the buyer↔broker thread + one PRIVATE thread per upstream seller.
+  // This is the Coral capability the broker exists to demo — request/response correlation over a bus.
+  const lanes = new Map<string, FeedMsg[]>()
+  for (const m of messages) {
+    const id = m.threadId ?? 'swarm'
+    lanes.set(id, [...(lanes.get(id) ?? []), m])
+  }
+
+  const renderList = (msgs: FeedMsg[]) => (
     <ol className="feed">
-      {messages.map((m, i) => {
+      {msgs.map((m, i) => {
         const d = describe(m)
         return (
           <li key={i} className={CLASS[m.sender] ?? 'seller'}>
             <span className="who">{LABEL[m.sender] ?? m.sender}</span> {d.verb}
             {d.detail && <span className="detail"> — {d.detail}</span>}
+            {m.mentions?.map((name) => <span key={name} className="mention">@{name}</span>)}
           </li>
         )
       })}
     </ol>
+  )
+
+  if (lanes.size <= 1) return renderList(messages)
+  return (
+    <div className="lanes" data-testid="lanes">
+      {[...lanes.entries()].map(([id, msgs]) => (
+        <div key={id} className="lane" data-testid="lane">
+          <div className="lane-head">
+            <span className="lane-label">{laneLabel(msgs)}</span>
+            <span className="lane-id">thread {id.slice(0, 8)}</span>
+          </div>
+          {renderList(msgs)}
+        </div>
+      ))}
+    </div>
   )
 }

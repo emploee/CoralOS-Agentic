@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { startSwarm, getSwarmFeed } from '../api'
 import { useFeed } from '../hooks/useFeed'
 import { SwarmFeed } from './SwarmFeed'
+import { SessionHeader } from './SessionHeader'
 
 export function SwarmTab() {
   const [running, setRunning] = useState(false)
@@ -29,6 +30,7 @@ export function SwarmTab() {
         {running ? 'Running…' : 'Run the swarm demo'}
       </button>
       {err && <p className="error">{err}</p>}
+      {running && <SessionHeader kind="swarm" />}
       <SwarmFeed messages={messages} />
     </section>
   )

@@ -119,8 +119,8 @@ async function inject(sid: string, threadId: string, content: string) {
   if (!res.ok) throw new Error(`inject failed: ${res.status} ${await res.text()}`)
 }
 
-/** A message pulled from the extended session state. */
-interface Msg { threadId: string; text: string; sender: string }
+/** A message pulled from the extended session state — with its bus context (thread + mentions). */
+interface Msg { threadId: string; text: string; sender: string; mentions?: string[] }
 
 /** Recursively collect messages from the extended session state (in traversal/thread order). */
 function collectMessages(node: unknown, out: Msg[] = []): Msg[] {
@@ -129,11 +129,36 @@ function collectMessages(node: unknown, out: Msg[] = []): Msg[] {
   } else if (node && typeof node === 'object') {
     const o = node as Record<string, unknown>
     if (typeof o.threadId === 'string' && typeof o.text === 'string') {
-      out.push({ threadId: o.threadId, text: o.text, sender: typeof o.senderName === 'string' ? o.senderName : '' })
+      const mentions = Array.isArray(o.mentionNames) ? (o.mentionNames as string[]) : undefined
+      out.push({
+        threadId: o.threadId, text: o.text,
+        sender: typeof o.senderName === 'string' ? o.senderName : '',
+        ...(mentions && mentions.length ? { mentions } : {}),
+      })
     }
     for (const v of Object.values(o)) collectMessages(v, out)
   }
   return out
+}
+
+/** The session's agent roster (name + running status) from the extended state. */
+function collectAgents(state: unknown): Array<{ name: string; status?: string }> {
+  const agents = ((state as Record<string, unknown>)?.agents as Array<Record<string, unknown>>) ?? []
+  return agents.map((a) => ({
+    name: String(a.name ?? 'unknown'),
+    ...(((a.status as Record<string, unknown>)?.type) ? { status: String((a.status as Record<string, unknown>).type) } : {}),
+  }))
+}
+
+/** Thread summaries (id, name, participants, message count) from the extended state. */
+function collectThreadSummaries(state: unknown): Array<{ id: string; name?: string; participants: string[]; messages: number }> {
+  const threads = ((state as Record<string, unknown>)?.threads as Array<Record<string, unknown>>) ?? []
+  return threads.map((t) => ({
+    id: String(t.id ?? ''),
+    ...(t.name ? { name: String(t.name) } : {}),
+    participants: (t.participants as string[]) ?? [],
+    messages: ((t.messages as unknown[]) ?? []).length,
+  }))
 }
 
 /**
@@ -162,6 +187,31 @@ const webDir = join(dirname(fileURLToPath(import.meta.url)), 'web')
 app.use(express.static(webDir))
 
 app.get('/health', (_req, res) => res.json({ ok: true, seller: SELLER_WALLET, service: SERVICE }))
+
+/**
+ * The Coral view: every session this bridge runs (checkout / autonomous / swarm) with its agent
+ * roster + thread summaries — so the UI can show the coordination IS Coral, not a REST poll.
+ */
+app.get('/coral', async (_req, res) => {
+  const known: Array<{ kind: string; sid: string | null }> = [
+    { kind: 'checkout', sid: session ? await session.catch(() => null) : null },
+    { kind: 'autonomous', sid: autonomousSid },
+    { kind: 'swarm', sid: swarmSid },
+  ]
+  const sessions = []
+  for (const { kind, sid } of known) {
+    if (!sid) continue
+    try {
+      const r = await fetch(`${BASE}/api/v1/local/session/${NS}/${sid}/extended`, { headers: AUTH })
+      if (!r.ok) { sessions.push({ kind, sessionId: sid, agents: [], threads: [] }); continue }
+      const state = await r.json()
+      sessions.push({ kind, sessionId: sid, agents: collectAgents(state), threads: collectThreadSummaries(state) })
+    } catch {
+      sessions.push({ kind, sessionId: sid, agents: [], threads: [] })
+    }
+  }
+  res.json({ sessions, updatedAt: new Date().toISOString() })
+})
 
 // 1. Start an order — open a thread, ask the seller, return the Solana Pay URL.
 app.post('/order', async (req, res) => {
@@ -263,7 +313,7 @@ app.get('/autonomous/feed', async (_req, res) => {
     if (!r.ok) return res.json({ running: true, messages: [] })
     const messages = collectMessages(await r.json())
       .filter(m => m.sender === 'buyer-agent' || m.sender === 'seller-agent')
-      .map(m => ({ sender: m.sender, text: m.text }))
+      .map(m => ({ sender: m.sender, text: m.text, threadId: m.threadId, ...(m.mentions ? { mentions: m.mentions } : {}) }))
     res.json({ running: true, messages })
   } catch (e) {
     res.status(502).json({ error: (e as Error).message })
@@ -328,7 +378,7 @@ app.get('/swarm/feed', async (_req, res) => {
     if (!r.ok) return res.json({ running: true, messages: [] })
     const messages = collectMessages(await r.json())
       .filter(m => SWARM_AGENTS.has(m.sender))
-      .map(m => ({ sender: m.sender, text: m.text }))
+      .map(m => ({ sender: m.sender, text: m.text, threadId: m.threadId, ...(m.mentions ? { mentions: m.mentions } : {}) }))
     res.json({ running: true, messages })
   } catch (e) {
     res.status(502).json({ error: (e as Error).message })

@@ -14,8 +14,11 @@ export function useCheckout() {
   ): Promise<Delivered & { sig: string }> {
     if (!publicKey) throw new Error('Connect your wallet first')
 
-    onStep('Asking the seller for a price…')
+    // The puppet trick, narrated: the bridge opens a Coral thread AS user-proxy (your stand-in
+    // agent in the session) and injects the request with an @seller-agent mention.
+    onStep('Opening a Coral thread as user-proxy (the puppet API) → @seller-agent…')
     const order = await startOrder(service, prompt)
+    onStep(`Seller woke on the @mention and quoted ${order.amountSol} SOL (read back from the session state).`)
 
     // Build the transfer and write the reference key — binds this payment to THIS order.
     const ix = SystemProgram.transfer({
@@ -34,7 +37,8 @@ export function useCheckout() {
     const sig = await sendTransaction(tx, connection)
     await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed')
 
-    onStep('Payment confirmed — seller is verifying on-chain + delivering…')
+    onStep('Payment confirmed — injecting the proof into the thread as user-proxy…')
+    onStep('Seller verifies the reference-bound transfer on-chain + delivers…')
     const delivered = await submitPaid(order.reference, sig)
     return { ...delivered, sig }
   }

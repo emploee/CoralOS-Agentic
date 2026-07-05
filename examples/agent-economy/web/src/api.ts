@@ -18,6 +18,17 @@ export interface Delivered {
 export interface FeedMsg {
   sender: string // buyer-agent | seller-agent | broker | seller-cheap | seller-premium
   text: string
+  /** The Coral thread this message rode on (the swarm draws one lane per thread). */
+  threadId?: string
+  /** Who was @mentioned — the wake-up signal for agents blocked in wait_for_mention. */
+  mentions?: string[]
+}
+
+export interface CoralSession {
+  kind: 'checkout' | 'autonomous' | 'swarm'
+  sessionId: string
+  agents: Array<{ name: string; status?: string }>
+  threads: Array<{ id: string; name?: string; participants: string[]; messages: number }>
 }
 
 const POST = (url: string, body?: unknown) =>
@@ -42,3 +53,5 @@ export const startSwarm = (): Promise<{ sessionId: string }> => POST('/swarm/sta
 
 export const getSwarmFeed = (): Promise<{ running: boolean; messages: FeedMsg[] }> =>
   fetch('/swarm/feed').then(json)
+
+export const getCoral = (): Promise<{ sessions: CoralSession[] }> => fetch('/coral').then(json)

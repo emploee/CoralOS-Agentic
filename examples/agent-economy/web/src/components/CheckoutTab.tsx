@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useCheckout } from '../hooks/useCheckout'
+import { SessionHeader } from './SessionHeader'
 
 const SERVICES = [
   { id: 'jupiter', name: 'Live SOL→USDC price', desc: 'a Jupiter swap quote' },
@@ -53,9 +54,12 @@ export function CheckoutTab() {
     <section>
       <p>
         You are the buyer. Connect a wallet (on Devnet), pick a service, and pay the same seller the
-        autonomous agent uses — one click, settled on-chain.
+        autonomous agent uses — one click, settled on-chain. Behind the button you become a session
+        participant: the bridge posts <em>as</em> <code>user-proxy</code> through Coral's{' '}
+        <b>puppet API</b>, and the seller's reply is read back from the session state.
       </p>
 
+      <SessionHeader kind="checkout" />
       <WalletMultiButton />
 
       <div className="services">

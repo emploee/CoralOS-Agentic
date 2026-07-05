@@ -44,6 +44,9 @@ export function Feed({ messages }: { messages: FeedMsg[] }) {
           <li key={i} className={m.sender === 'buyer-agent' ? 'buyer' : 'seller'}>
             <span className="who">{d.who}</span> {d.verb}
             {d.detail && <span className="detail"> — {d.detail}</span>}
+            {m.mentions?.map((name) => (
+              <span key={name} className="mention" title={`@${name} wakes that agent's wait_for_mention`}>@{name}</span>
+            ))}
           </li>
         )
       })}

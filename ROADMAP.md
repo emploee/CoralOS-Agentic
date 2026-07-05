@@ -1,10 +1,10 @@
 # ROADMAP.md — the agent-commerce layer: build record + what's next
 
-> **Status: phases 0–6 below are shipped** (per-phase ✅ notes inline), and the loop is
-> **validated live on devnet** — both the settle path and the verifier-refused path. What remains
-> is the stretch list inside each phase and the [Future](#future-explicitly-out-of-scope-for-now)
-> section. This doc is the build record + roadmap; the user-facing story is in the
-> [README](README.md).
+> **Status: phases 0–9 below are shipped** (per-phase ✅ notes inline): the agent-commerce layer
+> (0–6, **validated live on devnet** — both the settle path and the verifier-refused path) and the
+> frontend/Coral-visibility layer (7.0–9). What remains is the stretch list inside each phase and
+> the [Future](#future-explicitly-out-of-scope-for-now) section. This doc is the build record +
+> roadmap; the user-facing story is in the [README](README.md).
 
 ## Thesis
 
@@ -295,9 +295,15 @@ buyer's award reasoning cites reputation.
 
 ---
 
-## Phases 7–9 — complete the frontends, make Coral visible (planned 2026-07-05)
+## Phases 7–9 — complete the frontends, make Coral visible — ✅ shipped 2026-07-05
 
-The audit that motivates this: **the feed already serves the whole agent-commerce layer —
+*Status:* all four phases below shipped same-day, in the planned order (7.0 → 7 → 9 → 8).
+Verified: feed 18/18 (bus-context/threads/roster/replayThreads), marketplace web 13 unit +
+**4 Playwright e2e through the real pipeline** (recorded coral state → feed → UI, incl. the Coral
+bus tab and the Runs tab), agent-economy bridge + web typecheck & vite build, txodds 10/10 —
+full-repo sweep 163 tests green. Phase 0's remaining "Runs tab" item closed with Phase 7.
+
+The audit that motivated this: **the feed already served the whole agent-commerce layer —
 `verification`, `/api/runs`, `/api/reputation`, ledger replay (`source:"ledger"`) — and the
 frontends render none of it** (zero references in `examples/marketplace/web/src`). Worse, nothing
 in any UI shows that the coordination *is* Coral: threads, `@mentions`, agent presence, and the
@@ -305,7 +311,7 @@ puppet trick are all invisible — a judge can't tell the market apart from a RE
 feed's `collectMessages` flattens the extended state to `{sender, text}`, **dropping thread ids and
 mentions**, so no UI could show the bus even if it tried. Fix the data first, then the three UIs.
 
-### Phase 7.0 — enabler: the feed exposes Coral-native structure
+### Phase 7.0 — enabler: the feed exposes Coral-native structure — ✅ shipped
 
 *The one data change everything else hangs off.*
 
@@ -324,7 +330,7 @@ mentions**, so no UI could show the bus even if it tried. Fix the data first, th
 **Done when:** `curl /api/threads` shows the market thread with participants and per-message
 mentions for a live session AND for a ledger replay.
 
-### Phase 7 — marketplace visualizer: render what the feed already knows
+### Phase 7 — marketplace visualizer: render what the feed already knows — ✅ shipped
 
 *The flagship UI. One new tab per invisible layer, all fixture-testable.*
 
@@ -354,7 +360,7 @@ mentions for a live session AND for a ledger replay.
 only) shows: the replay banner, settled + verifier-refused rounds with verdicts, the run detail
 trail with working Explorer links, the reputation scoreboard, and the bus view with mentions.
 
-### Phase 8 — agent-economy dashboard: show the puppet trick
+### Phase 8 — agent-economy dashboard: show the puppet trick — ✅ shipped
 
 *This example owns the Coral surfaces marketplace doesn't — put them on screen.*
 
@@ -374,7 +380,7 @@ trail with working Explorer links, the reputation scoreboard, and the bus view w
 **Done when:** a demo viewer can point at the screen and say which message the human injected,
 which threads the broker fanned out, and which MCP primitive fired at each step.
 
-### Phase 9 — txodds: give the Coral round a face, tie the board to the market
+### Phase 9 — txodds: give the Coral round a face, tie the board to the market — ✅ shipped
 
 **Build** (`examples/txodds/`)
 - **The coral round gets the visualizer** — it's logs-only today, yet it speaks the same wire

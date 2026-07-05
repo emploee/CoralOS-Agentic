@@ -26,4 +26,36 @@ export const biddingRound: Round = {
   status: 'bidding',
 }
 
+/** A verifier-gated freelancer round that SETTLED — heterogeneous harnesses, verified pass. */
+export const verifiedRound: Round = {
+  round: 3,
+  want: { service: 'freelance', arg: 'landing-page-hero-copy', budgetSol: 0.001 },
+  bids: [
+    { by: 'seller-scribe', priceSol: 0.0002, note: 'fast, one pass' },
+    { by: 'seller-claude', priceSol: 0.0008, note: 'tested, multi-step' },
+  ],
+  declined: [],
+  award: { to: 'seller-scribe', reason: 'the brief fits a single pass' },
+  escrow: { reference: 'Ref3', seller: '7jwB', amountSol: 0.0002, deadlineSecs: 600 },
+  deposit: { sig: 'depSig3', buyer: '47Dp' },
+  delivered: { raw: '{"service":"freelance","result":{"deliverable":"Ship faster"}}' },
+  verification: { verdict: 'pass', by: 'verifier-agent', reason: 'hash + structure verified' },
+  release: { sig: 'relSig3' },
+  status: 'settled',
+}
+
+/** The no-pay path: delivery failed verification → release REFUSED, funds stay refundable. */
+export const refusedRound: Round = {
+  round: 4,
+  want: { service: 'freelance', arg: 'pricing-table-microcopy', budgetSol: 0.001 },
+  bids: [{ by: 'seller-scribe', priceSol: 0.0002 }],
+  declined: [],
+  award: { to: 'seller-scribe' },
+  escrow: { reference: 'Ref4', seller: '7jwB', amountSol: 0.0002, deadlineSecs: 600 },
+  deposit: { sig: 'depSig4', buyer: '47Dp' },
+  delivered: { raw: '{"service":"freelance","error":"llm unavailable"}' },
+  verification: { verdict: 'fail', by: 'verifier-agent', reason: 'payload reports error' },
+  status: 'delivered',
+}
+
 export const fixtureRounds: Round[] = [settledRound, biddingRound]

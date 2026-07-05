@@ -18,6 +18,8 @@ export interface Round {
   escrow?: { reference: string; seller: string; amountSol: number; deadlineSecs: number }
   deposit?: { sig: string; buyer: string }
   delivered?: { raw: string; data?: unknown }
+  /** The independent verifier's verdict — release is gated on it when a verifier is in session. */
+  verification?: { verdict: 'pass' | 'fail'; by: string; reason?: string }
   release?: { sig: string }
   refunded?: boolean
   status: RoundStatus
@@ -27,6 +29,101 @@ export interface Feed {
   session: string
   rounds: Round[]
   updatedAt: string
+  /** 'live' (coral) or 'ledger' (replayed from the persisted run folders — coral is down). */
+  source?: 'live' | 'ledger'
+}
+
+// ── The Coral bus view (/api/threads) ──────────────────────────────────────────
+
+export interface BusMessage {
+  sender: string
+  text: string
+  threadId?: string
+  mentions?: string[]
+  timestamp?: string
+}
+
+export interface BusThread {
+  id: string
+  name?: string
+  creator?: string
+  participants: string[]
+  messages: BusMessage[]
+}
+
+export interface SessionAgent {
+  name: string
+  status?: string
+}
+
+export interface Bus {
+  session: string
+  threads: BusThread[]
+  agents: SessionAgent[]
+  source?: 'live' | 'ledger'
+}
+
+// ── The run ledger (/api/runs) ─────────────────────────────────────────────────
+
+export interface TxEntry {
+  kind: string
+  sig: string
+  explorer: string
+}
+
+export interface RunRecord {
+  runId: string
+  session: string
+  round: number
+  status: string
+  want?: { service: string; arg: string; budgetSol: number }
+  bids: RoundBid[]
+  declined?: string[]
+  award?: { to: string; reason?: string }
+  escrow?: {
+    reference: string
+    seller: string
+    amountSol: number
+    deadlineSecs: number
+    deposit?: { sig: string; buyer: string }
+  }
+  delivery?: { raw: string; data?: unknown; sha256: string }
+  verification?: { verdict: 'pass' | 'fail'; by: string; reason?: string }
+  txs: TxEntry[]
+  updatedAt: string
+}
+
+// ── Reputation (/api/reputation) ───────────────────────────────────────────────
+
+export interface SellerReputation {
+  seller: string
+  awarded: number
+  delivered: number
+  settled: number
+  verifiedPass: number
+  verifiedFail: number
+  refunded: number
+  score: number
+}
+
+// ── The research watcher's events (/api/events) ────────────────────────────────
+
+export interface WatcherEvent {
+  kind: string
+  fixtureId: string
+  arg: string
+  note: string
+}
+
+/** Which harness fulfils a seller's orders (personas set it in their coral-agent.toml). */
+export const HARNESS_BY_SELLER: Record<string, string> = {
+  'seller-claude': 'claude-code',
+  'seller-scribe': 'node-llm',
+  'seller-worldcup': 'node-llm',
+  'seller-moves': 'node-llm',
+  'seller-stats': 'node-llm',
+  'seller-cheap': 'node-llm',
+  'seller-premium': 'node-llm',
 }
 
 export const explorerTx = (sig: string) => `https://explorer.solana.com/tx/${sig}?cluster=devnet`

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, cleanup, within } from '@testing-library/react'
 import { RoundCard } from './RoundCard'
-import { settledRound } from '../../tests/fixtures'
+import { settledRound, verifiedRound, refusedRound } from '../../tests/fixtures'
 
 afterEach(cleanup)
 
@@ -35,5 +35,33 @@ describe('RoundCard', () => {
   it('shows the status pill as settled', () => {
     render(<RoundCard round={settledRound} />)
     expect(screen.getByTestId('status').textContent).toBe('settled')
+  })
+
+  it('shows a pass verdict from the independent verifier', () => {
+    render(<RoundCard round={verifiedRound} />)
+    const badge = screen.getByTestId('verification')
+    expect(badge.getAttribute('data-verdict')).toBe('pass')
+    expect(badge.textContent).toContain('verified')
+    expect(badge.textContent).toContain('verifier-agent')
+  })
+
+  it('shows a REFUSED release when verification fails (the no-pay path)', () => {
+    render(<RoundCard round={refusedRound} />)
+    const badge = screen.getByTestId('verification')
+    expect(badge.getAttribute('data-verdict')).toBe('fail')
+    expect(badge.textContent).toContain('release refused')
+    expect(screen.queryAllByTestId('settle')).toHaveLength(1) // deposit only — no release link
+  })
+
+  it('labels bids with the harness doing the work', () => {
+    render(<RoundCard round={verifiedRound} />)
+    const tags = screen.getAllByTestId('harness').map((el) => el.textContent)
+    expect(tags).toContain('node-llm')
+    expect(tags).toContain('claude-code')
+  })
+
+  it('renders no verification badge for pre-verifier rounds', () => {
+    render(<RoundCard round={settledRound} />)
+    expect(screen.queryByTestId('verification')).toBeNull()
   })
 })

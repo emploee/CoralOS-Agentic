@@ -1,9 +1,15 @@
-import type { RoundBid } from '../types'
+import { HARNESS_BY_SELLER, type RoundBid } from '../types'
 
 export function BidRow({ bid, won }: { bid: RoundBid; won: boolean }) {
+  const harness = HARNESS_BY_SELLER[bid.by]
   return (
     <div className={`bid ${won ? 'bid-won' : ''}`} data-testid="bid" data-seller={bid.by}>
       <span className="bid-seller">{bid.by}</span>
+      {harness && (
+        <span className={`bid-harness ${harness === 'claude-code' ? 'bid-harness-hot' : ''}`} data-testid="harness">
+          {harness}
+        </span>
+      )}
       <span className="bid-price">{bid.priceSol} SOL</span>
       {bid.note && <span className="bid-note">{bid.note}</span>}
       {won && <span className="bid-tag">won</span>}

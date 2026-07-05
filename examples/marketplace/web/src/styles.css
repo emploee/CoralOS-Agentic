@@ -77,3 +77,75 @@ body { margin: 0; background: var(--bg); color: var(--txt); }
 .explain-flow b { color: var(--txt); }
 .explain-flow em { color: var(--dim); font-style: italic; }
 .explain-flow code { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; font-size: 11.5px; }
+
+/* ── tabs ─────────────────────────────────────────────────────────────────── */
+.tabs { display: flex; gap: 6px; margin: 4px 0 14px; }
+.tab {
+  padding: 6px 14px; background: var(--panel); color: var(--dim); border: 1px solid var(--line);
+  border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.tab-on { color: var(--txt); border-color: var(--link); }
+
+/* ── replay banner (source: ledger) ───────────────────────────────────────── */
+.replay-banner {
+  border: 1px dashed var(--premium); color: var(--premium); border-radius: 8px;
+  padding: 8px 12px; font-size: 13px; margin: 0 0 12px;
+}
+
+/* ── verification badge (the release gate) ────────────────────────────────── */
+.verify { font-size: 12px; border: 1px solid var(--line); padding: 4px 8px; border-radius: 6px; display: inline-flex; gap: 6px; align-items: baseline; }
+.verify-pass { color: var(--won); border-color: var(--won); }
+.verify-fail { color: var(--refund); border-color: var(--refund); }
+.verify-by { color: var(--dim); font-size: 11px; }
+.verify-note { color: var(--refund); font-size: 11px; }
+
+/* ── harness tag on bids ──────────────────────────────────────────────────── */
+.bid-harness { font-size: 10px; color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; }
+.bid-harness-hot { color: var(--premium); border-color: var(--premium); }
+
+/* ── the Coral bus view ───────────────────────────────────────────────────── */
+.bus { display: flex; flex-direction: column; gap: 12px; }
+.bus-roster { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--dim); }
+.bus-roster .dot { display: inline-block; margin: 0 4px 0 0; }
+.bus-agent { display: inline-flex; align-items: center; }
+.bus-thread { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.bus-thread-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; font-size: 13px; }
+.bus-thread-id { color: var(--dim); font-size: 11px; }
+.bus-participants { color: var(--dim); font-size: 11px; margin-left: auto; }
+.bus-msg { padding: 6px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.bus-sender { font-weight: 700; margin-right: 8px; }
+.bus-verb { font-size: 10px; border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; margin-right: 6px; color: var(--premium); }
+.bus-verb-verified, .bus-verb-released, .bus-verb-arbiter_released { color: var(--won); }
+.bus-verb-error, .bus-verb-refunded { color: var(--refund); }
+.bus-mention { color: var(--link); font-size: 11px; margin-right: 6px; }
+.bus-ts { color: var(--dim); font-size: 10px; float: right; }
+.bus-text { color: var(--dim); margin-top: 3px; word-break: break-word; }
+.bus-hint { color: var(--dim); font-size: 12px; }
+.bus-hint code { color: var(--link); }
+
+/* ── the run ledger ───────────────────────────────────────────────────────── */
+.runs { display: flex; flex-direction: column; gap: 8px; }
+.run { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.run-head {
+  display: flex; gap: 10px; align-items: center; width: 100%; padding: 10px 12px;
+  background: none; border: 0; color: var(--txt); font: inherit; font-size: 13px; cursor: pointer; text-align: left;
+}
+.run-id { color: var(--dim); }
+.run-winner { font-weight: 600; }
+.run-verdict-pass { color: var(--won); font-size: 11px; }
+.run-verdict-fail { color: var(--refund); font-size: 11px; }
+.run-head .pill { margin-left: auto; }
+.run-detail { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.run-fact { font-size: 12px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.run-k { color: var(--dim); min-width: 64px; text-transform: uppercase; font-size: 10px; }
+.run-dim { color: var(--dim); }
+.run-bid { border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+.run-sha { color: var(--premium); }
+.run-detail .delivered { width: 100%; }
+
+/* ── reputation + events strips ───────────────────────────────────────────── */
+.rep, .events { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; margin-bottom: 12px; }
+.rep-label, .events-label { color: var(--dim); font-size: 11px; }
+.rep-row { border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
+.rep-good { color: var(--won); } .rep-mid { color: var(--premium); } .rep-bad { color: var(--refund); }
+.event { border: 1px dashed var(--line); border-radius: 6px; padding: 2px 8px; color: var(--premium); }

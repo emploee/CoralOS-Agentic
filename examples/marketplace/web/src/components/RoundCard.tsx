@@ -2,6 +2,7 @@ import type { Round } from '../types'
 import { StatusPill } from './StatusPill'
 import { BidRow, DeclinedRow } from './BidRow'
 import { SettlementBadge } from './SettlementBadge'
+import { VerificationBadge } from './VerificationBadge'
 import { WorldCupPanel } from './WorldCupPanel'
 
 /** One auction round: the need, the competing bids, the award + reasoning, and on-chain settlement. */
@@ -43,6 +44,7 @@ export function RoundCard({ round }: { round: Round }) {
 
       <footer className="settle-row">
         {round.deposit && <SettlementBadge label={`deposit ${round.escrow?.amountSol ?? ''} SOL`} sig={round.deposit.sig} />}
+        {round.verification && <VerificationBadge verification={round.verification} />}
         {round.release && <SettlementBadge label="release" sig={round.release.sig} />}
         {round.refunded && <span className="settle settle-refund" data-testid="refund">refunded</span>}
       </footer>

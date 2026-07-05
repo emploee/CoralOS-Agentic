@@ -27,3 +27,27 @@ test('shows the connection indicator', async ({ page }) => {
   await page.goto('/?session=fixture')
   await expect(page.getByTestId('conn')).toBeVisible()
 })
+
+test('the Coral bus tab shows the real thread, mentions, and roster', async ({ page }) => {
+  await page.goto('/?session=fixture')
+  await page.getByTestId('tab-coral').click()
+
+  const thread = page.getByTestId('thread')
+  await expect(thread).toBeVisible()
+  await expect(thread).toContainText('market') // the thread coral created
+  await expect(page.getByTestId('mention').first()).toContainText('@seller-')
+  await expect(page.getByTestId('roster')).toContainText('buyer-agent')
+})
+
+test('the Runs tab serves the persisted ledger from the same fixture round', async ({ page }) => {
+  await page.goto('/?session=fixture') // the market poll persists the round into RUNS_DIR
+  await page.getByTestId('tab-runs').click()
+
+  const run = page.locator('[data-testid="run"]').first()
+  await expect(run).toBeVisible()
+  await run.getByRole('button').click()
+  const detail = page.getByTestId('run-detail')
+  await expect(detail).toBeVisible()
+  await expect(detail).toContainText('sha256') // the hash-bound delivery
+  await expect(detail.getByTestId('run-tx').last()).toHaveAttribute('href', /explorer\.solana\.com/)
+})

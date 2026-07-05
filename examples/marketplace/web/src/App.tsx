@@ -1,16 +1,27 @@
 import { useState } from 'react'
-import { useFeed, startMarket } from './api'
+import { useFeed, useBus, useRuns, useReputation, useEvents, startMarket } from './api'
 import { MarketView } from './components/MarketView'
+import { CoralView } from './components/CoralView'
+import { RunsView } from './components/RunsView'
+import { ReputationPanel } from './components/ReputationPanel'
+import { EventsStrip } from './components/EventsStrip'
 import { Explainer } from './components/Explainer'
 
 /** Read ?session=<id> from the URL so the launcher can deep-link straight to a live market. */
 const initialSession = new URLSearchParams(window.location.search).get('session') ?? ''
 
+type Tab = 'market' | 'coral' | 'runs'
+
 export default function App() {
   const [session, setSession] = useState(initialSession)
+  const [tab, setTab] = useState<Tab>('market')
   const [starting, setStarting] = useState(false)
   const [startErr, setStartErr] = useState<string>()
-  const { rounds, connected, error } = useFeed(session)
+  const { rounds, connected, source, error } = useFeed(session)
+  const { bus } = useBus(tab === 'coral' ? session : '')
+  const { runs } = useRuns(tab === 'runs' ? 3000 : 30_000)
+  const { reputation } = useReputation()
+  const { events } = useEvents()
 
   async function onStart() {
     setStarting(true)
@@ -49,12 +60,38 @@ export default function App() {
       </div>
       {startErr && <p className="start-err" data-testid="start-err">{startErr}</p>}
 
-      <Explainer />
+      {source === 'ledger' && (
+        <p className="replay-banner" data-testid="replay-banner">
+          replaying from the <strong>run ledger</strong> — coral-server offline, every round below is served from disk
+        </p>
+      )}
+
+      <nav className="tabs" data-testid="tabs">
+        {(['market', 'coral', 'runs'] as Tab[]).map((t) => (
+          <button key={t} className={`tab ${tab === t ? 'tab-on' : ''}`} data-testid={`tab-${t}`} onClick={() => setTab(t)}>
+            {t === 'market' ? 'Market' : t === 'coral' ? 'Coral bus' : 'Runs'}
+          </button>
+        ))}
+      </nav>
+
+      {tab === 'market' && <Explainer />}
 
       <main>
-        {session ? <MarketView rounds={rounds} /> : (
-          <p className="empty">Fund your wallets, then <strong>Start a market</strong> — agents will bid and settle live.</p>
+        {tab === 'market' && (
+          session ? (
+            <>
+              <EventsStrip events={events} />
+              <ReputationPanel reputation={reputation} />
+              <MarketView rounds={rounds} />
+            </>
+          ) : (
+            <p className="empty">Fund your wallets, then <strong>Start a market</strong> — agents will bid and settle live.</p>
+          )
         )}
+        {tab === 'coral' && (
+          session ? <CoralView bus={bus} /> : <p className="empty">Paste a session id to watch the bus.</p>
+        )}
+        {tab === 'runs' && <RunsView runs={runs} />}
       </main>
     </div>
   )

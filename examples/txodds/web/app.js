@@ -10,6 +10,8 @@ import { Connection, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL } f
 
 const html = htm.bind(React.createElement)
 const PROXY = window.TXODDS_PROXY ?? 'http://localhost:8801'
+// The research watcher (examples/txodds/research/watcher.ts) — optional; the board degrades silently.
+const WATCHER = window.TXODDS_WATCHER ?? 'http://localhost:4600'
 
 // -- flags + abbreviations (national teams) ----------------------------------
 const FLAGS = {
@@ -166,7 +168,7 @@ function Board({ fixture, odds, loading }) {
     </div>`
 }
 
-function MatchCard({ fx, on, onSelect }) {
+function MatchCard({ fx, on, onSelect, event }) {
   return html`
     <div class=${'mcard' + (on ? ' on' : '')} onClick=${() => onSelect(fx)}>
       <div class="mc-top">
@@ -175,6 +177,7 @@ function MatchCard({ fx, on, onSelect }) {
         <span class="mc-side r"><${Flag} name=${fx.Participant2} /><span class="mc-abbr">${abbr(fx.Participant2)}</span></span>
       </div>
       <div class="mc-comp"><span class="c">${fx.Competition}</span><span>${new Date(fx.StartTime).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
+      ${event && html`<div class="mc-event" title=${event.note}>${event.kind === 'odds-move' ? '▲ line moved' : '● odds live'} — research WANT queued</div>`}
     </div>`
 }
 
@@ -399,6 +402,7 @@ function App() {
   const [runs, setRuns] = useState(null)
   const [selectedRun, setSelectedRun] = useState(null)
   const [grading, setGrading] = useState(false)
+  const [events, setEvents] = useState({}) // fixtureId -> the watcher's queued research event
   const selected = fixtures ? fixtures[idx] : null
 
   const loadRuns = async () => {
@@ -448,6 +452,24 @@ function App() {
     const tick = async () => { if (alive) await loadRuns() }
     tick()
     const timer = setInterval(tick, 8000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [])
+
+  // The research watcher's queue -> event badges on the board ("line moved -> WANT queued").
+  // Entirely optional: when the watcher isn't running, the board renders exactly as before.
+  useEffect(() => {
+    let alive = true
+    const tick = async () => {
+      try {
+        const d = await (await fetch(`${WATCHER}/queue`)).json()
+        if (!alive) return
+        const byFixture = {}
+        for (const e of d.queue ?? []) byFixture[String(e.fixtureId)] = e
+        setEvents(byFixture)
+      } catch { /* watcher down - no badges */ }
+    }
+    tick()
+    const timer = setInterval(tick, 10000)
     return () => { alive = false; clearInterval(timer) }
   }, [])
 
@@ -533,7 +555,7 @@ function App() {
 
       <h3 class="grid-title">All fixtures - tap a match</h3>
       <div class="grid">
-        ${fixtures?.map((fx) => html`<${MatchCard} key=${fx.FixtureId} fx=${fx} on=${selected?.FixtureId === fx.FixtureId} onSelect=${select} />`)}
+        ${fixtures?.map((fx) => html`<${MatchCard} key=${fx.FixtureId} fx=${fx} on=${selected?.FixtureId === fx.FixtureId} onSelect=${select} event=${events[String(fx.FixtureId)]} />`)}
       </div>
     </main>
     <footer class="foot">

@@ -251,3 +251,9 @@ main { max-width: 1120px; margin: 0 auto; padding: 22px 24px 64px; }
   .runs-head { flex-direction: column; }
   .runs-grid { grid-template-columns: 1fr; }
 }
+
+/* research watcher event badge on a match card ("line moved -> WANT queued") */
+.mc-event {
+  margin-top: 6px; font-size: 10px; color: #d29922;
+  border: 1px dashed #d2992255; border-radius: 6px; padding: 2px 6px;
+}

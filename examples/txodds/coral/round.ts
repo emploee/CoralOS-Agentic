@@ -120,7 +120,11 @@ async function main(): Promise<void> {
 
   console.log(`\nCoralOS round ${sessionId} — buyer-agent + seller-worldcup, fixture ${fixtureId}.`)
   console.log('The buyer broadcasts a WANT(txline edge); the seller bids, wins, delivers, and settles via escrow on devnet.\n')
-  console.log('Watch the round (coral names the agent containers by UUID — find + tail them):')
+  console.log('Watch it in the browser (same wire protocol as the marketplace — its visualizer just works):')
+  console.log(`  cd ../marketplace/feed && SESSION=${sessionId} npm start     # the feed on :4000`)
+  console.log('  npm run marketplace:web   (from the repo root)               # the UI on :5173 — Market + Coral bus + Runs tabs')
+  console.log(`  then open http://localhost:5173/?session=${sessionId}\n`)
+  console.log('Or tail the logs (coral names the agent containers by UUID — find + tail them):')
   console.log('  docker logs -f $(docker ps -qf ancestor=buyer-agent:0.1.0  | head -1)   # WANT -> AWARD -> DEPOSITED -> RELEASED')
   console.log('  docker logs -f $(docker ps -qf ancestor=seller-agent:0.1.0 | head -1)   # BID -> ESCROW_REQUIRED -> DELIVERED\n')
 }

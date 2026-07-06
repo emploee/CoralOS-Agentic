@@ -8,7 +8,7 @@ const SERVICES = [
   { id: 'jupiter', name: 'Live SOL→USDC price', desc: 'a Jupiter swap quote' },
   { id: 'coingecko', name: 'Crypto spot price', desc: 'a CoinGecko price' },
   { id: 'news', name: 'Crypto headlines', desc: 'top news (needs NEWS_API_KEY)' },
-  { id: 'inference', name: 'AI completion', desc: 'an LLM answer (needs ANTHROPIC_API_KEY)' },
+  { id: 'inference', name: 'AI completion', desc: 'an LLM answer (needs VENICE_API_KEY or another provider key)' },
 ]
 
 // Services that take a free-text input, and whether it's required.

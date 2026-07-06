@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.100.0",
+    "@pay/agent-runtime": "file:../../../packages/agent-runtime",
     "@solana/pay": "^0.2.5",
     "@solana/web3.js": "^1.98.0",
     "bignumber.js": "^9.1.2",

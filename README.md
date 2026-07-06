@@ -72,6 +72,7 @@ verdict, Explorer-linked txs) and feeds a **reputation score** buyers weigh on t
 | **Frontend state** (live rounds/bids/settlement) | [`examples/marketplace/web`](examples/marketplace/web)                   | build a React app that streams the market  |
 | **Solana Pay** (reference-bound transfers)       | [`packages/agent-runtime/src/solana`](packages/agent-runtime/src/solana) | hand-roll payment URLs + verification      |
 | **Escrow** (deposit → release / refund)         | [`examples/txodds/escrow`](examples/txodds/escrow)                       | write, audit, and deploy an Anchor program |
+| **Payment rails** (one interface; 2 live, 6 scaffolds) | [`packages/payment-runtime`](packages/payment-runtime)             | re-plumb payments per provider (see its README's honest status table) |
 | **Harness adapters** (Claude Code / any CLI sells) | [`packages/harness-runtime`](packages/harness-runtime)                 | bridge external agent harnesses yourself   |
 | **Verifier gate** (release only on a pass)       | [`coral-agents/verifier-agent`](coral-agents/verifier-agent)             | build independent delivery checks          |
 | **Policy choke point** (caps, bindings, gates)   | [`packages/agent-runtime/src/policy`](packages/agent-runtime/src/policy) | scatter ad-hoc safety checks               |
@@ -158,10 +159,13 @@ One `npm run` per example, from the repo root. **Each command installs that exam
 | `npm run agent-economy:quickstart` | the **bare 402** pay-per-call seller (no Docker, no CoralOS) | LLM key + funded wallet |
 | `npm run agent-economy:quickstart:buyer` | the quickstart **buyer** (run in a 2nd terminal) | the quickstart server running |
 | `npm run agent-economy:web` | the agent-economy **3-tab dashboard** | — (talks to the bridge) |
+| `npm run desk` | **TxODDS Agent Desk** in a browser (:3030) - run ledger, proof receipts, board actions | the txodds proxy (`npm run dev` or `npm --prefix examples/txodds run proxy`) |
+| `npm run desk:app` | the same desk as a **Tauri desktop app** | Rust/Tauri prerequisites + the txodds proxy |
 
 > **Docker ones** (`marketplace`, `demo:coral`, `agent-economy`, `:bridge`) coordinate over coral-server,
 > so start it first: `docker compose up -d coral`, and `bash build-agents.sh` to build the agent images.
-> **No-Docker ones** (`dev`, `agent-economy:quickstart`, `:web`, `marketplace:web`) run straight from Node.
+> **No-Docker ones** (`dev`, `agent-economy:quickstart`, `:web`, `marketplace:web`, `desk`) run straight
+> from Node; `desk:app` adds the Tauri/Rust shell.
 
 ## Make it yours
 
@@ -194,7 +198,8 @@ one per concern:
 - **`market/`** — the WANT/BID/AWARD wire format (now incl. **VERIFY/VERIFIED**): the negotiation
   protocol, pure and testable.
 - **`ledger/`** — the **run ledger**: one folder per paid round (bids, award reasoning, sha256-bound
-  delivery, verifier verdict, Explorer-linked txs, the raw transcript) + **reputation** derived from it.
+  delivery, verifier verdict, payment proof receipts, Explorer-linked txs, the raw transcript) +
+  **reputation** derived from it.
   "What did the agent actually do for the money?" — open the run.
 - **`policy/`** — [`enforce()`](packages/agent-runtime/src/policy/policy.ts), the choke point every
   deposit/release passes: spend caps, service allowlist, payout binding, award-price binding
@@ -233,10 +238,12 @@ deployed ids with no local build. **Devnet only** — never put a funded mainnet
 | `examples/txodds/`        | **the default demo** — the World Cup oracle. `agent/` (`service.ts` = the `deliverService()` fork point; `edge.ts` = its transform; escrow/arbiter clients), `server/` (proxy + mint), `web/` (React board), `research/` (the odds-move **event watcher** feeding the research round), `escrow/` (the two Anchor programs) |
 | `examples/marketplace/`   | **the full market** — a buyer + competing sellers in one CoralOS session, in three rounds: `start.ts` (classic), `freelancer.ts` (harness sellers + **verifier-gated** release), `research.ts` (event-driven — odds moves trigger the WANTs); `feed/` (rounds + the **run ledger** `runs/`, `/api/runs`, `/api/reputation`, disk replay), `web/` (React visualizer). Needs Docker |
 | `examples/agent-economy/` | **three front doors** on CoralOS — autonomous (agent→agent), a human checkout bridge, and a bare 402 pay-per-call quickstart                                                                                                                                  |
+| `examples/txodds-agent-desk/` | the **operator console** — a Tauri desktop shell over the proxy + run ledger + proof receipts (`npm run desk` for the browser version, no Rust needed)                                                                                                    |
 | `coral-agents/`           | the agents coral-server launches per session —`buyer-agent`, `seller-agent` (+ personas incl. `seller-claude`), `verifier-agent` (the release gate), `broker` (swarm reseller), `echo-agent`, `user_proxy`                                                 |
 | `packages/agent-runtime/` | the runtime —`llm/`, `solana/`, `coral/`, `market/`, `ledger/`, `policy/`                                                                                                                                                                                    |
 | `packages/harness-runtime/` | the **harness adapter SDK** — `node-llm` / `claude-code` / any CLI as market sellers                                                                                                                                                                       |
-| `scripts/`                | `txodds.js` (`npm run dev`), `setup.js` (devnet wallets)                                                                                                                                                                                                        |
+| `packages/payment-runtime/` | the **payment rail router** — Solana Pay + escrow live; Pay.sh / x402 / USDC / allowance / embedded / payout as typed scaffolds (status table in its README)                                                                                              |
+| `scripts/`                | `txodds.js` (`npm run dev`), `setup.js` (devnet wallets), `provision-swarm.js` (broker + seller wallets for the swarm demo)                                                                                                                                     |
 | `docker-compose.yml`      | coral-server (the MCP coordinator) for the market                                                                                                                                                                                                                     |
 
 ## The LLM: Venice AI

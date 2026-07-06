@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { RunRecord } from '../types'
+import type { ProofReceipt, RunRecord } from '../types'
 import { VerificationBadge } from './VerificationBadge'
 
 /**
@@ -7,6 +7,20 @@ import { VerificationBadge } from './VerificationBadge'
  * round across sessions, expandable into the full trail: want → bids → award reasoning → escrow +
  * deposit → sha256-bound delivery → verifier verdict → Explorer-linked txs.
  */
+
+const short = (s: string | undefined, n = 10) => s ? `${s.slice(0, n)}...` : ''
+
+function ReceiptFact({ receipt }: { receipt: ProofReceipt }) {
+  return (
+    <span className={`run-receipt ${receipt.paid ? 'run-receipt-paid' : 'run-receipt-unpaid'}`} data-testid="run-proof-receipt">
+      <strong>{receipt.rail}</strong>
+      {receipt.provider && <span>{receipt.provider}</span>}
+      <span>{receipt.amount} {receipt.currency}</span>
+      <code title={receipt.proof}>{short(receipt.proof)}</code>
+      {receipt.simulated && <em>simulated</em>}
+    </span>
+  )
+}
 
 function RunDetail({ run }: { run: RunRecord }) {
   return (
@@ -40,6 +54,13 @@ function RunDetail({ run }: { run: RunRecord }) {
       {run.verification && (
         <div className="run-fact"><span className="run-k">verdict</span>
           <VerificationBadge verification={run.verification} />
+        </div>
+      )}
+      {run.proofReceipts && run.proofReceipts.length > 0 && (
+        <div className="run-fact"><span className="run-k">receipt</span>
+          {run.proofReceipts.map((receipt) => (
+            <ReceiptFact key={`${receipt.rail}:${receipt.reference ?? receipt.proof}`} receipt={receipt} />
+          ))}
         </div>
       )}
       {run.txs.length > 0 && (

@@ -6,11 +6,14 @@
  */
 import {
   verb, messageRound, parseWant, parseBid, parseAward, parseEscrowRequired, parseDeposited, parseVerified,
+  parsePaymentRequired, parsePaymentProof, parsePaymentConfirmed,
+  type ProofReceipt, type PaymentRailKind, type PaymentCurrency,
 } from '@pay/agent-runtime'
 
 export interface RawMessage {
   sender: string
   text: string
+  timestamp?: string
 }
 
 export interface RoundBid {
@@ -33,9 +36,23 @@ export interface Round {
   delivered?: { raw: string; data?: unknown }
   /** The independent verifier's verdict (release is gated on it when a verifier is in session). */
   verification?: { verdict: 'pass' | 'fail'; by: string; reason?: string }
+  /** Payment-rail receipts for upstream procurement legs inside the round. */
+  proofReceipts: ProofReceipt[]
   release?: { sig: string }
   refunded?: boolean
   status: RoundStatus
+}
+
+interface PaymentLeg {
+  rail: PaymentRailKind
+  reference: string
+  amount?: string
+  currency?: PaymentCurrency
+  provider?: string
+  proof?: string
+  txSignature?: string
+  paid?: boolean
+  issuedAt?: string
 }
 
 const tryJson = (s: string): unknown => {
@@ -54,10 +71,40 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
   const get = (r: number): Round => {
     let round = byRound.get(r)
     if (!round) {
-      round = { round: r, bids: [], declined: [], status: 'bidding' }
+      round = { round: r, bids: [], declined: [], proofReceipts: [], status: 'bidding' }
       byRound.set(r, round)
     }
     return round
+  }
+
+  const legs = new Map<string, PaymentLeg>()
+  const legKey = (round: number, rail: PaymentRailKind, reference: string): string => `${round}:${rail}:${reference}`
+  const getLeg = (round: number, rail: PaymentRailKind, reference: string): PaymentLeg => {
+    const key = legKey(round, rail, reference)
+    let leg = legs.get(key)
+    if (!leg) {
+      leg = { rail, reference }
+      legs.set(key, leg)
+    }
+    return leg
+  }
+  const upsertReceipt = (round: Round, leg: PaymentLeg): void => {
+    if (leg.paid === undefined) return
+    const receipt: ProofReceipt = {
+      rail: leg.rail,
+      ...(leg.provider ? { provider: leg.provider } : {}),
+      ...(round.want?.service ? { service: `${round.want.service}-upstream` } : {}),
+      reference: leg.reference,
+      proof: leg.proof ?? leg.txSignature ?? '',
+      amount: leg.amount ?? '',
+      currency: leg.currency ?? 'SOL',
+      paid: leg.paid,
+      ...(leg.proof?.startsWith(`${leg.rail}-demo:`) ? { simulated: true } : {}),
+      issuedAt: leg.issuedAt ?? '1970-01-01T00:00:00.000Z',
+    }
+    const i = round.proofReceipts.findIndex((r) => r.rail === receipt.rail && r.reference === receipt.reference)
+    if (i >= 0) round.proofReceipts[i] = receipt
+    else round.proofReceipts.push(receipt)
   }
 
   for (const m of messages) {
@@ -87,6 +134,38 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
       get(verified.round).verification = {
         verdict: verified.verdict, by: verified.by, ...(verified.reason ? { reason: verified.reason } : {}),
       }
+      continue
+    }
+
+    const paymentRequired = parsePaymentRequired(text)
+    if (paymentRequired) {
+      const leg = getLeg(paymentRequired.round, paymentRequired.rail, paymentRequired.reference)
+      leg.amount = paymentRequired.amount
+      leg.currency = paymentRequired.currency
+      leg.provider = paymentRequired.seller
+      continue
+    }
+
+    const paymentProof = parsePaymentProof(text)
+    if (paymentProof) {
+      const round = get(paymentProof.round)
+      const leg = getLeg(paymentProof.round, paymentProof.rail, paymentProof.reference)
+      leg.proof = paymentProof.proof
+      leg.txSignature = paymentProof.txSignature
+      upsertReceipt(round, leg)
+      continue
+    }
+
+    const paymentConfirmed = parsePaymentConfirmed(text)
+    if (paymentConfirmed) {
+      const round = get(paymentConfirmed.round)
+      const leg = getLeg(paymentConfirmed.round, paymentConfirmed.rail, paymentConfirmed.reference)
+      leg.paid = paymentConfirmed.paid
+      if (paymentConfirmed.amount) leg.amount = paymentConfirmed.amount
+      if (paymentConfirmed.currency) leg.currency = paymentConfirmed.currency
+      if (paymentConfirmed.txSignature) leg.txSignature = paymentConfirmed.txSignature
+      leg.issuedAt = m.timestamp ?? leg.issuedAt ?? '1970-01-01T00:00:00.000Z'
+      upsertReceipt(round, leg)
       continue
     }
 

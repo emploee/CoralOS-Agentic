@@ -20,8 +20,8 @@ Each is a folder under `src/` with its own barrel; the root `src/index.ts` re-ex
 | **LLM** | `complete()` — SDK-free provider shim (**Venice AI** is the kit's LLM; `LLM_PROVIDER` also accepts `openai`/`anthropic`) + `parseJsonReply` | `llm/` (`complete.ts`) |
 | **Solana** | `solanaConnection`/`assertDevnet` (devnet guard), `generatePaymentUrl`/`verifyPayment`/`signTransfer`/`loadKeypairB58` (reference-bound) | `solana/` (`connection.ts`, `pay.ts`) |
 | **CoralOS** | `startCoralAgent(config, run)`, `CoralMcpAgent`, and the `ctx` verbs (`waitForMention`, `waitForAgent`, `reply`, `send`, `createThread`) | `coral/` (`mcp.ts`, `server.ts`) |
-| **Market** | `formatWant`/`parseBid`/`parseAward`/`parseVerify`/`parseVerified`/… + `selectBids`/`pickCheapest` — the WANT/BID/AWARD (+ VERIFY/VERIFIED) wire protocol (pure) | `market/` (`protocol.ts`) |
-| **Ledger** | `writeRun`/`readRun`/`listRuns` — one folder per paid round (hash-bound delivery, verdict, Explorer-linked txs, transcript) + `reputation()` derived from it | `ledger/` (`run.ts`, `store.ts`, `reputation.ts`) |
+| **Market** | `formatWant`/`parseBid`/`parseAward`/`parsePaymentRequired`/`parsePaymentProof`/`parsePaymentConfirmed`/`parseVerify`/`parseVerified`/… + `selectBids`/`pickCheapest` — the WANT/BID/AWARD (+ rail proofs + VERIFY/VERIFIED) wire protocol (pure) | `market/` (`protocol.ts`) |
+| **Ledger** | `writeRun`/`readRun`/`listRuns` — one folder per paid round (hash-bound delivery, proof receipts, verdict, Explorer-linked txs, transcript) + `reputation()` derived from it | `ledger/` (`run.ts`, `store.ts`, `reputation.ts`) |
 | **Policy** | `enforce(action, policy)` + `policyFromEnv` — the choke point every deposit/release passes: spend caps, service allowlist, payout + award-price binding, rate limit, verifier gate | `policy/` (`policy.ts`) |
 
 The runtime is coordination + helpers — it never holds a keypair. Settlement is the escrow contract,

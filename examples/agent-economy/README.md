@@ -87,8 +87,8 @@ Pay URL, your wallet signs the transfer, the seller verifies on-chain and delive
 the autonomous buyer uses.
 
 > The UI is the React app in [`web/`](web/), baked into the bridge image. For live UI edits run
-> `just ui` (Vite hot-reload on :5173, proxied to the bridge). Headless check (no browser):
-> `cd bridge && npm install && npm run smoke`.
+> `cd web && npm install && npm run dev` (Vite hot-reload on :5173, proxied to the bridge). Headless
+> check (no browser): `cd bridge && npm install && npm run smoke`.
 
 ## Front door 3 — swarm (broker + multiple sellers)
 
@@ -131,7 +131,7 @@ coral-agents/broker/src/index.ts → the swarm's pick logic (which sellers, how 
 
 config/coral.toml  → register a new agent (drop it in coral-agents/, add to localAgents)
 bridge/server.ts   → a new human/front-door flow (a new bridge endpoint)
-web/src/           → the React UI — add a service, a tab, a widget (see docs/EXPANDING_FRONTEND.md)
+web/src/           → the React UI — add a service, a tab, a widget (see web/README.md)
 ```
 
 ## How it's wired

@@ -14,6 +14,15 @@ describe('procureTxOddsContext', () => {
     expect(result.request.rail).toBe('pay-sh')
     expect(result.verification.paid).toBe(true)
     expect(result.verification.proof).toMatch(/^pay-sh-demo:/)
+    // the formal run-ledger artifact: honest about being scaffold-issued
+    expect(result.receipt).toMatchObject({
+      rail: 'pay-sh',
+      provider: 'pay.sh/txodds-context',
+      service: 'txline-edge-upstream',
+      paid: true,
+      simulated: true,
+    })
+    expect(result.receipt.proof).toMatch(/^pay-sh-demo:/)
     expect(result.messages[0]).toContain('PAYMENT_REQUIRED round=7 rail=pay-sh')
     expect(result.messages[1]).toContain('PAYMENT_PROOF round=7 rail=pay-sh')
     expect(result.messages[2]).toContain('PAYMENT_CONFIRMED round=7 rail=pay-sh')

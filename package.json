@@ -8,6 +8,8 @@
   "scripts": {
     "setup": "npm install --prefix scripts && node scripts/setup.js",
     "dev": "node scripts/txodds.js",
+    "desk": "node scripts/run-example.js examples/txodds-agent-desk ui",
+    "desk:app": "node scripts/run-example.js examples/txodds-agent-desk dev",
     "demo:coral": "node scripts/run-example.js examples/txodds coral",
     "marketplace": "node scripts/run-example.js examples/marketplace start",
     "marketplace:web": "node scripts/run-example.js examples/marketplace/web dev",

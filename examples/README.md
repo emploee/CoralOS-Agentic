@@ -24,4 +24,9 @@ World Cup service is only the default demo.
   (agent→agent), a human checkout (Phantom/Solflare wallet), and a bare 402 pay-per-call quickstart. All
   settle in devnet SOL. Needs Docker.
 
+- **[txodds-agent-desk/](txodds-agent-desk/README.md)** - the operator console: a Tauri v2 shell
+  and no-build browser UI over the existing TxODDS proxy, run ledger, proof receipts, settlement
+  endpoints, optional marketplace reputation, and watcher queue. Browser mode needs no Rust:
+  `npm run desk` from the repo root.
+
 Full pitch + quick start in the [root README](../README.md).

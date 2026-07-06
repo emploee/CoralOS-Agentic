@@ -17,6 +17,12 @@ COPY packages/harness-runtime/tsconfig.json ./packages/harness-runtime/
 COPY packages/harness-runtime/src/ ./packages/harness-runtime/src/
 RUN cd packages/harness-runtime && npx tsc
 
+COPY packages/payment-runtime/package.json packages/payment-runtime/package-lock.json* ./packages/payment-runtime/
+RUN cd packages/payment-runtime && npm install --ignore-scripts --install-links
+COPY packages/payment-runtime/tsconfig.json ./packages/payment-runtime/
+COPY packages/payment-runtime/src/ ./packages/payment-runtime/src/
+RUN cd packages/payment-runtime && npx tsc
+
 # --install-links copies the SDK into node_modules instead of symlinking
 COPY coral-agents/seller-agent/package.json coral-agents/seller-agent/package-lock.json* ./coral-agents/seller-agent/
 RUN cd coral-agents/seller-agent && npm install --ignore-scripts --install-links

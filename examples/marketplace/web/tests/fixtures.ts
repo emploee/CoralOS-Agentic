@@ -40,6 +40,18 @@ export const verifiedRound: Round = {
   deposit: { sig: 'depSig3', buyer: '47Dp' },
   delivered: { raw: '{"service":"freelance","result":{"deliverable":"Ship faster"}}' },
   verification: { verdict: 'pass', by: 'verifier-agent', reason: 'hash + structure verified' },
+  proofReceipts: [{
+    rail: 'pay-sh',
+    provider: 'pay.sh/txodds-context',
+    service: 'freelance-upstream',
+    reference: 'pay-3',
+    proof: 'pay-sh-demo:abc123',
+    amount: '0.03',
+    currency: 'USDC',
+    paid: true,
+    simulated: true,
+    issuedAt: '2026-07-06T00:00:00.000Z',
+  }],
   release: { sig: 'relSig3' },
   status: 'settled',
 }

@@ -14,6 +14,7 @@ import {
   startCoralAgent, verb, parseWant, formatBid, parseAward, formatEscrowRequired, parseDeposited,
 } from '@pay/agent-runtime'
 import { adapterFromEnv, sellerConfigFromEnv } from '@pay/harness-runtime'
+import { procureUpstream } from '@pay/payment-runtime'
 import { makeProgram, isFunded } from './escrow.js'
 import { deliverService } from './service.js'
 
@@ -22,6 +23,13 @@ const SELLER_WALLET = process.env.SELLER_WALLET ?? ''
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
 const ESCROW_DEADLINE_SECS = Number(process.env.ESCROW_DEADLINE_SECS ?? '600')
 const SETTLEMENT_MODE = (process.env.SETTLEMENT_MODE ?? 'arbiter').toLowerCase() === 'direct' ? 'direct' : 'arbiter'
+// Upstream procurement (Phase 10): PROCURE_RAIL=pay-sh makes the seller buy upstream context
+// through the payment-runtime rail after escrow funds and before delivering. The PAYMENT_* leg is
+// posted on the market thread (unmentioned: bus-visible, buyer-loop-invisible); the feed folds it
+// into the round's proof receipts, so the run ledger records what the seller paid upstream.
+const PROCURE_RAIL = (process.env.PROCURE_RAIL ?? '').toLowerCase()
+const PROCURE_PROVIDER = process.env.PROCURE_PROVIDER ?? 'pay.sh/txodds-context'
+const PROCURE_AMOUNT = process.env.PROCURE_AMOUNT ?? '0.03' // USDC
 const cfg = sellerConfigFromEnv(NAME)
 const trace = process.env.TRACE === '1'
 // The harness does the work; this agent keeps the wallet, the protocol, and the escrow checks.
@@ -106,6 +114,24 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
           }
           awarded.delete(deposited.reference)
           if (trace) console.error(`[${NAME}] escrow funded via ${deposited.settlement ?? 'direct'} -> delivering round ${deposited.round}`)
+          if (PROCURE_RAIL === 'pay-sh' && mention.threadId) {
+            // Buy upstream context before doing the work; a procurement failure never blocks
+            // delivery (the harness has its own fallbacks) — it just leaves no receipt.
+            try {
+              const procurement = await procureUpstream({
+                orderId: `${NAME}/round-${deposited.round}`,
+                round: deposited.round,
+                buyer: NAME,
+                provider: PROCURE_PROVIDER,
+                service: `${order.service}-upstream`,
+                amount: PROCURE_AMOUNT,
+              })
+              for (const msg of procurement.messages) await ctx.send(msg, mention.threadId)
+              if (trace) console.error(`[${NAME}] upstream procured via pay-sh: paid=${procurement.receipt.paid} simulated=${procurement.receipt.simulated === true} proof=${procurement.receipt.proof.slice(0, 24)}…`)
+            } catch (e) {
+              console.error(`[${NAME}] upstream procurement failed (delivering anyway): ${(e as Error).message}`)
+            }
+          }
           const delivery = await adapter.run(
             { round: deposited.round, service: order.service, arg: order.arg, priceSol: order.priceSol, reference: deposited.reference },
             trace ? (e) => console.error(`[${NAME}] harness ${e.kind}${e.text ? `: ${e.text}` : ''}`) : undefined,

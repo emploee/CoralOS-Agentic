@@ -10,6 +10,7 @@ WANT service=txline arg="edge <fixtureId>"
   -> AWARD to=<me>
   -> ESCROW_REQUIRED settlement=arbiter reference=<bound order>
   -> verify funded escrow using vault PDA
+  -> optional PAYMENT_REQUIRED / PAYMENT_PROOF / PAYMENT_CONFIRMED (upstream rail)
   -> DELIVERED {teams, odds, analysis}
 ```
 
@@ -39,10 +40,23 @@ with code-enforced floor/budget lives there now (`quote.ts`).
 `src/payment.ts` and `src/replay.ts` remain for the older direct-pay helpers and tests, but they are
 not part of the TxODDS CoralOS seller loop.
 
+## Optional upstream procurement
+
+Set `PROCURE_RAIL=pay-sh` to make the seller buy upstream context through
+`@pay/payment-runtime` after escrow is funded and before delivery. The seller posts the rail leg to
+the same Coral thread as `PAYMENT_REQUIRED`, `PAYMENT_PROOF`, and `PAYMENT_CONFIRMED`; the
+marketplace feed folds those messages into the run ledger as `proofReceipts` and writes
+`proof_receipts.json`.
+
+Current knobs: `PROCURE_PROVIDER` (default `pay.sh/txodds-context`) and `PROCURE_AMOUNT` (default
+`0.03` USDC). Pay.sh is still a simulated proof-adapter rail; receipts are marked `simulated: true`
+until a live provider API is wired.
+
 ## Env
 
 `SELLER_WALLET`, `AGENT_NAME`, `SERVICES=txline`, `FLOOR_SOL`, `PERSONA`, `SETTLEMENT_MODE=arbiter`,
-`ESCROW_DEADLINE_SECS`, `SOLANA_RPC_URL`, `TXLINE_API_KEY`, and `HARNESS` (default `node-llm`).
+`ESCROW_DEADLINE_SECS`, `SOLANA_RPC_URL`, `TXLINE_API_KEY`, `HARNESS` (default `node-llm`), and optional
+`PROCURE_RAIL` / `PROCURE_PROVIDER` / `PROCURE_AMOUNT`.
 
 For live analysis set an LLM key — the kit's LLM is **Venice AI** (`LLM_PROVIDER=venice` + `VENICE_API_KEY`;
 new accounts get $50 free via code `IMPERIAL50` at [venice.ai/settings/api](https://venice.ai/settings/api)).

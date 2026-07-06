@@ -7,8 +7,7 @@
  * settles exactly one order.
  *
  * In-memory only: a restart forgets consumed signatures. For production, back this with a durable
- * store (Redis/SQLite) so a proof can't be replayed across restarts - see
- * `docs/PRODUCTION_HARDENING.md` section1.1.
+ * store (Redis/SQLite) so a proof can't be replayed across restarts.
  */
 export class ReplayGuard {
   private readonly seen = new Set<string>()

@@ -55,6 +55,14 @@ body { margin: 0; background: var(--bg); color: var(--txt); }
 .settle { color: var(--link); text-decoration: none; font-size: 12px; border: 1px solid var(--line); padding: 4px 8px; border-radius: 6px; }
 .settle:hover { border-color: var(--link); }
 .settle-refund { color: var(--refund); }
+.proof {
+  display: inline-flex; gap: 6px; align-items: baseline; flex-wrap: wrap;
+  color: var(--premium); font-size: 12px; border: 1px solid var(--premium);
+  padding: 4px 8px; border-radius: 6px; background: rgba(210,153,34,0.08);
+}
+.proof code { color: var(--dim); }
+.proof em { color: var(--dim); font-style: normal; font-size: 10px; text-transform: uppercase; }
+.proof-unpaid { color: var(--refund); border-color: var(--refund); }
 
 /* World Cup edge panel (txline-edge deliveries) */
 .wc-panel { border: 1px solid var(--premium); border-radius: 10px; padding: 10px 12px; margin: 6px 0 10px; background: var(--bg); }
@@ -142,6 +150,14 @@ body { margin: 0; background: var(--bg); color: var(--txt); }
 .run-bid { border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
 .run-sha { color: var(--premium); }
 .run-detail .delivered { width: 100%; }
+.run-receipt {
+  display: inline-flex; gap: 6px; align-items: baseline; flex-wrap: wrap;
+  border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px;
+  color: var(--premium);
+}
+.run-receipt code { color: var(--dim); }
+.run-receipt em { color: var(--dim); font-style: normal; font-size: 10px; text-transform: uppercase; }
+.run-receipt-unpaid { color: var(--refund); }
 
 /* ── reputation + events strips ───────────────────────────────────────────── */
 .rep, .events { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12px; margin-bottom: 12px; }

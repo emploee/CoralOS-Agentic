@@ -290,6 +290,7 @@ function persistWebRun(args: {
       checked: 'delivery-present',
       ...(args.procurement ? { upstreamPayment: args.procurement.verification } : {}),
     },
+    ...(args.procurement ? { proofReceipts: [args.procurement.receipt] } : {}),
     txs,
     updatedAt: now,
   }
@@ -548,6 +549,7 @@ http
             currency: procurement.request.currency,
             paid: procurement.verification.paid,
             proof: procurement.verification.proof,
+            receipt: procurement.receipt,
           },
         }))
       } else if (url.pathname === '/api/runs') {

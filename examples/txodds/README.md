@@ -74,7 +74,8 @@ The board also includes **Run Pay.sh procurement demo**. That route calls
 `/api/pay-sh-edge`, has the seller buy simulated upstream context through the shared
 `payment-runtime` Pay.sh rail, writes `PAYMENT_REQUIRED -> PAYMENT_PROOF -> PAYMENT_CONFIRMED` into
 the run transcript, then settles the buyer payment through the same escrow path. Each run folder gets
-a `procurement.json` receipt beside the delivered read and settlement files.
+a formal `proof_receipts.json` artifact plus `procurement.json` beside the delivered read and
+settlement files.
 
 **Every settle leaves a run** — agent-settled or wallet-paid, the proxy persists it to a run ledger
 (`data/txodds-runs/`, session `web-oracle`): the read, the order-bound reference, the txs. The UI's

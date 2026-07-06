@@ -62,6 +62,19 @@ describe('ledger store', () => {
     for (const f of ['run.json', 'want.json', 'bids.json', 'award.json', 'escrow.json', 'delivery.json', 'txs.json', 'transcript.jsonl'])
       expect(existsSync(join(dir, f)), f).toBe(true)
     expect(existsSync(join(dir, 'verification.json'))).toBe(false) // no verifier yet
+    expect(existsSync(join(dir, 'proof_receipts.json'))).toBe(false) // no upstream payment leg
+  })
+
+  it('persists proof receipts as a first-class facet', () => {
+    const receipt = {
+      rail: 'pay-sh', provider: 'pay.sh/txodds-context', service: 'txline-edge-upstream',
+      reference: 'order-1', proof: 'pay-sh-demo:abc', amount: '0.03', currency: 'USDC',
+      paid: true, simulated: true, issuedAt: '2026-07-06T00:00:00.000Z',
+    }
+    writeRun(base, { ...settledRun(), proofReceipts: [receipt] }, transcript)
+    const dir = runDir(base, session, 1)
+    expect(JSON.parse(readFileSync(join(dir, 'proof_receipts.json'), 'utf8'))).toEqual([receipt])
+    expect(readRun(base, session, 1)?.run.proofReceipts).toEqual([receipt])
   })
 
   it('binds the delivery content hash into delivery.json', () => {

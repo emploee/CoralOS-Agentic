@@ -31,6 +31,13 @@ const verifiedRound: RawMessage[] = [
   { sender: 'buyer-agent', text: 'AWARD round=7 to=seller-premium' },
   { sender: 'seller-premium', text: 'ESCROW_REQUIRED round=7 reference=Ref7 seller=7jwB amount=0.0005 deadline=600' },
   { sender: 'buyer-agent', text: 'DEPOSITED round=7 reference=Ref7 buyer=47Dp sig=depSig settlement=arbiter' },
+  { sender: 'seller-premium', text: 'PAYMENT_REQUIRED round=7 rail=pay-sh amount=0.03 currency=USDC reference=pay-7 seller=pay.sh/txodds-context url=https://pay.sh/api/quicknode' },
+  { sender: 'seller-premium', text: 'PAYMENT_PROOF round=7 rail=pay-sh reference=pay-7 proof=pay-sh-demo:abc buyer=seller-premium' },
+  {
+    sender: 'seller-premium',
+    text: 'PAYMENT_CONFIRMED round=7 rail=pay-sh reference=pay-7 paid=true amount=0.03 currency=USDC',
+    timestamp: '2026-07-06T00:00:00.000Z',
+  },
   { sender: 'seller-premium', text: 'DELIVERED round=7 {"ok":true}' },
   { sender: 'buyer-agent', text: 'VERIFY round=7 sha=abc service=txline arg=999 payload={"ok":true}' },
   { sender: 'verifier-agent', text: 'VERIFIED round=7 verdict=pass by=verifier-agent reason="hash + structure verified"' },
@@ -97,11 +104,20 @@ describe('persist', () => {
     expect(r.status).toBe('settled') // ARBITER_RELEASED counts as settled
     expect(r.release?.sig).toBe('relSig')
     expect(r.verification).toEqual({ verdict: 'pass', by: 'verifier-agent', reason: 'hash + structure verified' })
+    expect(r.proofReceipts[0]).toMatchObject({
+      rail: 'pay-sh',
+      provider: 'pay.sh/txodds-context',
+      service: 'txline-upstream',
+      paid: true,
+      simulated: true,
+    })
 
     persistRounds(base, session, [r], verifiedRound)
     const dir = runDir(base, session, 7)
     expect(JSON.parse(readFileSync(join(dir, 'verification.json'), 'utf8')))
       .toEqual({ verdict: 'pass', by: 'verifier-agent', reason: 'hash + structure verified' })
+    expect(JSON.parse(readFileSync(join(dir, 'proof_receipts.json'), 'utf8'))[0])
+      .toMatchObject({ rail: 'pay-sh', proof: 'pay-sh-demo:abc', amount: '0.03', currency: 'USDC' })
     expect(replaySession(base, session, sellers)).toEqual([r])
   })
 })

@@ -1,5 +1,7 @@
 export * from './types.js'
 export * from './rail-router.js'
+export * from './receipt.js'
+export * from './procure.js'
 export * from './rails/solana-pay.js'
 export * from './rails/escrow.js'
 export * from './rails/x402-client.js'

@@ -37,6 +37,7 @@ export function toRunRecord(session: string, r: Round): RunRecord {
         }
       : {}),
     ...(r.verification ? { verification: r.verification } : {}),
+    ...(r.proofReceipts.length ? { proofReceipts: r.proofReceipts } : {}),
     txs: [
       ...(r.deposit ? [{ kind: 'deposit', sig: r.deposit.sig, explorer: explorerTx(r.deposit.sig) }] : []),
       ...(r.release ? [{ kind: 'release', sig: r.release.sig, explorer: explorerTx(r.release.sig) }] : []),

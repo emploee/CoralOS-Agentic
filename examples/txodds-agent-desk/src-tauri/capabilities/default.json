@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The desk window needs nothing beyond the webview defaults — no IPC, no fs, no shell.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

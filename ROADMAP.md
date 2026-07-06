@@ -1,10 +1,17 @@
 # ROADMAP.md — the agent-commerce layer: build record + what's next
 
-> **Status: phases 0–9 below are shipped** (per-phase ✅ notes inline): the agent-commerce layer
-> (0–6, **validated live on devnet** — both the settle path and the verifier-refused path) and the
-> frontend/Coral-visibility layer (7.0–9). What remains is the stretch list inside each phase and
-> the [Future](#future-explicitly-out-of-scope-for-now) section. This doc is the build record +
+> **Status: phases 0–10 below are shipped** (per-phase ✅ notes inline): the agent-commerce layer
+> (0–6, **validated live on devnet** — both the settle path and the verifier-refused path), the
+> frontend/Coral-visibility layer (7.0–9), and the payment rail runtime (10 — two live rails, six
+> honest scaffolds). What remains is the stretch list inside each phase, the
+> [Immediate next steps](#immediate-next-steps), and the
+> [Future](#future-explicitly-out-of-scope-for-now) section. This doc is the build record +
 > roadmap; the user-facing story is in the [README](README.md).
+
+> **2026-07-06 audit update:** CI now covers `harness-runtime`, `payment-runtime`, marketplace,
+> agent-economy, and deterministic example smoke checks; `proofReceipts` are first-class in both the
+> TxODDS web ledger and the Coral marketplace feed/UI; `examples/txodds-agent-desk` is scaffolded as
+> a Tauri/no-build operator console over the existing proxy, ledger, and rails.
 
 ## Thesis
 
@@ -33,6 +40,7 @@ settlement.*
 | Buyer / seller / broker / user-proxy agents                | `coral-agents/`                                         | ✅ launched per session by coral-server |
 | Competitive bidding round + SSE feed + visualizer          | `examples/marketplace/`                                 | ✅                                      |
 | Devnet guard, Solana Pay, reference-bound payments         | `packages/agent-runtime/src/solana/`                    | ✅                                      |
+| Payment rail router (Solana Pay + escrow live; Pay.sh/x402/USDC/allowance/embedded/payout scaffolds) | `packages/payment-runtime/`   | ✅ Phase 10 — status table in its README |
 | The fork point                                             | `examples/txodds/agent/service.ts` `deliverService()` | ✅ — this is what harnesses replace    |
 
 ## Source repos and what each contributes
@@ -61,8 +69,9 @@ Market → **4**, policy middleware → **5**.
 *Status:* `packages/agent-runtime/src/ledger/` (types + fs store, tested) and feed persistence
 are live: every `/api/feed` poll lands each round in `RUNS_DIR` (default
 `examples/marketplace/runs/`), `/api/runs` lists the ledger, and `/api/feed` replays a session
-from disk when coral-server is unreachable (`source: "ledger"`). Remaining: a dedicated "Runs"
-tab in the visualizer, and `verification.json` (arrives with the Phase 3 verifier).
+from disk when coral-server is unreachable (`source: "ledger"`). The visualizer has a Runs tab,
+`verification.json` ships with the verifier gate, and rail procurement now writes
+`proof_receipts.json`.
 
 The moment money is involved, the question is *"what did the agent actually do?"* The answer
 must be: click the run, see everything. Everything later (telemetry, verification, reputation,
@@ -81,13 +90,14 @@ credit) hangs off this.
     escrow.json        # reference, seller, amount, deadline + deposit tx
     delivery.json      # delivered payload + sha256 content hash
     verification.json  # verifier verdict (Phase 3+)
+    proof_receipts.json # upstream payment-rail receipts (Phase 10+)
     transcript.jsonl   # the round's Coral messages, in order
     txs.json           # every Solana signature with Explorer links
   ```
 - Emit from the existing paths: `coral-agents/buyer-agent` writes want/award/escrow/txs;
-  `coral-agents/seller-agent` writes bids/delivery; the marketplace feed
-  (`examples/marketplace/feed/`) already folds session state into rounds — teach it to
-  persist instead of only streaming.
+  `coral-agents/seller-agent` writes bids/delivery and optional payment-rail proof messages; the
+  marketplace feed (`examples/marketplace/feed/`) folds session state into rounds and persists them
+  instead of only streaming.
 - Bind `delivery.json`'s content hash to the escrow `reference` (the proxy already does
   `sha256(read)` — generalize that convention into the ledger).
 - UI: a "Runs" tab in `examples/marketplace/web/` that lists rounds and expands into the
@@ -403,11 +413,31 @@ the bus view reads the same feed the ledger writes — one source of truth.
 
 ---
 
+## Phase 10 — payment rail runtime (`packages/payment-runtime`) — ✅ shipped 2026-07-05
+
+*Status:* one `PaymentRail` interface (`quote` → `requestPayment` → `verifyPayment`, optional
+`release`/`refund`), a `PaymentRailRouter`, and allowance/merchant/procurement policies. **Honest
+split** (the full table is in the package README): Solana Pay and escrow are live devnet rails;
+Pay.sh, x402, USDC, allowance, embedded-wallet, and payout are typed scaffolds that model the
+message/proof flow. The market protocol gained `PAYMENT_REQUIRED`/`PAYMENT_PROOF`/
+`PAYMENT_CONFIRMED` (tested). First consumer: the TxODDS **procurement demo** — the seller buys
+upstream context through the Pay.sh rail before delivering (`/api/pay-sh-edge`), and the receipt
+lands in the run ledger as a **proof receipt** and renders in the Oracle UI. The Coral seller can
+also procure via `PROCURE_RAIL=pay-sh`; the marketplace feed folds those `PAYMENT_*` messages into
+`proofReceipts`, `proof_receipts.json`, the round card, and the Runs tab. This replaces the old
+Future-section claim that rails were outside this repo's scope: the *rails* are now in scope and
+partially real; what stays future is credit (Normandy) and live provider integrations.
+
+---
+
 ### Future (explicitly out of scope for now)
 
-- **Finance rails:** savings-mcp-style read-only opportunity sellers; Normandy-style
-  reputation-collateralized credit ("agents build credit and access working capital") —
-  requires a mature Phase 6 track record first.
+- **Live provider integrations for the scaffold rails** (Phase 10): the real Pay.sh catalog/receipt
+  API, the x402 facilitator round-trip, SPL transfers behind the USDC rail, an embedded-wallet SDK.
+  The `PaymentRail` seam is built for exactly these — fill `verifyPayment`, keep the interface.
+- **Agent credit:** Normandy-style reputation-collateralized credit ("agents build credit and
+  access working capital") — needs a longer Phase 6 track record first. (Payment *rails* themselves
+  are no longer out of scope — they shipped as Phase 10.)
 - **Mainnet anything.** The kit stays devnet-only (`assertDevnet` guard remains).
 - **Daytona/cloud sandboxes** for harness isolation — local workdirs are enough until
   Phase 3 is stable.
@@ -433,11 +463,17 @@ the bus view reads the same feed the ledger writes — one source of truth.
 
 ## Immediate next steps
 
-*(Phases 0–6 shipped and live-validated — see the per-phase status notes above.)*
+*(Phases 0–10 shipped — see the per-phase status notes above.)*
 
-1. Phase 7.0: extend `feed/src/coralState.ts` to keep thread ids + mentions, add
-   `/api/threads` + `/api/session` + `/api/events` — the data unlock for every UI below.
-2. Phase 7 first slice: the **verification badge** on `RoundCard` (the feed already folds
-   `round.verification`; the UI just never renders it), then the Runs tab and the bus view.
-3. Phase 9 cheap wins: `npm run coral` prints the feed/visualizer one-liner; watcher event
-   markers on the oracle board.
+1. **Promote a scaffold rail to live** — the Pay.sh receipt API call or the x402 facilitator
+   round-trip in `packages/payment-runtime` (the seam is one `verifyPayment` body each).
+2. **Promote rail receipts from demo to provider-backed** — the Coral market and UI now fold
+   `PAYMENT_*` into `proofReceipts`; next, replace the Pay.sh demo receipt supplier with the live
+   provider receipt API and add failure-mode fixtures.
+3. **Agent desk hardening** (`examples/txodds-agent-desk`) — validate the Tauri build on a machine
+   with the Rust toolchain + WebView2, then add operator controls for holds/approvals once the
+   proxy exposes those actions.
+4. **Wire the policy choke point through `broker/` (both legs) and the agent-economy bridge** —
+   the Phase 5 remaining item, unchanged.
+5. **Richer research delivery schema** — claims + evidence links beyond the TxLINE-verified read
+   (the Phase 4 remaining item, unchanged).

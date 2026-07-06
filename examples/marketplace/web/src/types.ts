@@ -20,6 +20,7 @@ export interface Round {
   delivered?: { raw: string; data?: unknown }
   /** The independent verifier's verdict — release is gated on it when a verifier is in session. */
   verification?: { verdict: 'pass' | 'fail'; by: string; reason?: string }
+  proofReceipts?: ProofReceipt[]
   release?: { sig: string }
   refunded?: boolean
   status: RoundStatus
@@ -71,6 +72,20 @@ export interface TxEntry {
   explorer: string
 }
 
+export interface ProofReceipt {
+  rail: string
+  provider?: string
+  service?: string
+  reference?: string
+  proof: string
+  amount: string
+  currency: string
+  paid: boolean
+  simulated?: boolean
+  issuedAt: string
+  reason?: string
+}
+
 export interface RunRecord {
   runId: string
   session: string
@@ -89,6 +104,7 @@ export interface RunRecord {
   }
   delivery?: { raw: string; data?: unknown; sha256: string }
   verification?: { verdict: 'pass' | 'fail'; by: string; reason?: string }
+  proofReceipts?: ProofReceipt[]
   txs: TxEntry[]
   updatedAt: string
 }

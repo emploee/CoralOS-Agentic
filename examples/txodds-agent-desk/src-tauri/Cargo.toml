@@ -1,0 +1,16 @@
+[package]
+name = "txodds-agent-desk"
+version = "0.1.0"
+description = "TxODDS Agent Desk — a Tauri shell over the kit's proxy, run ledger, and payment rails"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[profile.release]
+strip = true
+lto = true

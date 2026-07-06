@@ -64,6 +64,32 @@ describe('foldRounds', () => {
     expect(rounds.map((r) => r.round)).toEqual([1, 2])
   })
 
+  it('folds payment rail messages into first-class proof receipts', () => {
+    const [r] = foldRounds([
+      { sender: 'buyer-agent', text: 'WANT round=8 service=txline arg=edge-9001 budget=0.001' },
+      { sender: 'seller-premium', text: 'PAYMENT_REQUIRED round=8 rail=pay-sh amount=0.03 currency=USDC reference=pay-8 seller=pay.sh/txodds-context url=https://pay.sh/api/quicknode' },
+      { sender: 'seller-premium', text: 'PAYMENT_PROOF round=8 rail=pay-sh reference=pay-8 proof=pay-sh-demo:abc buyer=seller-premium' },
+      {
+        sender: 'seller-premium',
+        text: 'PAYMENT_CONFIRMED round=8 rail=pay-sh reference=pay-8 paid=true amount=0.03 currency=USDC',
+        timestamp: '2026-07-06T00:00:00.000Z',
+      },
+    ], sellers)
+
+    expect(r.proofReceipts).toEqual([{
+      rail: 'pay-sh',
+      provider: 'pay.sh/txodds-context',
+      service: 'txline-upstream',
+      reference: 'pay-8',
+      proof: 'pay-sh-demo:abc',
+      amount: '0.03',
+      currency: 'USDC',
+      paid: true,
+      simulated: true,
+      issuedAt: '2026-07-06T00:00:00.000Z',
+    }])
+  })
+
   it('leaves an in-progress round in a non-settled status', () => {
     const r = foldRounds(round1.slice(0, 3), sellers)[0]
     expect(r.status).toBe('bidding')

@@ -291,6 +291,19 @@ function SettleResult({ r }) {
       <a href=${addrLink(ESCROW_PROGRAM)} target="_blank" rel="noreferrer">escrow program open</a></div>`
 }
 
+function ProofReceiptChip({ receipt }) {
+  if (!receipt) return null
+  return html`
+    <div class="settled-line bind proof-receipt">
+      <span class="bind-tag">proof receipt</span>
+      <b>${receipt.rail}</b>${receipt.provider ? html` · ${receipt.provider}` : ''}
+      · ${receipt.paid ? 'paid' : `unpaid${receipt.reason ? ` (${receipt.reason})` : ''}`}
+      <b> ${receipt.amount} ${receipt.currency}</b>
+      · proof <b>${shortAddr(receipt.proof)}</b>
+      ${receipt.simulated && html`<span class="sim-badge">simulated rail</span>`}
+    </div>`
+}
+
 function ProcurementResult({ r }) {
   if (!r) return null
   if (r.ok) return html`
@@ -299,8 +312,9 @@ function ProcurementResult({ r }) {
         seller procured upstream context for <b>${r.procurement?.amount} ${r.procurement?.currency}</b>
         then settled <b>${r.amountSol} SOL</b> to the seller
       </div>
+      <${ProofReceiptChip} receipt=${r.procurement?.receipt} />
       <div class="settled-line bind">
-        proof <b>${shortAddr(r.procurement?.proof)}</b> stored in the run ledger as PAYMENT_PROOF
+        stored in the run ledger as <b>proof_receipts.json</b> + PAYMENT_PROOF in the transcript
       </div>
     </div>`
   return html`<div class="settled sim">Pay.sh demo unavailable${r.error ? ` (${String(r.error).slice(0, 70)})` : ''}</div>`
@@ -343,6 +357,7 @@ function RunsPanel({ runs, selectedRun, onSelect, onGrade, grading }) {
                 ${top.delivery?.sha256 && html`<span>delivery sha <b>${shortAddr(top.delivery.sha256)}</b></span>`}
                 ${top.escrow?.reference && html`<span>escrow ref <b>${shortAddr(top.escrow.reference)}</b></span>`}
                 ${top.verification?.upstreamPayment?.rail && html`<span>upstream <b>${top.verification.upstreamPayment.rail} ${top.verification.upstreamPayment.amount} ${top.verification.upstreamPayment.currency}</b></span>`}
+                ${top.proofReceipts?.map((pr) => html`<span key=${pr.rail + pr.proof}>receipt <b>${pr.rail} ${pr.amount} ${pr.currency} ${pr.paid ? '✓' : '✗'}${pr.simulated ? ' (sim)' : ''}</b></span>`)}
                 ${outcome && html`<span>reality <b>${outcome.status === 'graded'
                   ? `${outcome.actual?.winner ?? 'unknown'} - ${outcome.correct === true ? 'hit' : outcome.correct === false ? 'miss' : 'unscored'}`
                   : 'pending'}</b></span>`}

@@ -25,6 +25,33 @@ export interface TxEntry {
   explorer: string
 }
 
+/**
+ * A payment-rail proof receipt — the durable "what was paid and how was it proven" of one payment
+ * leg (e.g. the seller buying upstream context through a rail before delivering). First-class on
+ * purpose: even while a rail is a scaffold, its receipt is a formal artifact (`simulated: true`),
+ * so promoting the rail to a live provider changes the flag, not the schema, the ledger, or the UI.
+ */
+export interface ProofReceipt {
+  /** The payment rail that issued it: 'pay-sh' | 'x402' | 'solana-pay' | 'escrow' | … */
+  rail: string
+  /** Upstream provider identity, when the rail has one (e.g. 'pay.sh/txodds-context'). */
+  provider?: string
+  /** What was bought (e.g. 'txline-edge-upstream'). */
+  service?: string
+  /** The order/request reference the proof is bound to. */
+  reference?: string
+  /** The proof itself: a receipt string, payment reference, or Solana signature. */
+  proof: string
+  amount: string
+  currency: string
+  paid: boolean
+  /** True while the rail is a scaffold — the proof shape is real, the money movement is not. */
+  simulated?: boolean
+  issuedAt: string
+  /** Why `paid` is false, when it is. */
+  reason?: string
+}
+
 export interface RunRecord {
   /** `<session>/round-<n>` — globally unique across a coral-server's sessions. */
   runId: string
@@ -47,6 +74,8 @@ export interface RunRecord {
   delivery?: { raw: string; data?: unknown; sha256: string }
   /** Verifier verdict (Phase 3) — absent until a verifier agent gates the release. */
   verification?: unknown
+  /** Payment-rail receipts for this round (e.g. the seller's upstream procurement legs). */
+  proofReceipts?: ProofReceipt[]
   txs: TxEntry[]
   updatedAt: string
 }

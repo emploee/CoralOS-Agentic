@@ -9,6 +9,7 @@
  *     escrow.json        (terms + deposit tx)
  *     delivery.json      (raw + parsed + sha256 content hash)
  *     verification.json
+ *     proof_receipts.json (payment-rail receipts, e.g. upstream procurement)
  *     txs.json
  *     transcript.jsonl   the round's raw Coral messages, one JSON per line
  *
@@ -41,6 +42,7 @@ export function writeRun(baseDir: string, run: RunRecord, transcript: Transcript
   if (run.escrow) writeJson(dir, 'escrow.json', run.escrow)
   if (run.delivery) writeJson(dir, 'delivery.json', run.delivery)
   if (run.verification !== undefined) writeJson(dir, 'verification.json', run.verification)
+  if (run.proofReceipts?.length) writeJson(dir, 'proof_receipts.json', run.proofReceipts)
   if (run.txs.length) writeJson(dir, 'txs.json', run.txs)
   writeFileSync(
     join(dir, 'transcript.jsonl'),

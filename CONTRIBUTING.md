@@ -6,23 +6,31 @@ Contributions are welcome. The `main` branch is the integration branch — targe
 
 | Directory | Language | Typical changes |
 |-----------|----------|-----------------|
-| `packages/agent-runtime/` | TypeScript | The runtime: LLM shim, Solana Pay + devnet guard, CoralOS MCP client, the market protocol |
-| `examples/txodds/` | TypeScript | The World Cup Oracle — the edge transform, the proxy, the web app |
-| `examples/txodds/escrow/` | Rust (Anchor) | The escrow settlement contract |
+| `packages/agent-runtime/` | TypeScript | The runtime: LLM shim, Solana Pay + devnet guard, CoralOS MCP client, the market protocol (incl. VERIFY/VERIFIED), the run ledger + reputation, the policy choke point |
+| `packages/harness-runtime/` | TypeScript | The harness adapter SDK (`node-llm` / `claude-code` / any CLI as sellers) |
+| `examples/txodds/` | TypeScript | The World Cup Oracle — the edge transform, the proxy (+ run grading), the web app, the research watcher |
+| `examples/txodds/escrow/` | Rust (Anchor) | The escrow + arbiter settlement contracts |
+| `examples/marketplace/` | TypeScript | The competitive market (3 rounds: classic / freelancer / research), the feed server, the React visualizer |
+| `examples/agent-economy/` | TypeScript | The three front doors (autonomous / bridge checkout / quickstart) + dashboard |
+| `coral-agents/` | TypeScript | The per-session agents: buyer, seller (+ personas), verifier, broker, echo, user-proxy |
 
 ## Prerequisites
 
 - Node.js 20+
-- An LLM key + a funded devnet wallet to run the live demo (see the root README). **No Docker needed.**
+- An LLM key + a funded devnet wallet to run the live demo (see the root README). **The default demo
+  needs no Docker**; the multi-agent markets need Docker (coral-server).
 
 ## Development Commands
 
 ```sh
-# build the runtime first — examples/txodds depends on its dist via a file: dep
+# build the runtimes first — dependents use their dist via file: deps
 cd packages/agent-runtime && npm install && npm run build && npm run typecheck && npm test
+cd packages/harness-runtime && npm install && npm run build && npm test   # after agent-runtime
 
-# typecheck + test the example
+# typecheck + test what you changed, e.g.
 cd examples/txodds && npm install && npm run typecheck && npm test
+cd examples/marketplace/feed && npm install && npm test
+cd examples/marketplace/web && npm install && npm test && npm run e2e   # e2e = fixtures, no devnet
 ```
 
 ## PR Workflow

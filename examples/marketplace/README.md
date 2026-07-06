@@ -65,7 +65,8 @@ seller-cheap   DELIVERED round=1 {"service":"txline-fixtures","count":…}
 ## Visualize it (optional React dashboard)
 
 Watch the auction in a browser instead of the logs — a read-only visualizer (no wallet) that renders
-each round's bids, the winner + reasoning, and the escrow settlement with Explorer links:
+each round's bids, the winner + reasoning, upstream payment proof receipts, and the escrow settlement
+with Explorer links:
 
 ```sh
 cd feed && SESSION=<the market session id> npm start   # the feed server on :4000 (another shell)
@@ -75,8 +76,8 @@ npm run marketplace:web                                # from the repo root — 
 It's e2e-tested with fixtures (no devnet needed) — see [`web/`](web/README.md).
 
 The feed also writes every round to the **run ledger** (`runs/<session>/round-<n>/` — want, bids,
-award reasoning, escrow + deposit tx, sha256-bound delivery, verifier verdict, Explorer-linked txs,
-raw transcript), serves `/api/runs` + `/api/reputation`, and **replays a session from disk when
+award reasoning, escrow + deposit tx, sha256-bound delivery, verifier verdict, proof receipts,
+Explorer-linked txs, raw transcript), serves `/api/runs` + `/api/reputation`, and **replays a session from disk when
 coral-server is down**. Details: [`feed/`](feed/README.md).
 
 ## Two more rounds on the same rails

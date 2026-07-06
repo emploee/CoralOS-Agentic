@@ -7,3 +7,8 @@
   `HarnessAdapter` interface (`quote`/`run`) so a seller can be a prompt (`node-llm`), headless
   **Claude Code** (`claude-code`), or any CLI (`HARNESS=cli HARNESS_CMD='hermes {prompt}'`).
   Harness processes never hold keys. Build after agent-runtime.
+- **[payment-runtime/](payment-runtime/README.md)** - the payment rail router: one `PaymentRail`
+  interface, `PaymentRailRouter`, allowance/merchant/procurement policies, and proof-receipt helpers.
+  Solana Pay + escrow are working devnet rails; Pay.sh, x402, USDC, allowance, embedded-wallet, and
+  payout are typed scaffolds with an honest status table in the package README. Build after
+  agent-runtime.

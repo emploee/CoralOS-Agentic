@@ -45,6 +45,14 @@ describe('RoundCard', () => {
     expect(badge.textContent).toContain('verifier-agent')
   })
 
+  it('shows upstream payment proof receipts', () => {
+    render(<RoundCard round={verifiedRound} />)
+    const receipt = screen.getByTestId('proof-receipt')
+    expect(receipt.textContent).toContain('pay-sh')
+    expect(receipt.textContent).toContain('0.03 USDC')
+    expect(receipt.textContent).toContain('sim')
+  })
+
   it('shows a REFUSED release when verification fails (the no-pay path)', () => {
     render(<RoundCard round={refusedRound} />)
     const badge = screen.getByTestId('verification')

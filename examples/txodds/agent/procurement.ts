@@ -1,23 +1,12 @@
-import { createHash } from 'node:crypto'
-import {
-  type PaymentRequest,
-  type PaymentVerification,
-} from '../../../packages/payment-runtime/src/types.js'
-import { PaymentRailRouter } from '../../../packages/payment-runtime/src/rail-router.js'
-import { payShRail } from '../../../packages/payment-runtime/src/rails/pay-sh.js'
-import {
-  formatPaymentConfirmed,
-  formatPaymentProof,
-  formatPaymentRequired,
-} from '../../../packages/agent-runtime/src/market/protocol.js'
+/**
+ * The TxODDS Pay.sh procurement demo — a thin wrapper over the payment-runtime's generic
+ * `procureUpstream`: the seller buys upstream fixture context through the Pay.sh rail before
+ * delivering, and the proof receipt (simulated while the rail is a scaffold) lands in the run
+ * ledger + the Oracle UI.
+ */
+import { procureUpstream, type UpstreamProcurement } from '../../../packages/payment-runtime/src/procure.js'
 
-export interface PayShProcurement {
-  provider: string
-  service: string
-  request: PaymentRequest
-  verification: PaymentVerification
-  messages: string[]
-}
+export type PayShProcurement = UpstreamProcurement
 
 export interface PayShProcurementInput {
   orderId: string
@@ -31,68 +20,15 @@ export interface PayShProcurementInput {
 }
 
 export async function procureTxOddsContext(input: PayShProcurementInput): Promise<PayShProcurement> {
-  const provider = input.provider ?? 'pay.sh/txodds-context'
-  const router = new PaymentRailRouter([
-    payShRail({ providerAllowlist: [provider], catalogBaseUrl: 'https://pay.sh/api' }),
-  ])
-  const order = {
-    id: input.orderId,
+  const provider = input.provider ?? input.seller ?? 'pay.sh/txodds-context'
+  return procureUpstream({
+    orderId: input.orderId,
     round: input.round,
-    service: 'txline-edge-upstream',
     buyer: input.buyer,
-    seller: input.seller,
+    provider,
+    service: 'txline-edge-upstream',
     amount: input.amount,
     currency: input.currency ?? 'USDC',
-    rail: 'pay-sh' as const,
-    metadata: {
-      provider,
-      fixtureId: input.fixtureId,
-      url: `https://pay.sh/api/quicknode/rpc?fixtureId=${encodeURIComponent(input.fixtureId)}`,
-    },
-  }
-  const request = await router.requestPayment(order)
-  const receipt = receiptFor({ orderId: input.orderId, fixtureId: input.fixtureId, provider, amount: input.amount })
-  const verification = await router.verifyPayment({
-    ...request,
-    metadata: { ...request.metadata, payShReceipt: receipt },
+    url: `https://pay.sh/api/quicknode/rpc?fixtureId=${encodeURIComponent(input.fixtureId)}`,
   })
-  const reference = request.reference ?? request.orderId
-  return {
-    provider,
-    service: order.service,
-    request,
-    verification,
-    messages: [
-      formatPaymentRequired({
-        round: input.round,
-        rail: 'pay-sh',
-        amount: request.amount,
-        currency: request.currency,
-        reference,
-        seller: input.seller,
-        ...(request.url ? { url: request.url } : {}),
-      }),
-      formatPaymentProof({
-        round: input.round,
-        rail: 'pay-sh',
-        reference,
-        proof: receipt,
-        buyer: input.buyer,
-      }),
-      formatPaymentConfirmed({
-        round: input.round,
-        rail: 'pay-sh',
-        reference,
-        paid: verification.paid,
-        amount: verification.amount,
-        currency: verification.currency,
-      }),
-    ],
-  }
-}
-
-function receiptFor(input: { orderId: string; fixtureId: string; provider: string; amount: string }): string {
-  return `pay-sh-demo:${createHash('sha256')
-    .update(`${input.orderId}:${input.fixtureId}:${input.provider}:${input.amount}`)
-    .digest('hex')}`
 }

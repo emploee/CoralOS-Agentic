@@ -12,3 +12,7 @@
   Solana Pay + escrow are working devnet rails; Pay.sh, x402, USDC, allowance, embedded-wallet, and
   payout are typed scaffolds with an honest status table in the package README. Build after
   agent-runtime.
+- **[solana-agent-tools/](solana-agent-tools/README.md)** - optional read-only Solana tools for richer
+  agents and Solana Agent Kit-style plugins: wallet/token reads, Jupiter/Pyth price reads, and a
+  non-executable transfer-intent simulation that can call `policy.enforce()`. No swaps, bridges, token
+  launches, signing, or live transfers in v1. Build after agent-runtime.

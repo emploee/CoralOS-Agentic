@@ -73,6 +73,7 @@ verdict, Explorer-linked txs) and feeds a **reputation score** buyers weigh on t
 | **Solana Pay** (reference-bound transfers)       | [`packages/agent-runtime/src/solana`](packages/agent-runtime/src/solana) | hand-roll payment URLs + verification      |
 | **Escrow** (deposit → release / refund)         | [`examples/txodds/escrow`](examples/txodds/escrow)                       | write, audit, and deploy an Anchor program |
 | **Payment rails** (one interface; 2 live, 6 scaffolds) | [`packages/payment-runtime`](packages/payment-runtime)             | re-plumb payments per provider (see its README's honest status table) |
+| **Read-only Solana tools** (SAK-style context plugin) | [`packages/solana-agent-tools`](packages/solana-agent-tools)       | give agents balances/prices without handing them signing authority |
 | **Harness adapters** (Claude Code / any CLI sells) | [`packages/harness-runtime`](packages/harness-runtime)                 | bridge external agent harnesses yourself   |
 | **Verifier gate** (release only on a pass)       | [`coral-agents/verifier-agent`](coral-agents/verifier-agent)             | build independent delivery checks          |
 | **Policy choke point** (caps, bindings, gates)   | [`packages/agent-runtime/src/policy`](packages/agent-runtime/src/policy) | scatter ad-hoc safety checks               |
@@ -89,6 +90,9 @@ Everything runs on **devnet** — free play money, real on-chain settlement. Key
 | **An LLM key**               | the agent's reasoning + delivery               | **Venice AI** (`VENICE_API_KEY`, **free credits** — see [LLM.md](LLM.md)). Anthropic / OpenAI also work. |
 | **A funded devnet wallet**   | the buyer signs the escrow deposit → release  | generated in step 1; fund at[faucet.solana.com](https://faucet.solana.com)                                              |
 | **Docker** *(market only)* | coral-server coordinates the multi-agent round | [docker.com](https://www.docker.com) — the single-agent demo needs none                                                |
+
+The optional Solana Agent Kit example uses `solana-agent-kit@2.x`, which currently needs **Node 22+**.
+The core runtime, rails, and other examples keep the repo-wide **Node 20+** floor.
 
 ## Quick start
 
@@ -159,6 +163,8 @@ One `npm run` per example, from the repo root. **Each command installs that exam
 | `npm run agent-economy:bridge` | the **human checkout** bridge (HTTP + React) | Docker + `docker compose up -d coral` |
 | `npm run agent-economy:quickstart` | the **bare 402** pay-per-call seller (no Docker, no CoralOS) | LLM key + funded wallet |
 | `npm run agent-economy:quickstart:buyer` | the quickstart **buyer** (run in a 2nd terminal) | the quickstart server running |
+| `npm run agent-economy:solana-tools` | optional **Solana Agent Kit read-only context** demo | Node 22+; no private key needed |
+| `npm run agent-economy:solana-tools:smoke` | deterministic mock smoke for the SAK tools example | Node 22+ |
 | `npm run agent-economy:web` | the agent-economy **3-tab dashboard** | — (talks to the bridge) |
 | `npm run desk` | **TxODDS Agent Desk** in a browser (:3030) - run ledger, proof receipts, board actions | the txodds proxy (`npm run dev` or `npm --prefix examples/txodds run proxy`) |
 | `npm run desk:app` | the same desk as a **Tauri desktop app** | Rust/Tauri prerequisites + the txodds proxy |
@@ -217,6 +223,11 @@ SDK**. One interface (`quote`/`run`) so a seller can be a prompt (`node-llm`), *
 The agent keeps the wallet and the escrow checks; the harness only produces hash-bound artifacts —
 **harness processes never hold keys**.
 
+Optional companion: [`packages/solana-agent-tools`](packages/solana-agent-tools) exposes read-only
+Solana context tools for richer agents and a Solana Agent Kit-compatible plugin. It can read balances,
+SPL token accounts, Jupiter prices, and Pyth Hermes prices, plus simulate a transfer intent through
+`policy.enforce()`. It cannot swap, bridge, launch tokens, sign, or broadcast.
+
 ### The escrow contract — the settlement spine
 
 The only Rust in the kit: **two** deployed devnet programs, **called** (not forked) by the agents' TS
@@ -243,12 +254,13 @@ deployed ids with no local build. **Devnet only** — never put a funded mainnet
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `examples/txodds/`        | **the default demo** — the World Cup oracle. `agent/` (`service.ts` = the `deliverService()` fork point; `edge.ts` = its transform; escrow/arbiter clients), `server/` (proxy + mint), `web/` (React board), `research/` (the odds-move **event watcher** feeding the research round), `escrow/` (the two Anchor programs) |
 | `examples/marketplace/`   | **the full market** — a buyer + competing sellers in one CoralOS session, in three rounds: `start.ts` (classic), `freelancer.ts` (harness sellers + **verifier-gated** release), `research.ts` (event-driven — odds moves trigger the WANTs); `feed/` (rounds + the **run ledger** `runs/`, `/api/runs`, `/api/reputation`, disk replay), `web/` (React visualizer). Needs Docker |
-| `examples/agent-economy/` | **three front doors** on CoralOS — autonomous (agent→agent), a human checkout bridge, and a bare 402 pay-per-call quickstart                                                                                                                                  |
+| `examples/agent-economy/` | **three front doors** on CoralOS — autonomous (agent→agent), a human checkout bridge, and a bare 402 pay-per-call quickstart; plus an optional Solana Agent Kit read-only tools example                                                                                                                                    |
 | `examples/txodds-agent-desk/` | the **operator console** — a Tauri desktop shell over the proxy + run ledger + proof receipts (`npm run desk` for the browser version, no Rust needed)                                                                                                    |
 | `coral-agents/`           | the agents coral-server launches per session —`buyer-agent`, `seller-agent` (+ personas incl. `seller-claude`), `verifier-agent` (the release gate), `broker` (swarm reseller), `echo-agent`, `user_proxy`                                                 |
 | `packages/agent-runtime/` | the runtime —`llm/`, `solana/`, `coral/`, `market/`, `ledger/`, `policy/`                                                                                                                                                                                    |
 | `packages/harness-runtime/` | the **harness adapter SDK** — `node-llm` / `claude-code` / any CLI as market sellers                                                                                                                                                                       |
 | `packages/payment-runtime/` | the **payment rail router** — Solana Pay + escrow live; Pay.sh / x402 / USDC / allowance / embedded / payout as typed scaffolds (status table in its README)                                                                                              |
+| `packages/solana-agent-tools/` | the optional **read-only Solana agent tools** package — wallet/token reads, Jupiter/Pyth prices, and transfer-intent simulation for SAK-style agents; no fund-moving actions in v1                                                                     |
 | `scripts/`                | `txodds.js` (`npm run dev`), `setup.js` (devnet wallets), `provision-swarm.js` (broker + seller wallets for the swarm demo)                                                                                                                                     |
 | `docker-compose.yml`      | coral-server (the MCP coordinator) for the market                                                                                                                                                                                                                     |
 

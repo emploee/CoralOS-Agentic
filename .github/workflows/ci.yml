@@ -47,6 +47,21 @@ jobs:
       - run: cd packages/payment-runtime && npm run typecheck
       - run: cd packages/payment-runtime && npm test
 
+  solana-agent-tools:
+    name: Solana agent tools (read-only SAK plugin + example smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Build the agent runtime - local file deps need dist
+        run: cd packages/agent-runtime && npm install && npm run build
+      - name: Read-only tools package (typecheck + tests + build)
+        run: cd packages/solana-agent-tools && npm install && npm run typecheck && npm test && npm run build
+      - name: Solana Agent Kit example (typecheck + deterministic smoke)
+        run: cd examples/agent-economy/solana-agent-kit && npm install && npm run typecheck && npm run smoke
+
   txodds:
     name: TxODDS World Cup Oracle (typecheck + tests)
     runs-on: ubuntu-latest

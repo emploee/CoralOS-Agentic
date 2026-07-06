@@ -21,6 +21,8 @@
     "agent-economy:bridge": "node scripts/run-example.js examples/agent-economy/bridge start",
     "agent-economy:quickstart": "node scripts/run-example.js examples/agent-economy/quickstart server",
     "agent-economy:quickstart:buyer": "node scripts/run-example.js examples/agent-economy/quickstart buyer",
+    "agent-economy:solana-tools": "node scripts/run-example.js examples/agent-economy/solana-agent-kit demo",
+    "agent-economy:solana-tools:smoke": "node scripts/run-example.js examples/agent-economy/solana-agent-kit smoke",
     "agent-economy:web": "node scripts/run-example.js examples/agent-economy/web dev"
   }
 }

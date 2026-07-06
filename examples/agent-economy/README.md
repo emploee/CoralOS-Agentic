@@ -108,6 +108,22 @@ are thin manifests reusing the seller image. See [`coral-agents/broker/README.md
 [`quickstart/`](quickstart/) is the same pay-per-call loop as two bare-metal Node processes over
 plain HTTP `402` — no Docker, no CoralOS. The fastest way to understand the payment cycle.
 
+## Optional Solana Agent Kit context tools
+
+[`solana-agent-kit/`](solana-agent-kit/) loads `@pay/solana-agent-tools` as a Solana Agent
+Kit-compatible plugin. It lets agents read wallet balances, SPL token balances, Jupiter prices, and
+Pyth Hermes prices, and dry-run a transfer intent through `policy.enforce()` with `executable: false`.
+It intentionally has no swaps, bridges, token launches, live transfers, or signing wallet. Run it with
+Node 22:
+
+```sh
+cd examples/agent-economy/solana-agent-kit
+npm install
+npm run smoke
+```
+
+From the repo root, the same deterministic check is `npm run agent-economy:solana-tools:smoke`.
+
 ## Want trustless settlement? — the escrow
 
 The base loop is *pay-first* (the buyer trusts the seller to deliver).

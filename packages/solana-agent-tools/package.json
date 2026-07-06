@@ -1,0 +1,31 @@
+{
+  "name": "@pay/solana-agent-tools",
+  "version": "0.1.0",
+  "description": "Allowlisted read-only Solana tools for richer agents, with a Solana Agent Kit-compatible plugin surface",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@pay/agent-runtime": "file:../agent-runtime",
+    "@solana/web3.js": "^1.98.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "peerDependencies": {
+    "solana-agent-kit": ">=2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "solana-agent-kit": { "optional": true }
+  }
+}

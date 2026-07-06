@@ -24,27 +24,35 @@ if (!existsSync(join(dir, 'package.json'))) {
   process.exit(1)
 }
 
-// The kit targets Node 20+ (matches scripts/txodds.js).
-if (Number(process.versions.node.split('.')[0]) < 20) {
-  console.error(`[example] Node ${process.version} detected — this kit needs Node 20+. Install from nodejs.org, then re-run.`)
+const npm = (cwd, args) => spawnSync('npm', args, { cwd, shell: true, stdio: 'inherit' })
+
+const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+const deps = { ...pkg.dependencies, ...pkg.devDependencies }
+
+const requiredNode = pkg.engines?.node?.match(/>=\s*(\d+)/)?.[1] ?? '20'
+if (Number(process.versions.node.split('.')[0]) < Number(requiredNode)) {
+  console.error(`[example] Node ${process.version} detected — ${rel} needs Node ${requiredNode}+. Install from nodejs.org, then re-run.`)
   process.exit(1)
 }
 
-const npm = (cwd, args) => spawnSync('npm', args, { cwd, shell: true, stdio: 'inherit' })
+function ensureBuiltPackage(name, relPath) {
+  const packageDir = join(root, relPath)
+  if (!existsSync(join(packageDir, 'node_modules'))) {
+    console.log(`[example] installing ${name} …`)
+    npm(packageDir, ['install', '--no-audit', '--no-fund'])
+  }
+  if (!existsSync(join(packageDir, 'dist'))) {
+    console.log(`[example] building ${name} (dist) …`)
+    npm(packageDir, ['run', 'build'])
+  }
+}
 
-// If the example depends on @pay/agent-runtime (a `file:` dep that reads dist/), make sure it's built.
-const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
-const deps = { ...pkg.dependencies, ...pkg.devDependencies }
-if (deps['@pay/agent-runtime']) {
-  const runtime = join(root, 'packages', 'agent-runtime')
-  if (!existsSync(join(runtime, 'node_modules'))) {
-    console.log('[example] installing @pay/agent-runtime …')
-    npm(runtime, ['install', '--no-audit', '--no-fund'])
-  }
-  if (!existsSync(join(runtime, 'dist'))) {
-    console.log('[example] building @pay/agent-runtime (dist) …')
-    npm(runtime, ['run', 'build'])
-  }
+// Local `file:` deps read their compiled dist, so build dependencies before installing the example.
+if (deps['@pay/agent-runtime'] || deps['@pay/solana-agent-tools']) {
+  ensureBuiltPackage('@pay/agent-runtime', join('packages', 'agent-runtime'))
+}
+if (deps['@pay/solana-agent-tools']) {
+  ensureBuiltPackage('@pay/solana-agent-tools', join('packages', 'solana-agent-tools'))
 }
 
 // Install the example's own deps on first run.

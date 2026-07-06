@@ -36,6 +36,17 @@ npm run dev        # = node scripts/txodds.js
 
 Starts the data/escrow proxy (:8801) + the Oracle UI (:3020) and opens the browser. Devnet only.
 
+## `run-example.js` - run an example with local package bootstrap
+
+```sh
+node scripts/run-example.js examples/agent-economy/solana-agent-kit demo
+```
+
+Installs an example's dependencies on first run and builds local file dependencies first. Today that
+means `@pay/agent-runtime` and, for the optional Solana Agent Kit example, `@pay/solana-agent-tools`.
+It also enforces per-example Node floors, so the SAK example can require Node 22 without moving the
+repo-wide Node 20 baseline.
+
 ## `readiness-e2e.mjs` - production-readiness gate
 
 ```sh

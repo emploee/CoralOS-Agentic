@@ -22,7 +22,9 @@ World Cup service is only the default demo.
 
 - **[agent-economy/](agent-economy/README.md)** — **three front doors** on CoralOS: autonomous
   (agent→agent), a human checkout (Phantom/Solflare wallet), and a bare 402 pay-per-call quickstart. All
-  settle in devnet SOL. Needs Docker.
+  settle in devnet SOL. Also includes an optional Node 22 Solana Agent Kit read-only tools example
+  (`solana-agent-kit/`) for wallet/token/price context without signing authority. Needs Docker for the
+  CoralOS front doors.
 
 - **[txodds-agent-desk/](txodds-agent-desk/README.md)** - the operator console: a Tauri v2 shell
   and no-build browser UI over the existing TxODDS proxy, run ledger, proof receipts, settlement

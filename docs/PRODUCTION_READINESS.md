@@ -18,6 +18,7 @@ These are the user-visible flows that must stay healthy:
 | Coral marketplace | `npm run marketplace`; feed folds Coral session state into rounds, the run ledger, reputation, threads, and proof receipts. |
 | Marketplace visualizer | `examples/marketplace/web` unit tests and Playwright e2e against recorded Coral state. |
 | Payment rail procurement | `@pay/payment-runtime` tests plus `PAYMENT_*` folding into `proofReceipts` and `proof_receipts.json`. |
+| Read-only Solana agent tools | `@pay/solana-agent-tools` tests plus the Solana Agent Kit example smoke in mock mode. |
 | Agent desk | `npm run desk` for browser mode; CI parses UI JS and Tauri configs. |
 | Agent economy front doors | Typecheck/build smoke for autonomous, bridge, quickstart, and web dashboard. |
 | Escrow programs | CI `cargo check --workspace` on escrow + arbiter. |
@@ -48,6 +49,7 @@ The GitHub Actions workflow blocks PRs/pushes on:
 - `packages/agent-runtime`: typecheck, tests.
 - `packages/harness-runtime`: runtime build, typecheck, tests.
 - `packages/payment-runtime`: runtime build, typecheck, tests.
+- `packages/solana-agent-tools`: runtime build, typecheck, tests, package build, and Node 22 SAK example smoke.
 - `examples/txodds`: typecheck, tests.
 - `examples/marketplace`: launcher typecheck, feed typecheck/tests, web typecheck/tests, Playwright e2e.
 - `examples/agent-economy`: autonomous/quickstart/bridge typechecks and web production build smoke.

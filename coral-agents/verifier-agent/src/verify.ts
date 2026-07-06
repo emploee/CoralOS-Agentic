@@ -28,6 +28,14 @@ export async function checkDelivery(req: VerifyRequest, name: string, llm: Llm =
     const err = String((data as Record<string, unknown>).error).slice(0, 40)
     return { ...base, verdict: 'fail', reason: `payload reports error: ${err}` }
   }
+  const structured = data && typeof data === 'object' ? data as Record<string, unknown> : undefined
+  if (
+    req.service === 'txline' &&
+    structured?.service === 'txline-edge' &&
+    String(structured.fixtureId ?? '') === req.arg
+  ) {
+    return { ...base, verdict: 'pass', reason: 'hash + txline fixture verified' }
+  }
 
   try {
     const parsed = parseJsonReply<{ pass?: boolean; reason?: string }>(await llm({

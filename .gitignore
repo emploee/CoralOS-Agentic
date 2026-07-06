@@ -37,6 +37,9 @@ bun.lockb
 coverage*.json
 .vercel
 
+# Local TxODDS run ledgers
+examples/txodds/data/
+
 # Reference repos cloned for analysis (not part of project)
 ref/
 

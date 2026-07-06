@@ -1,23 +1,80 @@
 /**
  * Seller services.
  *
- * `txline` — the headline product: a verified TxLINE fair-line read for a fixture.
- * `freelance` — the generic LLM worker (the freelancer market's baseline seller): the brief goes to
+ * `txline` - verified TxLINE fair-line reads for a fixture.
+ * `risk-policy` - deterministic policy guardrails for a fixture/order.
+ * `fan-card` - deterministic fan-facing explanation card for a fixture/order.
+ * `freelance` - the generic LLM worker (the freelancer market's baseline seller): the brief goes to
  * the LLM, the deliverable comes back as JSON. Without an LLM key it returns an error payload, which
- * the verifier fails and the buyer refuses to pay for — no-capability sellers don't get released.
+ * the verifier fails and the buyer refuses to pay for - no-capability sellers don't get released.
  */
 import { complete, parseJsonReply } from '@pay/agent-runtime'
 
 const TXLINE_BASE = process.env.TXLINE_BASE_URL || 'https://txline-dev.txodds.com'
+const SUPPORTED_SERVICES = ['txline', 'freelance', 'risk-policy', 'fan-card']
 
 export async function deliverService(request: string): Promise<string> {
   const [first, ...rest] = request.trim().split(/\s+/).filter(Boolean)
   const service = (first ?? 'txline').toLowerCase()
   if (service === 'freelance') return freelanceService(rest.join(' '))
+  if (service === 'risk-policy') return riskPolicyService(rest.join(' '))
+  if (service === 'fan-card') return fanCardService(rest.join(' '))
   if (service !== 'txline') {
-    return JSON.stringify({ error: 'unsupported service', service, supported: ['txline', 'freelance'] })
+    return JSON.stringify({ error: 'unsupported service', service, supported: SUPPORTED_SERVICES })
   }
   return txlineService(rest.join(' '))
+}
+
+function fixtureIdFrom(request: string): string | undefined {
+  return request.trim().split(/\s+/).find((token) => /^\d+$/.test(token))
+}
+
+async function riskPolicyService(request: string): Promise<string> {
+  const fixtureId = fixtureIdFrom(request)
+  return JSON.stringify({
+    service: 'risk-policy',
+    ...(fixtureId ? { fixtureId } : {}),
+    request: request || 'unspecified',
+    policy: {
+      action: fixtureId ? 'observe' : 'no-action',
+      maxExposureSol: 0,
+      requires: [
+        'verified TxLINE fair-line payload',
+        'buyer budget policy pass',
+        'verifier pass before escrow release',
+      ],
+      guardrails: [
+        'devnet only',
+        'no real-money wagering',
+        'no automated sportsbook execution',
+      ],
+    },
+    rationale: fixtureId
+      ? `Fixture ${fixtureId} can be analyzed after verified fair-line delivery.`
+      : 'No fixture id supplied.',
+  })
+}
+
+async function fanCardService(request: string): Promise<string> {
+  const fixtureId = fixtureIdFrom(request)
+  const target = fixtureId ? `fixture ${fixtureId}` : 'the selected fixture'
+  return JSON.stringify({
+    service: 'fan-card',
+    ...(fixtureId ? { fixtureId } : {}),
+    request: request || 'unspecified',
+    card: {
+      title: `Fair-line explainer for ${target}`,
+      audience: 'fan',
+      explainer: 'TxODDS provides a break-even fair line. A value claim needs an outside book price above that fair price.',
+      sections: [
+        { label: 'What was bought', value: 'verified fair-line context' },
+        { label: 'What it is not', value: 'not a sportsbook recommendation' },
+        { label: 'Proof path', value: 'hash-bound delivery, verifier verdict, devnet escrow release' },
+      ],
+      shareCopy: `Agent-delivered fair-line context for ${target}; verification and settlement are recorded in the run ledger.`,
+    },
+    limits: ['educational summary', 'not betting advice'],
+  })
 }
 
 async function freelanceService(brief: string): Promise<string> {

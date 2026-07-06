@@ -34,6 +34,12 @@ describe('checkDelivery - deterministic checks decide first', () => {
     expect(v.sha).toBe(sha256Hex(payload))
   })
 
+  it('passes txline edge payloads for the requested fixture before consulting the LLM', async () => {
+    const txline = '{"service":"txline-edge","fixtureId":"12345","analysis":{"call":"Home value","confidence":0.7}}'
+    const v = await checkDelivery(req({ payload: txline, sha: sha256Hex(txline) }), 'v', llmSays('{"pass":false,"reason":"too literal"}'))
+    expect(v).toMatchObject({ verdict: 'pass', reason: 'hash + txline fixture verified', by: 'v' })
+  })
+
   it('honours an LLM fail verdict on structurally valid payloads', async () => {
     const v = await checkDelivery(req(), 'v', llmSays('{"pass":false,"reason":"does not answer the arg"}'))
     expect(v).toMatchObject({ verdict: 'fail', reason: 'does not answer the arg' })

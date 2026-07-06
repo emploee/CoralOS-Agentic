@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { deliverService } from './service.js'
 
-describe('deliverService txline-only routing', () => {
+describe('deliverService routing', () => {
   const realFetch = global.fetch
 
   beforeEach(() => {
@@ -19,7 +19,38 @@ describe('deliverService txline-only routing', () => {
 
   it('rejects legacy generic services', async () => {
     const out = JSON.parse(await deliverService('coingecko eth'))
-    expect(out).toEqual({ error: 'unsupported service', service: 'coingecko', supported: ['txline', 'freelance'] })
+    expect(out).toEqual({
+      error: 'unsupported service',
+      service: 'coingecko',
+      supported: ['txline', 'freelance', 'risk-policy', 'fan-card'],
+    })
+  })
+
+  it('delivers a deterministic fixture risk policy', async () => {
+    const out = JSON.parse(await deliverService('risk-policy edge 18175397'))
+    expect(out).toMatchObject({
+      service: 'risk-policy',
+      fixtureId: '18175397',
+      policy: {
+        action: 'observe',
+        maxExposureSol: 0,
+      },
+    })
+    expect(out.policy.requires).toContain('verifier pass before escrow release')
+    expect(out.policy.guardrails).toContain('no real-money wagering')
+  })
+
+  it('delivers a deterministic fan explainer card', async () => {
+    const out = JSON.parse(await deliverService('fan-card edge 18175397'))
+    expect(out).toMatchObject({
+      service: 'fan-card',
+      fixtureId: '18175397',
+      card: {
+        audience: 'fan',
+      },
+      limits: ['educational summary', 'not betting advice'],
+    })
+    expect(out.card.explainer).toContain('break-even fair line')
   })
 
   it('freelance without an LLM key returns an honest error payload (verifier fails it, no release)', async () => {

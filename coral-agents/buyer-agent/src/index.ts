@@ -40,7 +40,7 @@ const ARGS = (process.env.BUYER_ARGS || process.env.BUYER_ARG || 'SOL-USDC').spl
 const ARG = ARGS[0]
 const BID_WINDOW_MS = Number(process.env.BID_WINDOW_MS ?? '5000')
 const CYCLE_MS = Number(process.env.CYCLE_INTERVAL_MS ?? '30000')
-const SELLERS = (process.env.MARKET_SELLERS ?? 'seller-worldcup,seller-fast,seller-premium')
+const SELLERS = (process.env.MARKET_SELLERS ?? 'seller-worldcup,seller-fast,seller-premium,seller-risk-policy,seller-fan-card')
   .split(',').map((s) => s.trim()).filter(Boolean)
 // F3: the payout wallet the buyer expects (personas share one in the demo). If set, the buyer refuses
 // to deposit to an ESCROW_REQUIRED whose seller= pubkey differs - binding the award to the payout.

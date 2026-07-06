@@ -33,6 +33,7 @@ import {
 import type { RunRecord, TranscriptEntry, TxEntry } from '@pay/agent-runtime'
 import { analyzeEdge, fairLine } from '../agent/edge.js'
 import { procureTxOddsContext, type PayShProcurement } from '../agent/procurement.js'
+import { createTxOddsRound } from '../coral/round.js'
 import {
   makeArbiter, initConfig, open as arbiterOpen, arbitrateRelease,
   configPda, vaultPda, arbitratedEscrowPda, ARBITER_PROGRAM_ID,
@@ -62,9 +63,21 @@ const BASE = process.env.TXLINE_BASE_URL ?? 'https://txline-dev.txodds.com'
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
 const PORT = Number(process.env.PORT ?? 8801)
 const RUNS_DIR = process.env.TXODDS_RUNS_DIR ?? fileURLToPath(new URL('../data/txodds-runs', import.meta.url))
+const AGENTIC_FEED = process.env.TXODDS_FEED_URL ?? 'http://localhost:4000'
 const WEB_SESSION = 'web-oracle'
 
 const expl = (kind: 'tx' | 'address', id: string) => `https://explorer.solana.com/${kind}/${id}?cluster=devnet`
+
+async function forwardFeed(res: http.ServerResponse, path: string): Promise<void> {
+  try {
+    const r = await fetch(`${AGENTIC_FEED}${path}`)
+    res.statusCode = r.status
+    res.end(await r.text())
+  } catch (e) {
+    res.statusCode = 502
+    res.end(JSON.stringify({ error: `agentic feed unavailable: ${(e as Error).message}` }))
+  }
+}
 
 function buyerKeypair(): Keypair {
   const b58 = process.env.BUYER_KEYPAIR_B58 // loaded from .env above (or the shell)
@@ -501,6 +514,28 @@ http
         // verified data (TxLINE) -> LLM call: the on-thesis product, shared with the agent via analyzeEdge.
         const fixtureId = url.searchParams.get('fixtureId') ?? ''
         res.end(JSON.stringify((await readEdge(fixtureId)).delivery))
+      } else if (url.pathname === '/api/agentic/start') {
+        if (req.method !== 'POST') {
+          res.statusCode = 405
+          res.end(JSON.stringify({ error: 'method not allowed' }))
+          return
+        }
+        const result = await createTxOddsRound({
+          fixtureId: url.searchParams.get('fixtureId') ?? undefined,
+          service: url.searchParams.get('service') ?? undefined,
+          arg: url.searchParams.get('arg') ?? undefined,
+        })
+        res.end(JSON.stringify({ ...result, feed: AGENTIC_FEED }))
+      } else if (url.pathname === '/api/agentic/feed') {
+        await forwardFeed(res, `/api/feed?${url.searchParams.toString()}`)
+      } else if (url.pathname === '/api/agentic/threads') {
+        await forwardFeed(res, `/api/threads?${url.searchParams.toString()}`)
+      } else if (url.pathname === '/api/agentic/session') {
+        await forwardFeed(res, `/api/session?${url.searchParams.toString()}`)
+      } else if (url.pathname === '/api/agentic/runs') {
+        await forwardFeed(res, '/api/runs')
+      } else if (url.pathname === '/api/agentic/reputation') {
+        await forwardFeed(res, '/api/reputation')
       } else if (url.pathname === '/api/settle') {
         // settle on devnet with the reference bound to the order. Prefer the arbiter-gated wrapper
         // (3 parties, seller-protected); fall back to the direct buyer-released escrow if it errors.

@@ -22,7 +22,7 @@ In arbiter mode, the seller verifies the escrow buyer as the vault PDA from `DEP
 |---|---|
 | `src/index.ts` | Coral market loop and funding verification. |
 | `src/escrow.ts` | Read-only escrow funding check. |
-| `src/service.ts` | TxODDS service delivery. |
+| `src/service.ts` | Service delivery for `txline`, `risk-policy`, `fan-card`, and `freelance`. |
 | `src/payment.ts` | Older direct-payment helper/tests. |
 | `src/replay.ts` | Replay helpers/tests. |
 
@@ -65,7 +65,7 @@ The Pay.sh rail is a simulated proof-adapter rail until a live provider API is i
 |---|---|
 | `SELLER_WALLET` | Payout address. |
 | `AGENT_NAME` | Agent/persona name. |
-| `SERVICES` | Supported services, usually `txline`. |
+| `SERVICES` | Comma-separated supported services. Current coded services are `txline`, `risk-policy`, `fan-card`, and `freelance`. |
 | `FLOOR_SOL` | Minimum bid. |
 | `PERSONA` | Persona label/config. |
 | `SETTLEMENT_MODE` | `arbiter` or `direct`. |

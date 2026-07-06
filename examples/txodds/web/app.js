@@ -1,4 +1,4 @@
-// World Cup Oracle - a captivating React 18 app (no build) over LIVE TxODDS devnet data.
+// TxODDS Agent Tutorial - a React 18 no-build app over live TxODDS devnet data.
 // Talks to the local proxy (../server/proxy.ts: GET /api/board - only fixtures with verified live 1X2
 // odds, inlined). If the proxy/token isn't up it shows a clearly-labelled demo board; it never mixes
 // demo numbers into a live fixture.
@@ -12,6 +12,49 @@ const html = htm.bind(React.createElement)
 const PROXY = window.TXODDS_PROXY ?? 'http://localhost:8801'
 // The research watcher (examples/txodds/research/watcher.ts) — optional; the board degrades silently.
 const WATCHER = window.TXODDS_WATCHER ?? 'http://localhost:4600'
+const EXPECTED_AGENTS = ['buyer-agent', 'seller-worldcup', 'seller-fast', 'seller-premium', 'seller-risk-policy', 'seller-fan-card', 'verifier-agent']
+const MARKET_VERBS = ['WANT', 'BID', 'AWARD', 'ESCROW_REQUIRED', 'DEPOSITED', 'DELIVERED', 'VERIFY', 'VERIFIED', 'RELEASED', 'ARBITER_RELEASED', 'REFUNDED', 'ERROR']
+const AGENT_ROUND_TYPES = [
+  { id: 'txline', label: 'TxODDS edge', want: 'txline <fixtureId>', note: 'All seller personas can bid; the seller treats a fixture id as an edge-read request.' },
+  { id: 'risk-policy', label: 'Risk policy', want: 'risk-policy <fixtureId>', note: 'seller-risk-policy bids with a deterministic guardrail payload.' },
+  { id: 'fan-card', label: 'Fan card', want: 'fan-card <fixtureId>', note: 'seller-fan-card bids with a fan-facing explainer payload.' },
+]
+const AGENT_SOURCES = [
+  ['buyer-agent', 'coral-agents/buyer-agent/src/index.ts'],
+  ['seller-agent image', 'coral-agents/seller-agent/src/index.ts'],
+  ['seller services', 'coral-agents/seller-agent/src/service.ts'],
+  ['verifier-agent', 'coral-agents/verifier-agent/src/index.ts'],
+  ['Coral parser/feed', 'examples/marketplace/feed/src/server.ts'],
+  ['TxODDS launcher', 'examples/txodds/coral/round.ts'],
+]
+
+async function api(path, opts) {
+  const r = await fetch(`${PROXY}${path}`, opts)
+  const text = await r.text()
+  const data = text ? JSON.parse(text) : {}
+  if (!r.ok) throw new Error(data.error ?? `${r.status}`)
+  return data
+}
+
+const verbOf = (text) => {
+  const first = String(text ?? '').trim().split(/\s+/)[0]?.toUpperCase()
+  return MARKET_VERBS.includes(first) ? first : undefined
+}
+
+const sentence = (s, n = 120) => {
+  const text = String(s ?? '')
+  return text.length > n ? `${text.slice(0, n - 3)}...` : text
+}
+
+const latestSessionFromRuns = (runs) => {
+  const list = Array.isArray(runs) ? runs.filter((r) => r?.session) : []
+  if (!list.length) return ''
+  const time = (r) => {
+    const ms = Date.parse(r.updatedAt ?? '')
+    return Number.isFinite(ms) ? ms : 0
+  }
+  return [...list].sort((a, b) => time(b) - time(a))[0].session
+}
 
 // -- flags + abbreviations (national teams) ----------------------------------
 const FLAGS = {
@@ -239,6 +282,131 @@ function Pipeline({ edge, source, settleRes, procurementRes }) {
     </section>`
 }
 
+function statusTone(status) {
+  if (/settled|ready|live|recorded|paid|verified/i.test(status)) return ' ok'
+  if (/waiting|sample|needs|unavailable|disabled/i.test(status)) return ' warn'
+  if (/running|loading|settling|checking/i.test(status)) return ' busy'
+  return ''
+}
+
+function TutorialPanel({ selected, edge, source, settling, settleRes, procurementRes, runs }) {
+  const fixtureName = selected ? `${selected.Participant1} vs ${selected.Participant2}` : 'No fixture selected'
+  const dataStatus = source === 'live' ? 'live TxODDS' : source === 'demo' ? 'sample mode' : 'connecting'
+  const readStatus = edge?.analysis ? (/deterministic/i.test(edge.analysis.note || '') ? 'fallback read ready' : 'LLM read ready') : 'waiting for read'
+  const escrowStatus = source !== 'live'
+    ? 'disabled on sample'
+    : settling
+      ? 'settling now'
+      : settleRes?.ok
+        ? 'settled on devnet'
+        : settleRes
+          ? 'needs funded wallet'
+          : 'starts after read'
+  const payShStatus = procurementRes?.procurement?.paid
+    ? 'proof recorded'
+    : source === 'live'
+      ? 'optional'
+      : 'requires live fixture'
+  const runStatus = Array.isArray(runs) && runs.length ? `${runs.length} run${runs.length === 1 ? '' : 's'} recorded` : 'no runs yet'
+
+  const steps = [
+    {
+      title: '1. Proxy reads TxODDS',
+      body: 'The browser asks the local proxy for /api/board. The proxy holds the TxLINE token and only returns live fixtures with verified priced markets.',
+      endpoint: 'GET /api/board',
+      status: dataStatus,
+    },
+    {
+      title: '2. Pick one fixture',
+      body: 'The selected match drives the rest of the page: fair probabilities, fair odds, the agent read, settlement reference, and ledger entry.',
+      endpoint: fixtureName,
+      status: selected ? 'selected' : 'waiting',
+    },
+    {
+      title: '3. Agent produces the read',
+      body: 'For live fixtures the proxy calls /api/edge. If the model is unavailable, deterministic analysis keeps the data path inspectable.',
+      endpoint: 'GET /api/edge',
+      status: readStatus,
+    },
+    {
+      title: '4. Escrow auto-settles',
+      body: 'After delivery, /api/settle opens and releases a devnet escrow. The reference is bound to the purchased read.',
+      endpoint: 'GET /api/settle',
+      status: escrowStatus,
+    },
+    {
+      title: '5. Optional rails',
+      body: 'The purple wallet path is real Solana Pay. The green Pay.sh path is an upstream procurement proof path and is currently simulated.',
+      endpoint: '/api/pay-intent + /api/pay-sh-edge',
+      status: payShStatus,
+    },
+    {
+      title: '6. Inspect the ledger',
+      body: 'Every completed paid read is written to the run ledger with delivery hash, escrow references, transaction links, receipts, and grading status.',
+      endpoint: 'GET /api/runs',
+      status: runStatus,
+    },
+  ]
+
+  return html`
+    <section class="tutorial">
+      <div class="tutorial-head">
+        <div>
+          <span class="section-kicker">End-to-end walkthrough</span>
+          <h2>Follow the agent payment from data request to proof</h2>
+        </div>
+        <div class=${'source-pill' + (source === 'live' ? ' ok' : source === 'demo' ? ' warn' : ' busy')}>
+          ${dataStatus}
+        </div>
+      </div>
+      <div class="current-strip">
+        <div><span>Fixture</span><b>${fixtureName}</b></div>
+        <div><span>Read</span><b>${readStatus}</b></div>
+        <div><span>Escrow</span><b>${escrowStatus}</b></div>
+        <div><span>Ledger</span><b>${runStatus}</b></div>
+      </div>
+      <div class="lesson-grid">
+        ${steps.map((s) => html`
+          <article class="lesson-card" key=${s.title}>
+            <div class="lesson-top">
+              <h3>${s.title}</h3>
+              <span class=${'lesson-status' + statusTone(s.status)}>${s.status}</span>
+            </div>
+            <p>${s.body}</p>
+            <code>${s.endpoint}</code>
+          </article>`)}
+      </div>
+    </section>`
+}
+
+function PaymentGuide({ source, settling, settleRes, procurementRes }) {
+  const escrowStatus = source !== 'live'
+    ? 'sample only'
+    : settling
+      ? 'running'
+      : settleRes?.ok
+        ? 'done'
+        : settleRes
+          ? 'blocked'
+          : 'pending'
+  const payShStatus = procurementRes?.procurement?.paid ? 'receipt written' : source === 'live' ? 'available' : 'live only'
+  return html`
+    <div class="payment-guide">
+      <div class="path-card primary">
+        <div class="path-top"><span>Path A</span><b>Automatic escrow</b><em>${escrowStatus}</em></div>
+        <p>Runs after the agent read on a live fixture. The proxy opens and releases escrow on devnet, then writes the run ledger.</p>
+      </div>
+      <div class="path-card wallet">
+        <div class="path-top"><span>Path B</span><b>Your wallet</b><em>optional</em></div>
+        <p>Uses Solana Pay: your browser wallet signs a reference-tagged SOL transfer and the proxy verifies it on-chain.</p>
+      </div>
+      <div class="path-card payrail">
+        <div class="path-top"><span>Path C</span><b>Pay.sh procurement</b><em>${payShStatus}</em></div>
+        <p>Shows an upstream payment proof leg before settlement. This rail is simulated today and marked as such in receipts.</p>
+      </div>
+    </div>`
+}
+
 // the settlement - a real devnet escrow round, linked on Explorer. Two modes: the arbiter-gated
 // wrapper (3 parties; the buyer can't unilaterally refund) or the direct buyer-released escrow.
 function BindLine({ r }) {
@@ -327,13 +495,20 @@ function RunsPanel({ runs, selectedRun, onSelect, onGrade, grading }) {
     <section class="runs">
       <div class="runs-head">
         <div>
-          <h3>Runs</h3>
-          <p>Each paid read persists its request, delivered answer, escrow receipts, and reality grade when available.</p>
+          <span class="section-kicker">ELI5 ledger</span>
+          <h3>Runs = receipts for paid agent jobs</h3>
+          <p>A run is one complete job record: what you asked the agent to buy, what it answered, how it was paid, and where the proof lives.</p>
         </div>
-        <button class="grade-btn" disabled=${grading} onClick=${onGrade}>${grading ? 'checking...' : 'grade reality'}</button>
+        <button class="grade-btn" disabled=${grading} onClick=${onGrade}>${grading ? 'checking...' : 'check against final scores'}</button>
+      </div>
+      <div class="runs-explain">
+        <div><b>Ask</b><span>fixture + service request</span></div>
+        <div><b>Answer</b><span>the agent's delivered read</span></div>
+        <div><b>Money</b><span>escrow, wallet, or rail proof</span></div>
+        <div><b>Proof</b><span>hashes, receipts, tx links</span></div>
       </div>
       ${!runs && html`<p class="muted">loading run ledger...</p>`}
-      ${runs && !runs.length && html`<p class="muted">No paid runs yet. Pick a live fixture and let the auto-settle complete.</p>`}
+      ${runs && !runs.length && html`<p class="muted">No runs yet. Pick a live fixture and let auto-settle finish; this panel will fill with the receipt for that agent job.</p>`}
       ${runs?.length > 0 && html`
         <div class="runs-grid">
           <div class="run-list">
@@ -353,13 +528,13 @@ function RunsPanel({ runs, selectedRun, onSelect, onGrade, grading }) {
               </div>
               <p class="rd-call">${top.delivery?.data?.analysis?.call ?? 'delivery not recorded'}</p>
               <div class="rd-lines">
-                <span>request <b>${top.want?.arg}</b></span>
-                ${top.delivery?.sha256 && html`<span>delivery sha <b>${shortAddr(top.delivery.sha256)}</b></span>`}
-                ${top.escrow?.reference && html`<span>escrow ref <b>${shortAddr(top.escrow.reference)}</b></span>`}
-                ${top.verification?.upstreamPayment?.rail && html`<span>upstream <b>${top.verification.upstreamPayment.rail} ${top.verification.upstreamPayment.amount} ${top.verification.upstreamPayment.currency}</b></span>`}
-                ${top.proofReceipts?.map((pr) => html`<span key=${pr.rail + pr.proof}>receipt <b>${pr.rail} ${pr.amount} ${pr.currency} ${pr.paid ? '✓' : '✗'}${pr.simulated ? ' (sim)' : ''}</b></span>`)}
-                ${outcome && html`<span>reality <b>${outcome.status === 'graded'
-                  ? `${outcome.actual?.winner ?? 'unknown'} - ${outcome.correct === true ? 'hit' : outcome.correct === false ? 'miss' : 'unscored'}`
+                <span>What was bought <b>${top.want?.arg ?? 'txline read'}</b></span>
+                ${top.delivery?.sha256 && html`<span>Answer fingerprint <b>${shortAddr(top.delivery.sha256)}</b></span>`}
+                ${top.escrow?.reference && html`<span>Payment reference <b>${shortAddr(top.escrow.reference)}</b></span>`}
+                ${top.verification?.upstreamPayment?.rail && html`<span>Upstream purchase <b>${top.verification.upstreamPayment.rail} ${top.verification.upstreamPayment.amount} ${top.verification.upstreamPayment.currency}</b></span>`}
+                ${top.proofReceipts?.map((pr) => html`<span key=${pr.rail + pr.proof}>Rail receipt <b>${pr.rail} ${pr.amount} ${pr.currency} ${pr.paid ? 'paid' : 'not paid'}${pr.simulated ? ' (simulated)' : ''}</b></span>`)}
+                ${outcome && html`<span>Final-score check <b>${outcome.status === 'graded'
+                  ? `${outcome.actual?.winner ?? 'unknown'} - ${outcome.correct === true ? 'matched' : outcome.correct === false ? 'missed' : 'unscored'}`
                   : 'pending'}</b></span>`}
               </div>
               <div class="rd-txs">
@@ -367,6 +542,214 @@ function RunsPanel({ runs, selectedRun, onSelect, onGrade, grading }) {
               </div>
             </div>`}
         </div>`}
+    </section>`
+}
+
+function ModeSwitch({ mode, onMode, agenticSession }) {
+  return html`
+    <section class="mode-switch">
+      <button class=${mode === 'local' ? 'mode-card on' : 'mode-card'} onClick=${() => onMode('local')}>
+        <span>Local Proxy Tutorial</span>
+        <b>Single server path</b>
+        <small>TxODDS proxy reads data, settles locally, and writes tutorial runs.</small>
+      </button>
+      <button class=${mode === 'agentic' ? 'mode-card on' : 'mode-card'} onClick=${() => onMode('agentic')}>
+        <span>Live CoralOS Agents</span>
+        <b>${agenticSession ? `session ${shortAddr(agenticSession)}` : 'buyer + sellers + verifier'}</b>
+        <small>Dockerized coded agents coordinate over CoralOS and settle through devnet escrow.</small>
+      </button>
+    </section>`
+}
+
+function AgentRoster({ agents }) {
+  const byName = new Map((agents ?? []).map((a) => [a.name, a.status ?? 'seen']))
+  return html`
+    <div class="agent-roster">
+      ${EXPECTED_AGENTS.map((name) => {
+        const status = byName.get(name) ?? 'waiting'
+        return html`
+          <div class=${'agent-pill ' + (status === 'running' ? 'ok' : status === 'waiting' ? 'wait' : '')} key=${name}>
+            <span class="agent-dot"></span>
+            <b>${name}</b>
+            <small>${status}</small>
+          </div>`
+      })}
+    </div>`
+}
+
+function SourceMap() {
+  return html`
+    <div class="source-map">
+      ${AGENT_SOURCES.map(([label, path]) => html`
+        <div key=${label}>
+          <span>${label}</span>
+          <code>${path}</code>
+        </div>`)}
+    </div>`
+}
+
+function CoralBus({ bus }) {
+  const threads = bus?.threads ?? []
+  if (!bus) return html`<div class="agent-empty">Attach or start a session to see CoralOS messages.</div>`
+  if (!threads.length) return html`<div class="agent-empty">Session found. Waiting for the buyer to open a market thread.</div>`
+  return html`
+    <div class="coral-bus">
+      ${threads.map((thread) => html`
+        <section class="coral-thread" key=${thread.id}>
+          <div class="coral-thread-head">
+            <b>${thread.name ?? 'market thread'}</b>
+            <span>${thread.participants?.join(' / ')}</span>
+          </div>
+          ${(thread.messages ?? []).map((m, i) => {
+            const v = verbOf(m.text)
+            return html`
+              <div class="coral-msg" key=${`${thread.id}-${i}`}>
+                <div class="coral-msg-top">
+                  <b>${m.sender}</b>
+                  ${v && html`<span class=${'verb verb-' + v.toLowerCase()}>${v}</span>`}
+                  ${(m.mentions ?? []).map((name) => html`<em key=${name}>@${name}</em>`)}
+                  ${m.timestamp && html`<small>${m.timestamp.slice(11, 19)}</small>`}
+                </div>
+                <p>${m.text}</p>
+              </div>`
+          })}
+        </section>`)}
+    </div>`
+}
+
+function RoundLifecycle({ feed }) {
+  const rounds = feed?.rounds ?? []
+  if (!feed) return html`<div class="agent-empty">No folded rounds yet.</div>`
+  if (!rounds.length) return html`<div class="agent-empty">The feed is live, but no market round has been folded yet.</div>`
+  return html`
+    <div class="agent-rounds">
+      ${rounds.slice(-4).reverse().map((r) => html`
+        <article class="agent-round" key=${r.round}>
+          <div class="agent-round-head">
+            <span>round ${r.round}</span>
+            <b>${r.status}</b>
+          </div>
+          <div class="round-eli5">
+            <div><span>Ask</span><b>${r.want?.arg ?? 'txline fixture'}</b></div>
+            <div><span>Bids</span><b>${r.bids?.length ?? 0}</b></div>
+            <div><span>Winner</span><b>${r.award?.to ?? 'not awarded'}</b></div>
+            <div><span>Money</span><b>${r.escrow?.amountSol ? `${r.escrow.amountSol} SOL` : 'waiting'}</b></div>
+            <div><span>Verifier</span><b>${r.verification?.verdict ?? 'waiting'}</b></div>
+            <div><span>Proof</span><b>${r.release?.sig ? shortAddr(r.release.sig) : r.delivered ? 'delivered' : 'pending'}</b></div>
+          </div>
+          ${r.delivered?.raw && html`<p class="round-delivery">${sentence(r.delivered.raw, 160)}</p>`}
+        </article>`)}
+    </div>`
+}
+
+function AgenticRuns({ runs }) {
+  const list = runs ?? []
+  return html`
+    <section class="runs agent-runs">
+      <div class="runs-head">
+        <div>
+          <span class="section-kicker">Agentic ledger</span>
+          <h3>Runs = receipts from CoralOS agent jobs</h3>
+          <p>Each run is folded from Coral thread messages and persisted by the feed server.</p>
+        </div>
+      </div>
+      <div class="runs-explain">
+        <div><b>Ask</b><span>buyer-agent WANT</span></div>
+        <div><b>Bids</b><span>seller personas reply</span></div>
+        <div><b>Winner</b><span>AWARD message</span></div>
+        <div><b>Money</b><span>escrow deposit/release</span></div>
+        <div><b>Verifier</b><span>VERIFIED pass/fail</span></div>
+        <div><b>Proof</b><span>hashes and tx links</span></div>
+      </div>
+      ${!list.length && html`<p class="muted">No agentic runs persisted yet. Start a live round and wait for the feed to fold it.</p>`}
+      ${list.length > 0 && html`
+        <div class="agent-run-list">
+          ${list.slice(0, 6).map((r) => html`
+            <article class="agent-run-card" key=${r.runId}>
+              <div><b>${r.runId}</b><span>${r.status}</span></div>
+              <p>${r.want?.arg ?? 'txline request'}</p>
+              <small>${r.award?.to ?? 'no winner yet'} / ${r.verification?.verdict ?? 'no verifier verdict'} / ${r.escrow?.amountSol ?? r.want?.budgetSol ?? '-'} SOL</small>
+            </article>`)}
+        </div>`}
+    </section>`
+}
+
+function AgenticPanel({
+  selected, source, session, sessionInput, setSessionInput, onAttach, onStart, starting,
+  startError, feed, bus, runs, reputation, pollError, roundType, setRoundType,
+}) {
+  const fixture = selected ? `${selected.Participant1} vs ${selected.Participant2}` : 'current fixture'
+  const liveTarget = selected && source === 'live'
+  const agents = bus?.agents ?? []
+  const activeRound = AGENT_ROUND_TYPES.find((x) => x.id === roundType) ?? AGENT_ROUND_TYPES[0]
+  return html`
+    <section class="agentic-panel">
+      <div class="agentic-head">
+        <div>
+          <span class="section-kicker">Live CoralOS Agents</span>
+          <h2>Proper coded agents run this path</h2>
+          <p>CoralOS launches Docker agents. The browser shows their real session roster, thread messages, folded market rounds, and ledger output.</p>
+        </div>
+        <div class="agentic-status">
+          <span class=${session ? 'source-pill ok' : 'source-pill warn'}>${session ? 'session attached' : 'no session'}</span>
+          ${feed?.source && html`<span class="source-pill busy">feed ${feed.source}</span>`}
+        </div>
+      </div>
+      ${session && html`
+        <div class="session-strip">
+          <span>Coral session id</span>
+          <code>${session}</code>
+        </div>`}
+      <div class="agent-service-tabs" role="tablist" aria-label="Agent round type">
+        ${AGENT_ROUND_TYPES.map((item) => html`
+          <button
+            key=${item.id}
+            class=${roundType === item.id ? 'on' : ''}
+            role="tab"
+            aria-selected=${roundType === item.id}
+            onClick=${() => setRoundType(item.id)}>
+            <span>${item.label}</span>
+            <small>${item.want}</small>
+          </button>`)}
+      </div>
+      <p class="agent-service-note">${activeRound.note}</p>
+      <div class="agentic-actions">
+        <button class="agent-start" disabled=${starting} onClick=${onStart}>
+          ${starting
+            ? html`<span class="spin"></span> starting agents...`
+            : liveTarget ? `Start ${activeRound.label} Round for ${fixture}` : `Start ${activeRound.label} Round from live proxy`}
+        </button>
+        <div class="attach-box">
+          <input
+            value=${sessionInput}
+            onInput=${(e) => setSessionInput(e.target.value.trim())}
+            placeholder="paste CoralOS session id"
+            aria-label="CoralOS session id" />
+          <button onClick=${onAttach}>Attach</button>
+        </div>
+      </div>
+      ${startError && html`<p class="agent-error">${startError}</p>`}
+      ${pollError && html`<p class="agent-error">${pollError}</p>`}
+      <${AgentRoster} agents=${agents} />
+      <div class="agentic-grid">
+        <section class="agentic-block wide">
+          <div class="block-head"><h3>Coral bus</h3><span>messages from MCP threads</span></div>
+          <${CoralBus} bus=${bus} />
+        </section>
+        <section class="agentic-block">
+          <div class="block-head"><h3>Market rounds</h3><span>folded by feed server</span></div>
+          <${RoundLifecycle} feed=${feed} />
+        </section>
+        <section class="agentic-block">
+          <div class="block-head"><h3>Source of truth</h3><span>repo-owned code paths</span></div>
+          <${SourceMap} />
+        </section>
+      </div>
+      ${reputation?.length > 0 && html`
+        <div class="reputation-row">
+          ${reputation.map((r) => html`<span key=${r.seller}>${r.seller}: ${r.score}</span>`)}
+        </div>`}
+      <${AgenticRuns} runs=${runs} />
     </section>`
 }
 
@@ -425,6 +808,8 @@ function PayButton({ fixture }) {
 }
 
 function App() {
+  const urlSession = new URLSearchParams(window.location.search).get('agentSession') ?? ''
+  const [mode, setMode] = useState(urlSession ? 'agentic' : 'local')
   const [fixtures, setFixtures] = useState(null)
   const [source, setSource] = useState(null) // 'live' | 'demo'
   const [idx, setIdx] = useState(0)
@@ -439,7 +824,18 @@ function App() {
   const [selectedRun, setSelectedRun] = useState(null)
   const [grading, setGrading] = useState(false)
   const [events, setEvents] = useState({}) // fixtureId -> the watcher's queued research event
+  const [agenticSession, setAgenticSession] = useState(urlSession)
+  const [agenticInput, setAgenticInput] = useState(urlSession)
+  const [agenticStarting, setAgenticStarting] = useState(false)
+  const [agenticStartError, setAgenticStartError] = useState('')
+  const [agenticPollError, setAgenticPollError] = useState('')
+  const [agenticFeed, setAgenticFeed] = useState(null)
+  const [agenticBus, setAgenticBus] = useState(null)
+  const [agenticRuns, setAgenticRuns] = useState([])
+  const [agenticReputation, setAgenticReputation] = useState([])
+  const [agenticRoundType, setAgenticRoundType] = useState('txline')
   const selected = fixtures ? fixtures[idx] : null
+  const activeAgentRound = AGENT_ROUND_TYPES.find((x) => x.id === agenticRoundType) ?? AGENT_ROUND_TYPES[0]
 
   const loadRuns = async () => {
     try {
@@ -471,6 +867,54 @@ function App() {
       setProcurementRes({ ok: false, error: String(e?.message ?? e) })
     } finally {
       setProcuring(false)
+    }
+  }
+
+  const rememberAgenticSession = (id) => {
+    setAgenticSession(id)
+    setAgenticInput(id)
+    setMode('agentic')
+    const u = new URL(window.location.href)
+    if (id) u.searchParams.set('agentSession', id)
+    else u.searchParams.delete('agentSession')
+    window.history.replaceState({}, '', u)
+  }
+
+  useEffect(() => {
+    if (urlSession || agenticSession) return
+    let alive = true
+    ;(async () => {
+      try {
+        const d = await api('/api/agentic/runs')
+        const id = latestSessionFromRuns(d.runs)
+        if (alive && id) rememberAgenticSession(id)
+      } catch { /* no live feed or no persisted agentic runs yet */ }
+    })()
+    return () => { alive = false }
+  }, [urlSession, agenticSession])
+
+  const attachAgenticSession = () => {
+    if (!agenticInput) return
+    setAgenticStartError('')
+    setAgenticPollError('')
+    rememberAgenticSession(agenticInput)
+  }
+
+  const startAgenticRound = async () => {
+    setMode('agentic')
+    setAgenticStarting(true)
+    setAgenticStartError('')
+    setAgenticPollError('')
+    try {
+      const params = new URLSearchParams({ service: agenticRoundType })
+      if (selected && source === 'live') params.set('fixtureId', selected.FixtureId)
+      const qs = `?${params.toString()}`
+      const d = await api(`/api/agentic/start${qs}`, { method: 'POST' })
+      rememberAgenticSession(d.sessionId)
+    } catch (e) {
+      setAgenticStartError(String(e?.message ?? e))
+    } finally {
+      setAgenticStarting(false)
     }
   }
 
@@ -506,6 +950,42 @@ function App() {
     return () => { alive = false; clearInterval(timer) }
   }, [])
 
+  useEffect(() => {
+    if (!agenticSession) {
+      setAgenticFeed(null)
+      setAgenticBus(null)
+      setAgenticRuns([])
+      setAgenticReputation([])
+      return
+    }
+    let alive = true
+    const tick = async () => {
+      const sid = encodeURIComponent(agenticSession)
+      const results = await Promise.allSettled([
+        api(`/api/agentic/feed?session=${sid}`),
+        api(`/api/agentic/threads?session=${sid}`),
+        api('/api/agentic/runs'),
+        api('/api/agentic/reputation'),
+      ])
+      if (!alive) return
+      const errors = []
+      if (results[0].status === 'fulfilled') setAgenticFeed(results[0].value)
+      else errors.push(`feed: ${results[0].reason.message ?? results[0].reason}`)
+      if (results[1].status === 'fulfilled') setAgenticBus(results[1].value)
+      else errors.push(`bus: ${results[1].reason.message ?? results[1].reason}`)
+      if (results[2].status === 'fulfilled') {
+        const list = results[2].value.runs ?? []
+        setAgenticRuns(list.filter((r) => r.session === agenticSession))
+      } else errors.push(`runs: ${results[2].reason.message ?? results[2].reason}`)
+      if (results[3].status === 'fulfilled') setAgenticReputation(results[3].value.reputation ?? [])
+      else errors.push(`reputation: ${results[3].reason.message ?? results[3].reason}`)
+      setAgenticPollError(errors.join(' | '))
+    }
+    tick()
+    const timer = setInterval(tick, 2500)
+    return () => { alive = false; clearInterval(timer) }
+  }, [agenticSession])
+
   // The research watcher's queue -> event badges on the board ("line moved -> WANT queued").
   // Entirely optional: when the watcher isn't running, the board renders exactly as before.
   useEffect(() => {
@@ -535,7 +1015,7 @@ function App() {
   // Live -> the proxy's /api/edge (real odds -> real call) -> /api/settle (real devnet deposit->release);
   // demo -> a client-side call only (no wallet flow). Never invents data for an empty game.
   useEffect(() => {
-    if (!selected) return
+    if (!selected || mode !== 'local') { setSettling(false); return }
     let alive = true
     setEdge(null); setSettleRes(null); setProcurementRes(null); setSettling(false)
     ;(async () => {
@@ -562,7 +1042,7 @@ function App() {
       }
     })()
     return () => { alive = false }
-  }, [idx, fixtures])
+  }, [idx, fixtures, mode])
 
   const select = (fx) => setIdx(fixtures.findIndex((f) => f.FixtureId === fx.FixtureId))
 
@@ -571,14 +1051,35 @@ function App() {
       <span class=${'kicker' + (source === 'demo' ? ' demo' : '')}>
         <span class="dot"></span>${source === 'demo' ? 'sample fixtures - live odds quiet' : 'live - devnet - free World Cup tier'}
       </span>
-      <h1>World Cup Oracle</h1>
-      <p class="tagline">An agent sells <b>verified</b> TxODDS odds: it fetches the de-margined fair line on Solana devnet,
-        turns it into <b>fair (break-even) odds + a plain read</b>, and gets paid through an on-chain escrow.</p>
+      <h1>TxODDS Agent Tutorial</h1>
+      <p class="tagline">Trace one paid agent job end to end: <b>verified TxODDS data</b>, an <b>agent read</b>,
+        <b>devnet escrow settlement</b>, optional payment rails, and the run ledger proof.</p>
     </header>
     <main>
-      <${Pipeline} edge=${edge} source=${source} settleRes=${settleRes} procurementRes=${procurementRes} />
+      <${ModeSwitch} mode=${mode} onMode=${setMode} agenticSession=${agenticSession} />
+      ${mode === 'agentic' && html`
+        <${AgenticPanel}
+          selected=${selected}
+          source=${source}
+          session=${agenticSession}
+          sessionInput=${agenticInput}
+          setSessionInput=${setAgenticInput}
+          onAttach=${attachAgenticSession}
+          onStart=${startAgenticRound}
+          starting=${agenticStarting}
+          startError=${agenticStartError}
+          feed=${agenticFeed}
+          bus=${agenticBus}
+          runs=${agenticRuns}
+          reputation=${agenticReputation}
+          pollError=${agenticPollError}
+          roundType=${agenticRoundType}
+          setRoundType=${setAgenticRoundType} />`}
+      ${mode === 'local' && html`
+        <${TutorialPanel} selected=${selected} edge=${edge} source=${source} settling=${settling} settleRes=${settleRes} procurementRes=${procurementRes} runs=${runs} />
+        <${Pipeline} edge=${edge} source=${source} settleRes=${settleRes} procurementRes=${procurementRes} />`}
       ${!fixtures && html`<p class="muted" style=${{ textAlign: 'center' }}>loading fixtures...</p>`}
-      ${selected && html`
+      ${mode === 'local' && selected && html`
         <section class="featured">
           <div class="feat-top">
             <span class="chip">${selected.Competition}</span>
@@ -592,6 +1093,7 @@ function App() {
           <${Board} fixture=${selected} odds=${odds} loading=${loadingOdds} />
           <div class="thesis">
             <${EdgeCard} edge=${edge} />
+            <${PaymentGuide} source=${source} settling=${settling} settleRes=${settleRes} procurementRes=${procurementRes} />
             <div class="settle-row">
               ${settling && html`<div class="settling-auto">
                 <span class="spin"></span> agent delivered - arbiter settling ${SETTLE_SOL} SOL in escrow on devnet...
@@ -606,7 +1108,31 @@ function App() {
           </div>
         </section>`}
 
-      <${RunsPanel} runs=${runs} selectedRun=${selectedRun} onSelect=${setSelectedRun} onGrade=${gradeRuns} grading=${grading} />
+      ${mode === 'agentic' && selected && html`
+        <section class="featured agentic-fixture">
+          <div class="feat-top">
+            <span class="chip live">Agent target</span>
+            <span class="feat-when">fixture ${selected.FixtureId}</span>
+          </div>
+          <div class="matchup">
+            <div class="team home"><${Flag} name=${selected.Participant1} size="big" /><span class="team-name">${selected.Participant1}</span></div>
+            <div class="vs">VS</div>
+            <div class="team away"><${Flag} name=${selected.Participant2} size="big" /><span class="team-name">${selected.Participant2}</span></div>
+          </div>
+          <${Board} fixture=${selected} odds=${odds} loading=${loadingOdds} />
+          <div class="agentic-fixture-actions">
+            <button class="agent-start" disabled=${agenticStarting} onClick=${startAgenticRound}>
+              ${agenticStarting
+                ? html`<span class="spin"></span> starting agents...`
+                : source === 'live' ? `Start ${activeAgentRound.label} agents for this fixture` : `Start ${activeAgentRound.label} agents from live proxy`}
+            </button>
+            <p>${source === 'live'
+              ? `buyer-agent will post WANT ${activeAgentRound.want.replace('<fixtureId>', selected.FixtureId)}; seller personas bid; verifier-agent checks delivery before arbiter release.`
+              : 'Sample cards are not sent as orders; the backend will choose a live proxy fixture or fallback id.'}</p>
+          </div>
+        </section>`}
+
+      ${mode === 'local' && html`<${RunsPanel} runs=${runs} selectedRun=${selectedRun} onSelect=${setSelectedRun} onGrade=${gradeRuns} grading=${grading} />`}
 
       <h3 class="grid-title">All fixtures - tap a match</h3>
       <div class="grid">

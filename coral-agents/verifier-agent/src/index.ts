@@ -6,7 +6,7 @@
  * The buyer gates escrow release on that verdict - the arbiter program's neutral-3rd-signer role,
  * surfaced into the market conversation. Holds no keys, moves no funds.
  */
-import { startCoralAgent, parseVerify, formatVerified } from '@pay/agent-runtime'
+import { startCoralAgent, parseVerify, formatVerified, formatLlmUsed } from '@pay/agent-runtime'
 import { checkDelivery } from './verify.js'
 
 const NAME = process.env.AGENT_NAME ?? 'verifier-agent'
@@ -21,6 +21,7 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
       if (!req) continue
       const verdict = await checkDelivery(req, NAME)
       console.error(`[${NAME}] round ${req.round}: ${verdict.verdict}${verdict.reason ? ` (${verdict.reason})` : ''}`)
+      if (mention.threadId) await ctx.send(formatLlmUsed(verdict.llm), mention.threadId)
       await ctx.reply(mention, formatVerified(verdict))
     } catch (e) {
       console.error(`[${NAME}] loop error: ${e}`)

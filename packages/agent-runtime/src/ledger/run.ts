@@ -8,6 +8,7 @@
  * it keeps the raw Coral messages, so a finished round can be replayed with coral-server down.
  */
 import { createHash } from 'node:crypto'
+import type { LlmUse } from '../market/protocol.js'
 
 export interface TranscriptEntry {
   sender: string
@@ -76,6 +77,8 @@ export interface RunRecord {
   verification?: unknown
   /** Payment-rail receipts for this round (e.g. the seller's upstream procurement legs). */
   proofReceipts?: ProofReceipt[]
+  /** Model-selection metadata emitted by agents; prompts and completions are intentionally absent. */
+  llm?: LlmUse[]
   txs: TxEntry[]
   updatedAt: string
 }

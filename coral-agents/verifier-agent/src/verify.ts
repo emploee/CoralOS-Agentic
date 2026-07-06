@@ -7,26 +7,59 @@
  * Only then does the (optional) LLM acceptance judge get a say; if it is unavailable, the
  * deterministic checks stand. Mirrors the decideBid pattern: the model proposes, code enforces.
  */
-import { sha256Hex, complete, parseJsonReply, type VerifyRequest, type Verdict, type CompleteOpts } from '@pay/agent-runtime'
+import {
+  sha256Hex, complete, llmRuntimeInfo, parseJsonReply,
+  type LlmUse, type VerifyRequest, type Verdict, type CompleteOpts,
+} from '@pay/agent-runtime'
 
 type Llm = (opts: CompleteOpts) => Promise<string>
+export type VerdictWithLlm = Verdict & { llm: LlmUse }
 
-export async function checkDelivery(req: VerifyRequest, name: string, llm: Llm = complete): Promise<Verdict> {
+function verifierLlm(req: VerifyRequest, name: string, status: LlmUse['status'], reason: string, includeModel = true): LlmUse {
+  const info = includeModel ? llmRuntimeInfo({ maxTokens: 120 }) : undefined
+  return {
+    round: req.round,
+    agent: name,
+    purpose: 'verifier_judgment',
+    status,
+    ...(info ? { provider: info.provider, model: info.model } : {}),
+    reason,
+    guardrail: 'content hash and JSON structure checks run before model judgment',
+    createdAt: new Date().toISOString(),
+  }
+}
+
+function withLlm(verdict: Verdict, llm: LlmUse): VerdictWithLlm {
+  return { ...verdict, llm }
+}
+
+const errReason = (e: unknown): string => String((e as Error).message ?? e).slice(0, 120)
+
+export async function checkDelivery(req: VerifyRequest, name: string, llm: Llm = complete): Promise<VerdictWithLlm> {
   const base = { round: req.round, by: name, sha: sha256Hex(req.payload) }
 
   if (base.sha !== req.sha) {
-    return { ...base, verdict: 'fail', reason: 'content hash mismatch' }
+    return withLlm(
+      { ...base, verdict: 'fail', reason: 'content hash mismatch' },
+      verifierLlm(req, name, 'skipped', 'content hash mismatch; model not consulted', false),
+    )
   }
 
   let data: unknown
   try {
     data = JSON.parse(req.payload)
   } catch {
-    return { ...base, verdict: 'fail', reason: 'payload is not JSON' }
+    return withLlm(
+      { ...base, verdict: 'fail', reason: 'payload is not JSON' },
+      verifierLlm(req, name, 'skipped', 'payload is not JSON; model not consulted', false),
+    )
   }
   if (data && typeof data === 'object' && 'error' in (data as Record<string, unknown>)) {
     const err = String((data as Record<string, unknown>).error).slice(0, 40)
-    return { ...base, verdict: 'fail', reason: `payload reports error: ${err}` }
+    return withLlm(
+      { ...base, verdict: 'fail', reason: `payload reports error: ${err}` },
+      verifierLlm(req, name, 'skipped', 'payload reported an error; model not consulted', false),
+    )
   }
   const structured = data && typeof data === 'object' ? data as Record<string, unknown> : undefined
   if (
@@ -34,7 +67,10 @@ export async function checkDelivery(req: VerifyRequest, name: string, llm: Llm =
     structured?.service === 'txline-edge' &&
     String(structured.fixtureId ?? '') === req.arg
   ) {
-    return { ...base, verdict: 'pass', reason: 'hash + txline fixture verified' }
+    return withLlm(
+      { ...base, verdict: 'pass', reason: 'hash + txline fixture verified' },
+      verifierLlm(req, name, 'skipped', 'txline fixture matched deterministic verifier', false),
+    )
   }
 
   try {
@@ -46,10 +82,27 @@ export async function checkDelivery(req: VerifyRequest, name: string, llm: Llm =
       user: `order: service=${req.service} arg=${req.arg}\ndelivered payload: ${req.payload.slice(0, 1500)}`,
       maxTokens: 120,
     }))
-    if (parsed?.pass === false) return { ...base, verdict: 'fail', reason: (parsed.reason ?? 'judged unacceptable').slice(0, 60) }
-    if (parsed?.pass === true) return { ...base, verdict: 'pass', reason: (parsed.reason ?? 'checks passed').slice(0, 60) }
-  } catch {
+    if (parsed?.pass === false) {
+      return withLlm(
+        { ...base, verdict: 'fail', reason: (parsed.reason ?? 'judged unacceptable').slice(0, 60) },
+        verifierLlm(req, name, 'used', 'model rejected structurally valid payload'),
+      )
+    }
+    if (parsed?.pass === true) {
+      return withLlm(
+        { ...base, verdict: 'pass', reason: (parsed.reason ?? 'checks passed').slice(0, 60) },
+        verifierLlm(req, name, 'used', 'model accepted structurally valid payload'),
+      )
+    }
+  } catch (e) {
     // judge unavailable -> the deterministic checks above decide
+    return withLlm(
+      { ...base, verdict: 'pass', reason: 'hash + structure verified' },
+      verifierLlm(req, name, 'fallback', `LLM unavailable: ${errReason(e)}`),
+    )
   }
-  return { ...base, verdict: 'pass', reason: 'hash + structure verified' }
+  return withLlm(
+    { ...base, verdict: 'pass', reason: 'hash + structure verified' },
+    verifierLlm(req, name, 'fallback', 'model returned unparseable JSON'),
+  )
 }

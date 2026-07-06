@@ -11,16 +11,19 @@ describe('decideBid - code-enforced economics', () => {
   it('refuses a service not in inventory (no LLM call)', async () => {
     const d = await decideBid({ ...want, service: 'jupiter' }, cfg, async () => { throw new Error('should not call') })
     expect(d.bid).toBe(false)
+    expect(d.llm).toMatchObject({ status: 'skipped', purpose: 'seller_quote', reason: 'service not in seller inventory' })
   })
 
   it('sits out when the floor exceeds the budget', async () => {
     const d = await decideBid({ ...want, budgetSol: 0.0001 }, cfg, async () => { throw new Error('should not call') })
     expect(d.bid).toBe(false)
+    expect(d.llm).toMatchObject({ status: 'skipped', reason: 'budget below seller floor' })
   })
 
   it('clamps an under-floor LLM price up to the floor', async () => {
     const d = await decideBid(want, cfg, llmSays('{"bid":true,"price":0.0001,"note":"cheap"}'))
     expect(d.priceSol).toBe(0.0004) // floor
+    expect(d.llm).toMatchObject({ status: 'used', provider: expect.any(String), model: expect.any(String) })
   })
 
   it('clamps an over-budget LLM price down to the budget', async () => {
@@ -31,10 +34,12 @@ describe('decideBid - code-enforced economics', () => {
   it('honours an LLM decline', async () => {
     const d = await decideBid(want, cfg, llmSays('{"bid":false,"note":"too cheap for me"}'))
     expect(d.bid).toBe(false)
+    expect(d.llm).toMatchObject({ status: 'used', reason: 'model declined to bid' })
   })
 
   it('falls back to a floor bid when the LLM errors', async () => {
     const d = await decideBid(want, cfg, async () => { throw new Error('llm down') })
     expect(d).toMatchObject({ bid: true, priceSol: 0.0004 })
+    expect(d.llm).toMatchObject({ status: 'fallback', reason: 'LLM unavailable: llm down' })
   })
 })

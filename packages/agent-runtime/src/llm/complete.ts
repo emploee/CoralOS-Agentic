@@ -47,16 +47,31 @@ export interface CompleteOpts {
   maxTokens?: number
 }
 
+export interface LlmRuntimeInfo {
+  provider: LlmProvider
+  model: string
+  maxTokens: number
+}
+
+/** The provider/model/max-token selection a call to `complete()` would use, without calling the LLM. */
+export function llmRuntimeInfo(opts: Pick<CompleteOpts, 'model' | 'maxTokens'> = {}): LlmRuntimeInfo {
+  const provider = pickProvider()
+  // `||` not `??`: Coral manifests default unset options to ""; an empty LLM_MODEL must not win.
+  const model = opts.model || process.env.LLM_MODEL || DEFAULT_MODEL[provider]
+  const requestedMaxTokens = opts.maxTokens ?? 512
+  return { provider, model, maxTokens: effectiveMaxTokens(provider, model, requestedMaxTokens) }
+}
+
 /**
  * One completion. Returns the model's text. Throws if the provider key is missing or the HTTP call
  * fails. Set `TRACE=1` to log provider/model and the raw response before the caller parses it.
  */
 export async function complete(opts: CompleteOpts): Promise<string> {
-  const provider = pickProvider()
+  const info = llmRuntimeInfo(opts)
+  const provider = info.provider
   // `||` not `??`: coral manifests default unset options to "" — an empty LLM_MODEL must not win.
-  const model = opts.model || process.env.LLM_MODEL || DEFAULT_MODEL[provider]
-  const requestedMaxTokens = opts.maxTokens ?? 512
-  const maxTokens = effectiveMaxTokens(provider, model, requestedMaxTokens)
+  const model = info.model
+  const maxTokens = info.maxTokens
   const trace = process.env.TRACE === '1'
   if (trace) console.error(`[llm] provider=${provider} model=${model} maxTokens=${maxTokens}`)
 

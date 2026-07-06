@@ -90,6 +90,25 @@ describe('foldRounds', () => {
     }])
   })
 
+  it('folds LLM metadata into the matching round', () => {
+    const [r] = foldRounds([
+      { sender: 'buyer-agent', text: 'WANT round=9 service=txline arg=18175397 budget=0.001' },
+      {
+        sender: 'buyer-agent',
+        text: 'LLM_USED round=9 agent=buyer-agent purpose=buyer_award status=used provider=openai model=gpt-4o-mini reason="selected best value" guardrail="winner must match collected BID set"',
+      },
+      {
+        sender: 'seller-worldcup',
+        text: 'LLM_USED round=9 agent=seller-worldcup purpose=seller_delivery status=fallback provider=anthropic model=claude-haiku-4-5-20251001 reason="LLM unavailable: key missing" guardrail="deterministic fair-line fallback plus verifier checks"',
+      },
+    ], sellers)
+
+    expect(r.llm).toEqual([
+      expect.objectContaining({ agent: 'buyer-agent', purpose: 'buyer_award', status: 'used', model: 'gpt-4o-mini' }),
+      expect.objectContaining({ agent: 'seller-worldcup', purpose: 'seller_delivery', status: 'fallback' }),
+    ])
+  })
+
   it('leaves an in-progress round in a non-settled status', () => {
     const r = foldRounds(round1.slice(0, 3), sellers)[0]
     expect(r.status).toBe('bidding')

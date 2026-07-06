@@ -13,17 +13,39 @@ const PROXY = window.TXODDS_PROXY ?? 'http://localhost:8801'
 // The research watcher (examples/txodds/research/watcher.ts) — optional; the board degrades silently.
 const WATCHER = window.TXODDS_WATCHER ?? 'http://localhost:4600'
 const EXPECTED_AGENTS = ['buyer-agent', 'seller-worldcup', 'seller-fast', 'seller-premium', 'seller-risk-policy', 'seller-fan-card', 'verifier-agent']
-const MARKET_VERBS = ['WANT', 'BID', 'AWARD', 'ESCROW_REQUIRED', 'DEPOSITED', 'DELIVERED', 'VERIFY', 'VERIFIED', 'RELEASED', 'ARBITER_RELEASED', 'REFUNDED', 'ERROR']
+const MARKET_VERBS = ['WANT', 'BID', 'AWARD', 'ESCROW_REQUIRED', 'DEPOSITED', 'DELIVERED', 'LLM_USED', 'VERIFY', 'VERIFIED', 'RELEASED', 'ARBITER_RELEASED', 'REFUNDED', 'ERROR']
 const AGENT_ROUND_TYPES = [
   { id: 'txline', label: 'TxODDS edge', want: 'txline <fixtureId>', note: 'All seller personas can bid; the seller treats a fixture id as an edge-read request.' },
   { id: 'risk-policy', label: 'Risk policy', want: 'risk-policy <fixtureId>', note: 'seller-risk-policy bids with a deterministic guardrail payload.' },
   { id: 'fan-card', label: 'Fan card', want: 'fan-card <fixtureId>', note: 'seller-fan-card bids with a fan-facing explainer payload.' },
 ]
+const AGENT_ROLES = {
+  'buyer-agent': 'asks, chooses, funds escrow',
+  'seller-worldcup': 'TxODDS edge seller',
+  'seller-fast': 'fast TxODDS seller',
+  'seller-premium': 'premium TxODDS seller',
+  'seller-risk-policy': 'deterministic policy seller',
+  'seller-fan-card': 'fan explainer seller',
+  'verifier-agent': 'checks delivery before release',
+}
+const LLM_PURPOSE_LABELS = {
+  seller_quote: 'Seller quote',
+  buyer_award: 'Buyer award',
+  seller_delivery: 'Seller delivery',
+  verifier_judgment: 'Verifier judgment',
+}
+const LLM_STATUS_LABELS = {
+  used: 'model used',
+  fallback: 'fallback used',
+  skipped: 'model skipped',
+  error: 'model error',
+}
 const AGENT_SOURCES = [
   ['buyer-agent', 'coral-agents/buyer-agent/src/index.ts'],
   ['seller-agent image', 'coral-agents/seller-agent/src/index.ts'],
   ['seller services', 'coral-agents/seller-agent/src/service.ts'],
   ['verifier-agent', 'coral-agents/verifier-agent/src/index.ts'],
+  ['LLM protocol event', 'packages/agent-runtime/src/market/protocol.ts'],
   ['Coral parser/feed', 'examples/marketplace/feed/src/server.ts'],
   ['TxODDS launcher', 'examples/txodds/coral/round.ts'],
 ]
@@ -44,6 +66,122 @@ const verbOf = (text) => {
 const sentence = (s, n = 120) => {
   const text = String(s ?? '')
   return text.length > n ? `${text.slice(0, n - 3)}...` : text
+}
+
+const fieldOf = (text, key) => {
+  const raw = String(text ?? '')
+  const quoted = raw.match(new RegExp(`${key}="([^"]*)"`))?.[1]
+  if (quoted != null) return quoted
+  return raw.match(new RegExp(`${key}=(\\S+)`))?.[1]
+}
+
+const roleOf = (agent) => AGENT_ROLES[agent] ?? 'agent process'
+const purposeLabel = (purpose) => LLM_PURPOSE_LABELS[purpose] ?? sentence(String(purpose ?? 'LLM step').replaceAll('_', ' '), 32)
+const llmStatusLabel = (status) => LLM_STATUS_LABELS[status] ?? String(status ?? 'unknown')
+const fmtSol = (n) => {
+  const value = Number(n)
+  if (!Number.isFinite(value)) return 'waiting'
+  return `${value.toFixed(6).replace(/0+$/, '').replace(/\.$/, '')} SOL`
+}
+
+function humanMarketEvent(m) {
+  const text = String(m?.text ?? '')
+  const v = verbOf(text)
+  const round = fieldOf(text, 'round')
+  if (v === 'WANT') {
+    const service = fieldOf(text, 'service') ?? 'service'
+    const arg = fieldOf(text, 'arg') ?? 'request'
+    const budget = fieldOf(text, 'budget')
+    return `${m.sender} asked seller agents for ${service} ${arg}${budget ? ` with budget ${fmtSol(budget)}` : ''}.`
+  }
+  if (v === 'BID') {
+    const by = fieldOf(text, 'by') ?? m.sender
+    const price = fieldOf(text, 'price')
+    const note = fieldOf(text, 'note')
+    return `${by} offered to deliver round ${round ?? '?'}${price ? ` for ${fmtSol(price)}` : ''}${note ? `: ${note}` : ''}.`
+  }
+  if (v === 'AWARD') {
+    const to = fieldOf(text, 'to') ?? 'a seller'
+    const reason = fieldOf(text, 'reason')
+    return `${m.sender} selected ${to}${reason ? ` because ${reason}` : ''}.`
+  }
+  if (v === 'ESCROW_REQUIRED') {
+    const amount = fieldOf(text, 'amount')
+    const seller = fieldOf(text, 'seller')
+    return `${m.sender} returned escrow terms${amount ? ` for ${fmtSol(amount)}` : ''}${seller ? ` to payout ${shortAddr(seller)}` : ''}.`
+  }
+  if (v === 'DEPOSITED') {
+    const sig = fieldOf(text, 'sig')
+    return `${m.sender} funded escrow for round ${round ?? '?'}${sig ? ` with tx ${shortAddr(sig)}` : ''}.`
+  }
+  if (v === 'LLM_USED') {
+    const agent = fieldOf(text, 'agent') ?? m.sender
+    const status = fieldOf(text, 'status')
+    const provider = fieldOf(text, 'provider')
+    const model = fieldOf(text, 'model')
+    const reason = fieldOf(text, 'reason')
+    const modelText = provider || model ? ` (${[provider, model].filter(Boolean).join(' / ')})` : ''
+    return `${agent} reported ${purposeLabel(fieldOf(text, 'purpose'))}: ${llmStatusLabel(status)}${modelText}${reason ? ` - ${reason}` : ''}.`
+  }
+  if (v === 'DELIVERED') return `${m.sender} delivered the payload for round ${round ?? '?'}.`
+  if (v === 'VERIFY') return `${m.sender} asked verifier-agent to check the exact delivered payload.`
+  if (v === 'VERIFIED') {
+    const verdict = fieldOf(text, 'verdict')
+    const by = fieldOf(text, 'by') ?? m.sender
+    const reason = fieldOf(text, 'reason')
+    return `${by} ${verdict === 'pass' ? 'passed' : 'failed'} the delivery${reason ? `: ${reason}` : ''}.`
+  }
+  if (v === 'ARBITER_RELEASED' || v === 'RELEASED') {
+    const sig = fieldOf(text, 'sig')
+    return `${m.sender} released escrow to the seller${sig ? ` with tx ${shortAddr(sig)}` : ''}.`
+  }
+  if (v === 'REFUNDED') return `${m.sender} marked the round refundable or refunded.`
+  if (v === 'ERROR') return `${m.sender} reported an error: ${sentence(text.replace(/^ERROR:?\s*/i, ''), 120)}`
+  return sentence(text, 180)
+}
+
+function runToRound(run) {
+  if (!run) return null
+  const release = (run.txs ?? []).find((tx) => tx.kind === 'release')
+  return {
+    round: run.round,
+    want: run.want,
+    bids: run.bids ?? [],
+    declined: run.declined ?? [],
+    award: run.award,
+    escrow: run.escrow,
+    deposit: run.escrow?.deposit,
+    delivered: run.delivery ? { raw: run.delivery.raw, data: run.delivery.data } : undefined,
+    verification: run.verification,
+    proofReceipts: run.proofReceipts ?? [],
+    llm: run.llm ?? [],
+    release: release ? { sig: release.sig } : undefined,
+    status: run.status,
+  }
+}
+
+function latestAgentRound(feed, runs) {
+  const rounds = feed?.rounds ?? []
+  if (rounds.length) return rounds[rounds.length - 1]
+  const list = [...(runs ?? [])].filter((r) => r?.round != null)
+  if (!list.length) return null
+  list.sort((a, b) => (Date.parse(b.updatedAt ?? '') || 0) - (Date.parse(a.updatedAt ?? '') || 0))
+  return runToRound(list[0])
+}
+
+function llmSummary(events) {
+  const list = events ?? []
+  if (!list.length) return 'not reported yet'
+  const counts = list.reduce((acc, e) => {
+    acc[e.status] = (acc[e.status] ?? 0) + 1
+    return acc
+  }, {})
+  return [
+    counts.used ? `${counts.used} used` : '',
+    counts.fallback ? `${counts.fallback} fallback` : '',
+    counts.skipped ? `${counts.skipped} skipped` : '',
+    counts.error ? `${counts.error} error` : '',
+  ].filter(Boolean).join(' / ')
 }
 
 const latestSessionFromRuns = (runs) => {
@@ -572,6 +710,7 @@ function AgentRoster({ agents }) {
             <span class="agent-dot"></span>
             <b>${name}</b>
             <small>${status}</small>
+            <small class="agent-role">${roleOf(name)}</small>
           </div>`
       })}
     </div>`
@@ -588,6 +727,114 @@ function SourceMap() {
     </div>`
 }
 
+function StoryCard({ label, value, detail, tone }) {
+  return html`
+    <div class=${'story-card ' + (tone ?? '')}>
+      <span>${label}</span>
+      <b>${value}</b>
+      ${detail && html`<p>${detail}</p>`}
+    </div>`
+}
+
+function LlmInvolvement({ events }) {
+  const list = events ?? []
+  if (!list.length) return html`
+    <div class="llm-panel">
+      <div class="block-head"><h3>LLM involvement</h3><span>model metadata from agents</span></div>
+      <p class="agent-empty">No LLM metadata has been reported by this run yet. Older sessions still show the raw protocol proof below.</p>
+    </div>`
+
+  const order = ['seller_quote', 'buyer_award', 'seller_delivery', 'verifier_judgment']
+  const sorted = [...list].sort((a, b) => {
+    const ai = order.indexOf(a.purpose)
+    const bi = order.indexOf(b.purpose)
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi)
+  })
+  return html`
+    <div class="llm-panel">
+      <div class="block-head"><h3>LLM involvement</h3><span>metadata only; prompts and completions hidden</span></div>
+      <div class="llm-list">
+        ${sorted.map((e, i) => html`
+          <div class=${'llm-row llm-' + (e.status ?? 'unknown')} key=${`${e.agent}-${e.purpose}-${i}`}>
+            <div>
+              <span>${purposeLabel(e.purpose)}</span>
+              <b>${e.agent}</b>
+              <p>${e.reason ?? 'reported model status'}</p>
+              ${e.guardrail && html`<small>${e.guardrail}</small>`}
+            </div>
+            <div class="llm-meta">
+              <em>${llmStatusLabel(e.status)}</em>
+              ${(e.provider || e.model) && html`<code>${[e.provider, e.model].filter(Boolean).join(' / ')}</code>`}
+            </div>
+          </div>`)}
+      </div>
+    </div>`
+}
+
+function AgentRoundStory({ feed, runs }) {
+  const round = latestAgentRound(feed, runs)
+  if (!round) return html`
+    <section class="agent-story">
+      <div class="story-head">
+        <div>
+          <span class="section-kicker">What is happening</span>
+          <h3>No live round attached yet</h3>
+          <p>Start a round or attach a Coral session. The explainer will translate the agent messages into a step-by-step receipt.</p>
+        </div>
+      </div>
+    </section>`
+
+  const bids = round.bids ?? []
+  const lowest = bids.length ? [...bids].sort((a, b) => Number(a.priceSol) - Number(b.priceSol))[0] : null
+  const llmEvents = round.llm ?? []
+  const askValue = round.want ? `${round.want.service} ${round.want.arg}` : 'waiting for WANT'
+  const bidValue = bids.length ? `${bids.length} seller${bids.length === 1 ? '' : 's'} bid` : 'waiting for bids'
+  const winnerValue = round.award?.to ?? 'not awarded yet'
+  const moneyValue = round.escrow?.amountSol ? fmtSol(round.escrow.amountSol) : 'escrow pending'
+  const proofValue = round.verification?.verdict
+    ? `${round.verification.verdict} by ${round.verification.by}`
+    : round.delivered ? 'delivered; awaiting verifier' : 'pending'
+  return html`
+    <section class="agent-story">
+      <div class="story-head">
+        <div>
+          <span class="section-kicker">What is happening</span>
+          <h3>Round ${round.round} translated</h3>
+          <p>This is the same CoralOS session, folded into plain-language steps before the raw bus proof.</p>
+        </div>
+        <span class=${'source-pill ' + (round.status === 'settled' ? 'ok' : 'busy')}>${round.status}</span>
+      </div>
+      <div class="story-grid">
+        <${StoryCard}
+          label="Ask"
+          value=${askValue}
+          detail=${round.want ? `buyer-agent asked for this with budget ${fmtSol(round.want.budgetSol)}.` : 'The buyer has not posted a WANT yet.'} />
+        <${StoryCard}
+          label="Bidders"
+          value=${bidValue}
+          detail=${lowest ? `${lowest.by} is currently lowest at ${fmtSol(lowest.priceSol)}.` : 'Seller agents self-select by sending BID messages.'} />
+        <${StoryCard}
+          label="Winner"
+          value=${winnerValue}
+          detail=${round.award?.reason ?? 'buyer-agent has not sent AWARD yet.'} />
+        <${StoryCard}
+          label="LLM involvement"
+          value=${llmSummary(llmEvents)}
+          detail=${llmEvents.length ? 'Reported by agent-emitted LLM_USED messages.' : 'No LLM_USED events folded for this round yet.'}
+          tone="llm" />
+        <${StoryCard}
+          label="Money"
+          value=${moneyValue}
+          detail=${round.release?.sig ? `Released on devnet: ${shortAddr(round.release.sig)}.` : round.deposit?.sig ? `Escrow funded: ${shortAddr(round.deposit.sig)}.` : 'No deposit has been observed yet.'} />
+        <${StoryCard}
+          label="Proof"
+          value=${proofValue}
+          detail=${round.delivered?.raw ? sentence(round.delivered.raw, 120) : 'Delivery hash, verifier verdict, and tx links appear as the round completes.'} />
+      </div>
+      <${LlmInvolvement} events=${llmEvents} />
+    </section>`
+}
+
 function CoralBus({ bus }) {
   const threads = bus?.threads ?? []
   if (!bus) return html`<div class="agent-empty">Attach or start a session to see CoralOS messages.</div>`
@@ -602,6 +849,7 @@ function CoralBus({ bus }) {
           </div>
           ${(thread.messages ?? []).map((m, i) => {
             const v = verbOf(m.text)
+            const human = humanMarketEvent(m)
             return html`
               <div class="coral-msg" key=${`${thread.id}-${i}`}>
                 <div class="coral-msg-top">
@@ -610,7 +858,11 @@ function CoralBus({ bus }) {
                   ${(m.mentions ?? []).map((name) => html`<em key=${name}>@${name}</em>`)}
                   ${m.timestamp && html`<small>${m.timestamp.slice(11, 19)}</small>`}
                 </div>
-                <p>${m.text}</p>
+                <p class="coral-human">${human}</p>
+                <details class="raw-msg">
+                  <summary>raw message</summary>
+                  <code>${m.text}</code>
+                </details>
               </div>`
           })}
         </section>`)}
@@ -633,6 +885,7 @@ function RoundLifecycle({ feed }) {
             <div><span>Ask</span><b>${r.want?.arg ?? 'txline fixture'}</b></div>
             <div><span>Bids</span><b>${r.bids?.length ?? 0}</b></div>
             <div><span>Winner</span><b>${r.award?.to ?? 'not awarded'}</b></div>
+            <div><span>LLM</span><b>${llmSummary(r.llm)}</b></div>
             <div><span>Money</span><b>${r.escrow?.amountSol ? `${r.escrow.amountSol} SOL` : 'waiting'}</b></div>
             <div><span>Verifier</span><b>${r.verification?.verdict ?? 'waiting'}</b></div>
             <div><span>Proof</span><b>${r.release?.sig ? shortAddr(r.release.sig) : r.delivered ? 'delivered' : 'pending'}</b></div>
@@ -657,6 +910,7 @@ function AgenticRuns({ runs }) {
         <div><b>Ask</b><span>buyer-agent WANT</span></div>
         <div><b>Bids</b><span>seller personas reply</span></div>
         <div><b>Winner</b><span>AWARD message</span></div>
+        <div><b>LLM</b><span>provider/model status</span></div>
         <div><b>Money</b><span>escrow deposit/release</span></div>
         <div><b>Verifier</b><span>VERIFIED pass/fail</span></div>
         <div><b>Proof</b><span>hashes and tx links</span></div>
@@ -668,7 +922,7 @@ function AgenticRuns({ runs }) {
             <article class="agent-run-card" key=${r.runId}>
               <div><b>${r.runId}</b><span>${r.status}</span></div>
               <p>${r.want?.arg ?? 'txline request'}</p>
-              <small>${r.award?.to ?? 'no winner yet'} / ${r.verification?.verdict ?? 'no verifier verdict'} / ${r.escrow?.amountSol ?? r.want?.budgetSol ?? '-'} SOL</small>
+              <small>${r.award?.to ?? 'no winner yet'} / ${llmSummary(r.llm)} / ${r.verification?.verdict ?? 'no verifier verdict'} / ${r.escrow?.amountSol ?? r.want?.budgetSol ?? '-'} SOL</small>
             </article>`)}
         </div>`}
     </section>`
@@ -687,8 +941,8 @@ function AgenticPanel({
       <div class="agentic-head">
         <div>
           <span class="section-kicker">Live CoralOS Agents</span>
-          <h2>Proper coded agents run this path</h2>
-          <p>CoralOS launches Docker agents. The browser shows their real session roster, thread messages, folded market rounds, and ledger output.</p>
+          <h2>Real agents, translated as they work</h2>
+          <p>CoralOS launches Docker agents. This view explains the buyer, seller, verifier, escrow, and LLM events before showing the raw thread proof.</p>
         </div>
         <div class="agentic-status">
           <span class=${session ? 'source-pill ok' : 'source-pill warn'}>${session ? 'session attached' : 'no session'}</span>
@@ -731,11 +985,8 @@ function AgenticPanel({
       ${startError && html`<p class="agent-error">${startError}</p>`}
       ${pollError && html`<p class="agent-error">${pollError}</p>`}
       <${AgentRoster} agents=${agents} />
+      <${AgentRoundStory} feed=${feed} runs=${runs} />
       <div class="agentic-grid">
-        <section class="agentic-block wide">
-          <div class="block-head"><h3>Coral bus</h3><span>messages from MCP threads</span></div>
-          <${CoralBus} bus=${bus} />
-        </section>
         <section class="agentic-block">
           <div class="block-head"><h3>Market rounds</h3><span>folded by feed server</span></div>
           <${RoundLifecycle} feed=${feed} />
@@ -743,6 +994,10 @@ function AgenticPanel({
         <section class="agentic-block">
           <div class="block-head"><h3>Source of truth</h3><span>repo-owned code paths</span></div>
           <${SourceMap} />
+        </section>
+        <section class="agentic-block full">
+          <div class="block-head"><h3>Raw protocol proof</h3><span>CoralOS MCP thread messages</span></div>
+          <${CoralBus} bus=${bus} />
         </section>
       </div>
       ${reputation?.length > 0 && html`

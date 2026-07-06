@@ -4,7 +4,7 @@ import {
   formatEscrowRequired, parseEscrowRequired, formatDeposited, parseDeposited,
   formatPaymentRequired, parsePaymentRequired, formatPaymentProof, parsePaymentProof,
   formatPaymentConfirmed, parsePaymentConfirmed, formatSettled, parseSettled,
-  formatRefunded, parseRefunded,
+  formatRefunded, parseRefunded, formatLlmUsed, parseLlmUsed,
   selectBids, pickCheapest, verb, messageRound,
   type Bid,
 } from './protocol.js'
@@ -79,6 +79,38 @@ describe('generic payment messages', () => {
 
     const refunded = { round: 10, rail: 'escrow' as const, reference: 'order-10', reason: 'verifier failed' }
     expect(parseRefunded(formatRefunded(refunded))).toEqual(refunded)
+  })
+})
+
+describe('LLM_USED', () => {
+  it('formats and parses model metadata without prompt or response text', () => {
+    const msg = formatLlmUsed({
+      round: 9,
+      agent: 'buyer-agent',
+      purpose: 'buyer_award',
+      status: 'used',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      reason: 'selected best value',
+      guardrail: 'winner must match collected BID set',
+      createdAt: '2026-07-06T00:00:00.000Z',
+    })
+    expect(msg).toContain('LLM_USED round=9')
+    expect(parseLlmUsed(msg)).toEqual({
+      round: 9,
+      agent: 'buyer-agent',
+      purpose: 'buyer_award',
+      status: 'used',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      reason: 'selected best value',
+      guardrail: 'winner must match collected BID set',
+      createdAt: '2026-07-06T00:00:00.000Z',
+    })
+  })
+
+  it('rejects unknown statuses', () => {
+    expect(parseLlmUsed('LLM_USED round=1 agent=a purpose=p status=maybe')).toBeNull()
   })
 })
 

@@ -12,11 +12,12 @@ import type { Program } from '@coral-xyz/anchor'
 import { PublicKey } from '@solana/web3.js'
 import {
   startCoralAgent, verb, parseWant, formatBid, parseAward, formatEscrowRequired, parseDeposited,
+  formatLlmUsed,
 } from '@pay/agent-runtime'
 import { adapterFromEnv, sellerConfigFromEnv } from '@pay/harness-runtime'
 import { procureUpstream } from '@pay/payment-runtime'
 import { makeProgram, isFunded } from './escrow.js'
-import { deliverService } from './service.js'
+import { deliverServiceResult } from './service.js'
 
 const NAME = process.env.AGENT_NAME ?? 'seller-agent'
 const SELLER_WALLET = process.env.SELLER_WALLET ?? ''
@@ -33,7 +34,7 @@ const PROCURE_AMOUNT = process.env.PROCURE_AMOUNT ?? '0.03' // USDC
 const cfg = sellerConfigFromEnv(NAME)
 const trace = process.env.TRACE === '1'
 // The harness does the work; this agent keeps the wallet, the protocol, and the escrow checks.
-const adapter = adapterFromEnv(deliverService)
+const adapter = adapterFromEnv(deliverServiceResult)
 
 interface Quote { service: string; arg: string; priceSol: number }
 const quoted = new Map<number, Quote>()
@@ -60,6 +61,7 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
       const want = parseWant(text)
       if (want) {
         const decision = await adapter.quote(want, cfg)
+        if (decision.llm && mention.threadId) await ctx.send(formatLlmUsed(decision.llm), mention.threadId)
         if (decision.bid) {
           quoted.set(want.round, { service: want.service, arg: want.arg, priceSol: decision.priceSol })
           await ctx.reply(mention, formatBid({
@@ -136,6 +138,9 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
             { round: deposited.round, service: order.service, arg: order.arg, priceSol: order.priceSol, reference: deposited.reference },
             trace ? (e) => console.error(`[${NAME}] harness ${e.kind}${e.text ? `: ${e.text}` : ''}`) : undefined,
           )
+          if (mention.threadId) {
+            for (const llm of delivery.llm ?? []) await ctx.send(formatLlmUsed(llm), mention.threadId)
+          }
           await ctx.reply(mention, `DELIVERED round=${deposited.round} ${delivery.payload}`)
         } catch (e) {
           await ctx.reply(mention, `ERROR: settlement failed - ${(e as Error).message}`)

@@ -77,6 +77,24 @@ describe('ledger store', () => {
     expect(readRun(base, session, 1)?.run.proofReceipts).toEqual([receipt])
   })
 
+  it('persists LLM metadata as a first-class facet', () => {
+    const llm = [{
+      round: 1,
+      agent: 'buyer-agent',
+      purpose: 'buyer_award',
+      status: 'used' as const,
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+      reason: 'selected best value',
+      guardrail: 'winner must match collected BID set',
+      createdAt: '2026-07-06T00:00:00.000Z',
+    }]
+    writeRun(base, { ...settledRun(), llm }, transcript)
+    const dir = runDir(base, session, 1)
+    expect(JSON.parse(readFileSync(join(dir, 'llm.json'), 'utf8'))).toEqual(llm)
+    expect(readRun(base, session, 1)?.run.llm).toEqual(llm)
+  })
+
   it('binds the delivery content hash into delivery.json', () => {
     writeRun(base, settledRun(), transcript)
     const delivery = JSON.parse(readFileSync(join(runDir(base, session, 1), 'delivery.json'), 'utf8'))

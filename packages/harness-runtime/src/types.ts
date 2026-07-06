@@ -4,7 +4,7 @@
  * wallet, and the escrow; an adapter only prices work and produces artifacts. Harness processes
  * never hold keys.
  */
-import type { Want } from '@pay/agent-runtime'
+import type { LlmUse, Want } from '@pay/agent-runtime'
 
 export interface SellerConfig {
   name: string
@@ -17,6 +17,8 @@ export interface BidDecision {
   bid: boolean
   priceSol: number
   note: string
+  /** Model-selection metadata for the quote decision; never contains prompts or completions. */
+  llm?: LlmUse
 }
 
 /** An awarded, escrow-funded job the adapter must now execute. */
@@ -37,6 +39,8 @@ export interface Delivery {
   /** sha256 hex of `payload` — the same content-hash convention the ledger and escrow bind. */
   sha256: string
   summary?: string
+  /** Model-selection metadata for delivery work; never contains prompts or completions. */
+  llm?: LlmUse[]
   /** Files the harness produced, relative to `workdir`. */
   artifacts?: string[]
 }

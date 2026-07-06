@@ -18,9 +18,9 @@
 import {
   startCoralAgent, complete, parseJsonReply, loadKeypairB58,
   formatWant, parseBid, parseEscrowRequired, formatAward, formatDeposited,
-  formatVerify, parseVerified, sha256Hex, enforce, policyFromEnv,
+  formatVerify, parseVerified, formatLlmUsed, sha256Hex, enforce, policyFromEnv, llmRuntimeInfo,
   selectBids, pickCheapest, verb, messageRound,
-  type Bid, type EscrowTerms, type CoralAgentContext,
+  type Bid, type EscrowTerms, type CoralAgentContext, type LlmUse,
 } from '@pay/agent-runtime'
 import { PublicKey } from '@solana/web3.js'
 import { makeProgram, deposit, release, escrowPda } from './escrow.js'
@@ -32,6 +32,7 @@ import { fetchNextWant } from './wantFeed.js'
 import { fetchReputationLines } from './reputation.js'
 
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
+const NAME = process.env.AGENT_NAME ?? 'buyer-agent'
 const BUDGET = Number(process.env.BUYER_MAX_SOL ?? '0.001')
 const SERVICE = process.env.BUYER_SERVICE ?? 'txline'
 // Rotate through several args so each round trades a *different* thing (BUYER_ARGS=csv of fixture ids,
@@ -67,29 +68,53 @@ const policy = policyFromEnv(process.env, {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const expl = (kind: 'tx' | 'address', id: string) => `https://explorer.solana.com/${kind}/${id}?cluster=devnet`
+const selectionGuardrail = 'winner must match collected BID set; fallback is cheapest available bid'
+
+function buyerLlm(round: number, status: LlmUse['status'], reason: string): LlmUse {
+  const info = status === 'skipped' ? undefined : llmRuntimeInfo({ maxTokens: 100 })
+  return {
+    round,
+    agent: NAME,
+    purpose: 'buyer_award',
+    status,
+    ...(info ? { provider: info.provider, model: info.model } : {}),
+    reason,
+    guardrail: selectionGuardrail,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+const errReason = (e: unknown): string => String((e as Error).message ?? e).slice(0, 120)
 
 /** Best-value selection via LLM; deterministic cheapest fallback. Returns the winner + its reasoning. */
-async function pickWinner(pool: Bid[], repLines?: string): Promise<{ winner: Bid; reason?: string }> {
-  if (pool.length === 1) return { winner: pool[0] }
+async function pickWinner(
+  round: number,
+  service: string,
+  arg: string,
+  budget: number,
+  pool: Bid[],
+  repLines?: string,
+): Promise<{ winner: Bid; reason?: string; llm: LlmUse }> {
+  if (pool.length === 1) return { winner: pool[0], llm: buyerLlm(round, 'skipped', 'single bid; no model selection needed') }
   try {
     const system =
       'You are a buyer choosing the best-value bid for a Solana data service. Weigh price against ' +
       'each seller\'s track record when one is given - a cheap seller that fails verification or ' +
       'no-shows is not a bargain. Reply ONLY with JSON {"by": "<seller name>", "reason": "<short>"}.'
     const user =
-      `service=${SERVICE} arg=${ARG} budget=${BUDGET}\nbids:\n` +
+      `service=${service} arg=${arg} budget=${budget}\nbids:\n` +
       pool.map((b) => `- ${b.by}: ${b.priceSol} SOL${b.note ? ` (${b.note})` : ''}`).join('\n') +
       (repLines ? `\ntrack record (derived from the run ledger):\n${repLines}` : '')
     const parsed = parseJsonReply<{ by?: string; reason?: string }>(await complete({ system, user, maxTokens: 100 }))
     const chosen = pool.find((b) => b.by === parsed?.by)
     if (chosen) {
       console.error(`[buyer] picked ${chosen.by} (${chosen.priceSol} SOL): ${parsed?.reason ?? ''}`)
-      return { winner: chosen, reason: parsed?.reason }
+      return { winner: chosen, reason: parsed?.reason, llm: buyerLlm(round, 'used', parsed?.reason ?? 'model selected winner') }
     }
-  } catch {
-    /* fall through to deterministic choice */
+    return { winner: pickCheapest(pool)!, reason: 'cheapest available', llm: buyerLlm(round, 'fallback', 'model returned a seller outside the bid pool') }
+  } catch (e) {
+    return { winner: pickCheapest(pool)!, reason: 'cheapest available', llm: buyerLlm(round, 'fallback', `LLM unavailable: ${errReason(e)}`) }
   }
-  return { winner: pickCheapest(pool)!, reason: 'cheapest available' }
 }
 
 /** Wait (bounded) for a message matching `round` that `parse` accepts. */
@@ -109,7 +134,7 @@ async function waitFor<T>(
   return null
 }
 
-await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, async (ctx) => {
+await startCoralAgent({ agentName: NAME }, async (ctx) => {
   const buyer = loadKeypairB58('BUYER_KEYPAIR_B58')
   const arbiter = SETTLEMENT_MODE === 'arbiter' ? loadKeypairB58('ARBITER_KEYPAIR_B58') : null
   console.error(`[buyer] market buyer - wallet=${buyer.publicKey.toBase58()} budget=${BUDGET} sellers=[${SELLERS.join(',')}]`)
@@ -164,7 +189,8 @@ await startCoralAgent({ agentName: process.env.AGENT_NAME ?? 'buyer-agent' }, as
 
       // -- award the best value (price × track record) -------------------------
       const repLines = REPUTATION_URL ? await fetchReputationLines(REPUTATION_URL) : undefined
-      const { winner, reason } = await pickWinner(pool, repLines)
+      const { winner, reason, llm } = await pickWinner(round, service, arg, budget, pool, repLines)
+      await ctx.send(formatLlmUsed(llm), thread)
       await ctx.send(formatAward(round, winner.by, reason), thread, [winner.by])
 
       // -- settle through escrow: deposit -> DEPOSITED -> wait DELIVERED -> release

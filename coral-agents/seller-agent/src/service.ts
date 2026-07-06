@@ -8,76 +8,117 @@
  * the LLM, the deliverable comes back as JSON. Without an LLM key it returns an error payload, which
  * the verifier fails and the buyer refuses to pay for - no-capability sellers don't get released.
  */
-import { complete, parseJsonReply } from '@pay/agent-runtime'
+import { complete, llmRuntimeInfo, parseJsonReply, type LlmUse } from '@pay/agent-runtime'
 
 const TXLINE_BASE = process.env.TXLINE_BASE_URL || 'https://txline-dev.txodds.com'
 const SUPPORTED_SERVICES = ['txline', 'freelance', 'risk-policy', 'fan-card']
+type DeliveryOrder = { round?: number }
+
+export interface ServiceDelivery {
+  payload: string
+  llm: LlmUse[]
+}
+
+function deliveryLlm(
+  order: DeliveryOrder | undefined,
+  status: LlmUse['status'],
+  reason: string,
+  guardrail: string,
+  opts: { maxTokens?: number; includeModel?: boolean } = {},
+): LlmUse {
+  const info = opts.includeModel === false ? undefined : llmRuntimeInfo({ maxTokens: opts.maxTokens ?? 180 })
+  return {
+    round: order?.round ?? 0,
+    agent: process.env.AGENT_NAME ?? 'seller-agent',
+    purpose: 'seller_delivery',
+    status,
+    ...(info ? { provider: info.provider, model: info.model } : {}),
+    reason,
+    guardrail,
+    createdAt: new Date().toISOString(),
+  }
+}
+
+const payloadOnly = async (delivery: Promise<ServiceDelivery>): Promise<string> => (await delivery).payload
 
 export async function deliverService(request: string): Promise<string> {
+  return payloadOnly(deliverServiceResult(request))
+}
+
+export async function deliverServiceResult(request: string, order?: DeliveryOrder): Promise<ServiceDelivery> {
   const [first, ...rest] = request.trim().split(/\s+/).filter(Boolean)
   const service = (first ?? 'txline').toLowerCase()
-  if (service === 'freelance') return freelanceService(rest.join(' '))
-  if (service === 'risk-policy') return riskPolicyService(rest.join(' '))
-  if (service === 'fan-card') return fanCardService(rest.join(' '))
+  if (service === 'freelance') return freelanceService(rest.join(' '), order)
+  if (service === 'risk-policy') return riskPolicyService(rest.join(' '), order)
+  if (service === 'fan-card') return fanCardService(rest.join(' '), order)
   if (service !== 'txline') {
-    return JSON.stringify({ error: 'unsupported service', service, supported: SUPPORTED_SERVICES })
+    return {
+      payload: JSON.stringify({ error: 'unsupported service', service, supported: SUPPORTED_SERVICES }),
+      llm: [deliveryLlm(order, 'skipped', 'unsupported service rejected before delivery work', 'service allowlist', { includeModel: false })],
+    }
   }
-  return txlineService(rest.join(' '))
+  return txlineService(rest.join(' '), order)
 }
 
 function fixtureIdFrom(request: string): string | undefined {
   return request.trim().split(/\s+/).find((token) => /^\d+$/.test(token))
 }
 
-async function riskPolicyService(request: string): Promise<string> {
+async function riskPolicyService(request: string, order?: DeliveryOrder): Promise<ServiceDelivery> {
   const fixtureId = fixtureIdFrom(request)
-  return JSON.stringify({
-    service: 'risk-policy',
-    ...(fixtureId ? { fixtureId } : {}),
-    request: request || 'unspecified',
-    policy: {
-      action: fixtureId ? 'observe' : 'no-action',
-      maxExposureSol: 0,
-      requires: [
-        'verified TxLINE fair-line payload',
-        'buyer budget policy pass',
-        'verifier pass before escrow release',
-      ],
-      guardrails: [
-        'devnet only',
-        'no real-money wagering',
-        'no automated sportsbook execution',
-      ],
-    },
-    rationale: fixtureId
-      ? `Fixture ${fixtureId} can be analyzed after verified fair-line delivery.`
-      : 'No fixture id supplied.',
-  })
+  return {
+    payload: JSON.stringify({
+      service: 'risk-policy',
+      ...(fixtureId ? { fixtureId } : {}),
+      request: request || 'unspecified',
+      policy: {
+        action: fixtureId ? 'observe' : 'no-action',
+        maxExposureSol: 0,
+        requires: [
+          'verified TxLINE fair-line payload',
+          'buyer budget policy pass',
+          'verifier pass before escrow release',
+        ],
+        guardrails: [
+          'devnet only',
+          'no real-money wagering',
+          'no automated sportsbook execution',
+        ],
+      },
+      rationale: fixtureId
+        ? `Fixture ${fixtureId} can be analyzed after verified fair-line delivery.`
+        : 'No fixture id supplied.',
+    }),
+    llm: [deliveryLlm(order, 'skipped', 'risk policy payload is deterministic', 'static policy guardrails', { includeModel: false })],
+  }
 }
 
-async function fanCardService(request: string): Promise<string> {
+async function fanCardService(request: string, order?: DeliveryOrder): Promise<ServiceDelivery> {
   const fixtureId = fixtureIdFrom(request)
   const target = fixtureId ? `fixture ${fixtureId}` : 'the selected fixture'
-  return JSON.stringify({
-    service: 'fan-card',
-    ...(fixtureId ? { fixtureId } : {}),
-    request: request || 'unspecified',
-    card: {
-      title: `Fair-line explainer for ${target}`,
-      audience: 'fan',
-      explainer: 'TxODDS provides a break-even fair line. A value claim needs an outside book price above that fair price.',
-      sections: [
-        { label: 'What was bought', value: 'verified fair-line context' },
-        { label: 'What it is not', value: 'not a sportsbook recommendation' },
-        { label: 'Proof path', value: 'hash-bound delivery, verifier verdict, devnet escrow release' },
-      ],
-      shareCopy: `Agent-delivered fair-line context for ${target}; verification and settlement are recorded in the run ledger.`,
-    },
-    limits: ['educational summary', 'not betting advice'],
-  })
+  return {
+    payload: JSON.stringify({
+      service: 'fan-card',
+      ...(fixtureId ? { fixtureId } : {}),
+      request: request || 'unspecified',
+      card: {
+        title: `Fair-line explainer for ${target}`,
+        audience: 'fan',
+        explainer: 'TxODDS provides a break-even fair line. A value claim needs an outside book price above that fair price.',
+        sections: [
+          { label: 'What was bought', value: 'verified fair-line context' },
+          { label: 'What it is not', value: 'not a sportsbook recommendation' },
+          { label: 'Proof path', value: 'hash-bound delivery, verifier verdict, devnet escrow release' },
+        ],
+        shareCopy: `Agent-delivered fair-line context for ${target}; verification and settlement are recorded in the run ledger.`,
+      },
+      limits: ['educational summary', 'not betting advice'],
+    }),
+    llm: [deliveryLlm(order, 'skipped', 'fan card payload is deterministic', 'static educational limits', { includeModel: false })],
+  }
 }
 
-async function freelanceService(brief: string): Promise<string> {
+async function freelanceService(brief: string, order?: DeliveryOrder): Promise<ServiceDelivery> {
   try {
     const text = await complete({
       system:
@@ -87,13 +128,19 @@ async function freelanceService(brief: string): Promise<string> {
       maxTokens: 700,
     })
     const parsed = parseJsonReply<{ deliverable?: unknown; notes?: string }>(text)
-    return JSON.stringify({
-      service: 'freelance', brief,
-      result: parsed ?? { deliverable: text.trim() },
-    })
+    return {
+      payload: JSON.stringify({
+        service: 'freelance', brief,
+        result: parsed ?? { deliverable: text.trim() },
+      }),
+      llm: [deliveryLlm(order, 'used', 'model produced freelance deliverable', 'verifier checks JSON and order fit before release', { maxTokens: 700 })],
+    }
   } catch (e) {
     // No LLM -> an honest error payload; the verifier fails it and the escrow is never released.
-    return JSON.stringify({ service: 'freelance', brief, error: `llm unavailable: ${(e as Error).message}` })
+    return {
+      payload: JSON.stringify({ service: 'freelance', brief, error: `llm unavailable: ${(e as Error).message}` }),
+      llm: [deliveryLlm(order, 'error', `LLM unavailable: ${(e as Error).message}`, 'error payload fails verification; escrow is not released', { maxTokens: 700 })],
+    }
   }
 }
 
@@ -110,7 +157,7 @@ async function txlineGet(path: string): Promise<unknown> {
   return res.json()
 }
 
-async function txlineService(request: string): Promise<string> {
+async function txlineService(request: string, order?: DeliveryOrder): Promise<ServiceDelivery> {
   const tokens = request.trim().split(/\s+/).filter(Boolean)
   let action = (tokens[0] ?? 'fixtures').toLowerCase()
   let fixtureId = tokens[1]
@@ -121,19 +168,25 @@ async function txlineService(request: string): Promise<string> {
 
   switch (action) {
     case 'odds':
-      return JSON.stringify({ service: 'txline-odds', fixtureId, odds: await txlineGet(`/api/odds/snapshot/${fixtureId}`) })
+      return {
+        payload: JSON.stringify({ service: 'txline-odds', fixtureId, odds: await txlineGet(`/api/odds/snapshot/${fixtureId}`) }),
+        llm: [deliveryLlm(order, 'skipped', 'odds snapshot is a direct TxLINE fetch', 'token-gated TxLINE fetch plus verifier checks', { includeModel: false })],
+      }
     case 'edge':
-      return txlineEdge(fixtureId)
+      return txlineEdge(fixtureId, order)
     case 'fixtures':
     default: {
       const fixtures = await txlineGet('/api/fixtures/snapshot')
       const list = Array.isArray(fixtures) ? fixtures : []
-      return JSON.stringify({ service: 'txline-fixtures', count: list.length, fixtures: list.slice(0, 10) })
+      return {
+        payload: JSON.stringify({ service: 'txline-fixtures', count: list.length, fixtures: list.slice(0, 10) }),
+        llm: [deliveryLlm(order, 'skipped', 'fixture snapshot is a direct TxLINE fetch', 'token-gated TxLINE fetch plus verifier checks', { includeModel: false })],
+      }
     }
   }
 }
 
-async function txlineEdge(fixtureId: string | undefined): Promise<string> {
+async function txlineEdge(fixtureId: string | undefined, order?: DeliveryOrder): Promise<ServiceDelivery> {
   const [odds, fixtures] = await Promise.all([
     txlineGet(`/api/odds/snapshot/${fixtureId}`),
     txlineGet('/api/fixtures/snapshot'),
@@ -147,8 +200,11 @@ async function txlineEdge(fixtureId: string | undefined): Promise<string> {
   const teams = fx ? { home: fx.Participant1, away: fx.Participant2, competition: fx.Competition } : undefined
   const matchup = teams ? `${teams.home} v ${teams.away}` : `fixture ${fixtureId}`
 
-  const analysis = await liveReadOrFallback(matchup, odds, market, teams)
-  return JSON.stringify({ service: 'txline-edge', fixtureId, teams, market, analysis })
+  const analysis = await liveReadOrFallback(matchup, odds, market, teams, order)
+  return {
+    payload: JSON.stringify({ service: 'txline-edge', fixtureId, teams, market, analysis: analysis.value }),
+    llm: [analysis.llm],
+  }
 }
 
 async function liveReadOrFallback(
@@ -156,7 +212,8 @@ async function liveReadOrFallback(
   odds: unknown,
   market: Record<string, unknown> | undefined,
   teams: Record<string, unknown> | undefined,
-): Promise<unknown> {
+  order?: DeliveryOrder,
+): Promise<{ value: unknown; llm: LlmUse }> {
   try {
     const text = await complete({
       system: 'You are a football trading analyst. Reply only as JSON {"call": string, "confidence": number}.',
@@ -165,9 +222,15 @@ async function liveReadOrFallback(
         `Odds: ${JSON.stringify(odds).slice(0, 1500)}`,
       maxTokens: 180,
     })
-    return parseJsonReply(text) ?? { call: text }
+    return {
+      value: parseJsonReply(text) ?? { call: text },
+      llm: deliveryLlm(order, 'used', 'model produced TxODDS edge analysis', 'TxLINE data fetch plus verifier hash/fixture checks', { maxTokens: 180 }),
+    }
   } catch (e) {
-    return deterministicRead(market, teams, (e as Error).message)
+    return {
+      value: deterministicRead(market, teams, (e as Error).message),
+      llm: deliveryLlm(order, 'fallback', `LLM unavailable: ${(e as Error).message}`, 'deterministic fair-line fallback plus verifier checks', { maxTokens: 180 }),
+    }
   }
 }
 

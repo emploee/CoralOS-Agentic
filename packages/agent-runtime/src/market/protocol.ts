@@ -10,6 +10,7 @@
  *   AWARD  round=<n> to=<seller>                                 buyer  -> market, @winner
  *   ESCROW_REQUIRED round=<n> reference=<R> seller=<addr> amount=<sol> deadline=<secs>  seller -> buyer
  *   DEPOSITED round=<n> reference=<R> buyer=<addr> sig=<sig>     buyer  -> seller
+ *   LLM_USED round=<n> agent=<name> purpose=<name> status=used|fallback|skipped|error [provider=<p>] [model=<m>] [reason="..."] [guardrail="..."]
  *   VERIFY   round=<n> sha=<hash> service=<name> arg=<token> payload=<raw>  buyer -> verifier
  *   VERIFIED round=<n> verdict=pass|fail by=<verifier> [sha=<hash>] [reason="..."]  verifier -> buyer
  *   (then DELIVERED / RELEASED / REFUNDED reuse the round tag)
@@ -104,12 +105,29 @@ export interface SettlementMessage {
   reason?: string
 }
 
+export type LlmUseStatus = 'used' | 'fallback' | 'skipped' | 'error'
+
+export interface LlmUse {
+  round: number
+  agent: string
+  purpose: string
+  status: LlmUseStatus
+  provider?: string
+  model?: string
+  reason?: string
+  guardrail?: string
+  createdAt?: string
+}
+
 const num = (text: string, key: string): number | undefined => {
   const m = text.match(new RegExp(`${key}=([\\d.]+)`))
   return m ? Number(m[1]) : undefined
 }
 const tok = (text: string, key: string): string | undefined =>
   text.match(new RegExp(`${key}=(\\S+)`))?.[1]
+const quoted = (text: string, key: string): string | undefined =>
+  text.match(new RegExp(`${key}="([^"]*)"`))?.[1]
+const cleanQuote = (value: string): string => value.replace(/"/g, "'").slice(0, 180)
 
 const paymentRail = (value: string | undefined): PaymentRailKind | undefined =>
   value === 'solana-pay' ||
@@ -332,6 +350,47 @@ function parseSettlement(kind: 'SETTLED' | 'REFUNDED', text: string): Settlement
   const txSignature = tok(text, 'sig')
   const reason = text.match(/reason="([^"]*)"/)?.[1]
   return { round, rail, reference, ...(amount ? { amount } : {}), ...(currency ? { currency } : {}), ...(txSignature ? { txSignature } : {}), ...(reason ? { reason } : {}) }
+}
+
+// -- LLM_USED -------------------------------------------------------------------
+export function formatLlmUsed(l: LlmUse): string {
+  const parts = [
+    `LLM_USED round=${l.round}`,
+    `agent=${l.agent}`,
+    `purpose=${l.purpose}`,
+    `status=${l.status}`,
+  ]
+  if (l.provider) parts.push(`provider=${l.provider}`)
+  if (l.model) parts.push(`model=${l.model}`)
+  if (l.createdAt) parts.push(`createdAt=${l.createdAt}`)
+  if (l.reason) parts.push(`reason="${cleanQuote(l.reason)}"`)
+  if (l.guardrail) parts.push(`guardrail="${cleanQuote(l.guardrail)}"`)
+  return parts.join(' ')
+}
+
+export function parseLlmUsed(text: string): LlmUse | null {
+  if (verb(text) !== 'LLM_USED') return null
+  const round = num(text, 'round')
+  const agent = tok(text, 'agent')
+  const purpose = tok(text, 'purpose')
+  const status = tok(text, 'status')
+  if (
+    round == null || !agent || !purpose ||
+    (status !== 'used' && status !== 'fallback' && status !== 'skipped' && status !== 'error')
+  ) return null
+  const provider = tok(text, 'provider')
+  const model = tok(text, 'model')
+  const createdAt = tok(text, 'createdAt')
+  const reason = quoted(text, 'reason')
+  const guardrail = quoted(text, 'guardrail')
+  return {
+    round, agent, purpose, status,
+    ...(provider ? { provider } : {}),
+    ...(model ? { model } : {}),
+    ...(createdAt ? { createdAt } : {}),
+    ...(reason ? { reason } : {}),
+    ...(guardrail ? { guardrail } : {}),
+  }
 }
 
 // -- VERIFY / VERIFIED -------------------------------------------------------------

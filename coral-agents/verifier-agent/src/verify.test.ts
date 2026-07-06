@@ -13,6 +13,7 @@ describe('checkDelivery - deterministic checks decide first', () => {
   it('fails a tampered payload on hash mismatch (no LLM say)', async () => {
     const v = await checkDelivery(req({ sha: sha256Hex('something else') }), 'v', llmSays('{"pass":true}'))
     expect(v).toMatchObject({ verdict: 'fail', reason: 'content hash mismatch' })
+    expect(v.llm).toMatchObject({ status: 'skipped', reason: 'content hash mismatch; model not consulted' })
   })
 
   it('fails a non-JSON payload', async () => {
@@ -32,17 +33,20 @@ describe('checkDelivery - deterministic checks decide first', () => {
     const v = await checkDelivery(req(), 'v', llmDown)
     expect(v).toMatchObject({ verdict: 'pass', reason: 'hash + structure verified', by: 'v' })
     expect(v.sha).toBe(sha256Hex(payload))
+    expect(v.llm).toMatchObject({ status: 'fallback', reason: 'LLM unavailable: llm down' })
   })
 
   it('passes txline edge payloads for the requested fixture before consulting the LLM', async () => {
     const txline = '{"service":"txline-edge","fixtureId":"12345","analysis":{"call":"Home value","confidence":0.7}}'
     const v = await checkDelivery(req({ payload: txline, sha: sha256Hex(txline) }), 'v', llmSays('{"pass":false,"reason":"too literal"}'))
     expect(v).toMatchObject({ verdict: 'pass', reason: 'hash + txline fixture verified', by: 'v' })
+    expect(v.llm).toMatchObject({ status: 'skipped', reason: 'txline fixture matched deterministic verifier' })
   })
 
   it('honours an LLM fail verdict on structurally valid payloads', async () => {
     const v = await checkDelivery(req(), 'v', llmSays('{"pass":false,"reason":"does not answer the arg"}'))
     expect(v).toMatchObject({ verdict: 'fail', reason: 'does not answer the arg' })
+    expect(v.llm).toMatchObject({ status: 'used', provider: expect.any(String), model: expect.any(String) })
   })
 
   it('honours an LLM pass verdict with its reason', async () => {

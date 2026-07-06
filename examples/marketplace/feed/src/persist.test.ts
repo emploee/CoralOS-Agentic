@@ -28,6 +28,7 @@ const messages: RawMessage[] = [
 const verifiedRound: RawMessage[] = [
   { sender: 'buyer-agent', text: 'WANT round=7 service=txline arg=999 budget=0.001' },
   { sender: 'seller-premium', text: 'BID round=7 price=0.0005 by=seller-premium' },
+  { sender: 'seller-premium', text: 'LLM_USED round=7 agent=seller-premium purpose=seller_quote status=used provider=openai model=gpt-4o-mini reason="model proposed bid terms" guardrail="service allowlist plus floor/budget price clamp"' },
   { sender: 'buyer-agent', text: 'AWARD round=7 to=seller-premium' },
   { sender: 'seller-premium', text: 'ESCROW_REQUIRED round=7 reference=Ref7 seller=7jwB amount=0.0005 deadline=600' },
   { sender: 'buyer-agent', text: 'DEPOSITED round=7 reference=Ref7 buyer=47Dp sig=depSig settlement=arbiter' },
@@ -104,6 +105,9 @@ describe('persist', () => {
     expect(r.status).toBe('settled') // ARBITER_RELEASED counts as settled
     expect(r.release?.sig).toBe('relSig')
     expect(r.verification).toEqual({ verdict: 'pass', by: 'verifier-agent', reason: 'hash + structure verified' })
+    expect(r.llm).toEqual([
+      expect.objectContaining({ agent: 'seller-premium', purpose: 'seller_quote', status: 'used' }),
+    ])
     expect(r.proofReceipts[0]).toMatchObject({
       rail: 'pay-sh',
       provider: 'pay.sh/txodds-context',
@@ -118,6 +122,8 @@ describe('persist', () => {
       .toEqual({ verdict: 'pass', by: 'verifier-agent', reason: 'hash + structure verified' })
     expect(JSON.parse(readFileSync(join(dir, 'proof_receipts.json'), 'utf8'))[0])
       .toMatchObject({ rail: 'pay-sh', proof: 'pay-sh-demo:abc', amount: '0.03', currency: 'USDC' })
+    expect(JSON.parse(readFileSync(join(dir, 'llm.json'), 'utf8'))[0])
+      .toMatchObject({ agent: 'seller-premium', purpose: 'seller_quote', status: 'used' })
     expect(replaySession(base, session, sellers)).toEqual([r])
   })
 })

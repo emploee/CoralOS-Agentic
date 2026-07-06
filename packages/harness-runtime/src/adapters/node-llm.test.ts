@@ -14,6 +14,22 @@ describe('node-llm adapter', () => {
     expect(d.sha256).toBe(sha256Hex(d.payload))
   })
 
+  it('keeps delivery LLM metadata returned by the service', async () => {
+    const adapter = nodeLlmAdapter(async () => ({
+      payload: '{"ok":true}',
+      llm: [{
+        round: 1,
+        agent: 'seller-worldcup',
+        purpose: 'seller_delivery',
+        status: 'used',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+      }],
+    }))
+    const d = await adapter.run(order)
+    expect(d.llm).toEqual([expect.objectContaining({ agent: 'seller-worldcup', purpose: 'seller_delivery', status: 'used' })])
+  })
+
   it('streams start → delivered events', async () => {
     const events: HarnessEvent[] = []
     const adapter = nodeLlmAdapter(async () => 'ok')

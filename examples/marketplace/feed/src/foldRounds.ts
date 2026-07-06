@@ -6,8 +6,8 @@
  */
 import {
   verb, messageRound, parseWant, parseBid, parseAward, parseEscrowRequired, parseDeposited, parseVerified,
-  parsePaymentRequired, parsePaymentProof, parsePaymentConfirmed,
-  type ProofReceipt, type PaymentRailKind, type PaymentCurrency,
+  parsePaymentRequired, parsePaymentProof, parsePaymentConfirmed, parseLlmUsed,
+  type ProofReceipt, type PaymentRailKind, type PaymentCurrency, type LlmUse,
 } from '@pay/agent-runtime'
 
 export interface RawMessage {
@@ -38,6 +38,8 @@ export interface Round {
   verification?: { verdict: 'pass' | 'fail'; by: string; reason?: string }
   /** Payment-rail receipts for upstream procurement legs inside the round. */
   proofReceipts: ProofReceipt[]
+  /** LLM provider/model/status metadata emitted by agents. */
+  llm: LlmUse[]
   release?: { sig: string }
   refunded?: boolean
   status: RoundStatus
@@ -71,7 +73,7 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
   const get = (r: number): Round => {
     let round = byRound.get(r)
     if (!round) {
-      round = { round: r, bids: [], declined: [], proofReceipts: [], status: 'bidding' }
+      round = { round: r, bids: [], declined: [], proofReceipts: [], llm: [], status: 'bidding' }
       byRound.set(r, round)
     }
     return round
@@ -134,6 +136,12 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
       get(verified.round).verification = {
         verdict: verified.verdict, by: verified.by, ...(verified.reason ? { reason: verified.reason } : {}),
       }
+      continue
+    }
+
+    const llmUsed = parseLlmUsed(text)
+    if (llmUsed) {
+      get(llmUsed.round).llm.push(llmUsed)
       continue
     }
 

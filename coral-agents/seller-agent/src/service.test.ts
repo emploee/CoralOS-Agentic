@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { deliverService } from './service.js'
+import { deliverService, deliverServiceResult } from './service.js'
 
 describe('deliverService routing', () => {
   const realFetch = global.fetch
@@ -114,5 +114,33 @@ describe('deliverService routing', () => {
     const out = JSON.parse(await deliverService('txline edge 123'))
     expect(out.analysis.call).toContain('A')
     expect(out.analysis.note).toContain('deterministic fallback')
+  })
+
+  it('reports delivery LLM fallback metadata for txline edge analysis', async () => {
+    global.fetch = vi.fn(async (url: string) => {
+      if (url.endsWith('/auth/guest/start')) return { ok: true, json: async () => ({ token: 'jwt' }) }
+      if (url.includes('/api/odds/snapshot/123')) {
+        return {
+          ok: true,
+          json: async () => ([{
+            SuperOddsType: '1X2',
+            PriceNames: ['part1', 'x', 'part2'],
+            Pct: ['62', '22', '16'],
+          }]),
+        }
+      }
+      return {
+        ok: true,
+        json: async () => ([{ FixtureId: 123, Participant1: 'A', Participant2: 'B' }]),
+      }
+    }) as unknown as typeof fetch
+
+    const out = await deliverServiceResult('txline edge 123', { round: 11 })
+    expect(out.llm).toEqual([expect.objectContaining({
+      round: 11,
+      purpose: 'seller_delivery',
+      status: 'fallback',
+      guardrail: 'deterministic fair-line fallback plus verifier checks',
+    })])
   })
 })

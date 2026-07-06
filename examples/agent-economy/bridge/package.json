@@ -8,8 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "express": "^4.21.2",
-    "solana-coralos": "file:../../.."
+    "express": "^4.21.2"
   },
   "devDependencies": {
     "@solana/web3.js": "^1.98.0",

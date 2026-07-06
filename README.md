@@ -60,11 +60,10 @@ Secrets and generated wallets belong in the repo-root `.env`, which is gitignore
 ## Initial Setup
 
 ```sh
-npm install --prefix scripts
-node scripts/setup.js
+npm run setup
 ```
 
-The setup script writes devnet wallet variables to `.env` and records public addresses in `WALLETS.txt`. Fund the buyer address with devnet SOL before running settlement flows.
+The setup command installs the root npm workspace, installs setup-script dependencies, writes devnet wallet variables to `.env`, and records public addresses in `WALLETS.txt`. Fund the buyer address with devnet SOL before running settlement flows.
 
 LLM configuration is optional for many demos but required for live model reasoning:
 
@@ -81,15 +80,58 @@ VENICE_API_KEY=...
 
 See [LLM.md](LLM.md) for provider selection, model override behavior, and fallback behavior.
 
+## Canonical Starter Path
+
+The deterministic local path is the starter repo's main "done E2E" check:
+
+```sh
+npm run setup
+npm run build
+npm run typecheck
+npm test
+npm run e2e:local
+```
+
+Success means the workspace packages build to `dist`, all package/example/agent typechecks and unit tests pass, the recorded Coral market settles through the feed/ledger path, `proof_receipts.json` is written, and `.artifacts/readiness/proof.json` records:
+
+```json
+{
+  "roundId": "fixture/round-42",
+  "want": "txline edge-9001 budget=0.001",
+  "bid": "seller-premium price=0.0005",
+  "award": "seller-premium",
+  "escrow": "Ref42 seller=7jwB amount=0.0005",
+  "depositSignature": "dep42",
+  "deliveryHash": "...",
+  "verified": true,
+  "releaseSignature": "rel42",
+  "finalState": "SETTLED"
+}
+```
+
+The live devnet path is separate:
+
+```sh
+npm run e2e:devnet
+```
+
+It preflights `.env`, builds the workspace and agents, optionally builds Docker agent images, and launches the CoralOS devnet round. It requires Docker/CoralOS, funded devnet wallets, `ARBITER_KEYPAIR_B58`, and TxLINE access. LLM keys remain optional when deterministic fallbacks are available.
+
 ## Common Commands
 
 Run commands from the repo root unless noted.
 
 | Command                                    | Description                                                        | Requirements                                              |
 | ------------------------------------------ | ------------------------------------------------------------------ | --------------------------------------------------------- |
-| `npm run setup`                          | Install script dependencies and generate`.env` wallets.          | Node 20+.                                                 |
-| `npm run dev`                            | Start the TxODDS proxy on`:8801` and static web UI on `:3020`. | Funded buyer wallet for settlement.                       |
+| `npm run setup`                          | Install workspace/script deps and generate `.env` wallets.        | Node 20+.                                                 |
+| `npm run build`                          | Build workspace packages and Coral agents.                       | Root workspace installed.                                 |
+| `npm run typecheck`                      | Typecheck packages, examples, and Coral agents.                  | Root workspace installed.                                 |
+| `npm test`                               | Run package, example, and Coral agent unit tests.                | Root workspace installed.                                 |
+| `npm run dev`                            | Start the TxODDS proxy, feed, static UI, and Coral Console probe. | Funded buyer wallet for settlement; Docker optional for console. |
+| `npm run coral:console:e2e`              | Start Coral Server and verify Coral Console at `/ui/console`.   | Docker/CoralOS.                                           |
 | `npm run readiness:e2e`                  | Deterministic readiness gate using recorded data.                  | No Docker, devnet, wallet, or LLM key required.           |
+| `npm run e2e:local`                      | Alias for the deterministic readiness gate.                       | No Docker, devnet, wallet, or LLM key required.           |
+| `npm run e2e:devnet`                     | Live devnet CoralOS/escrow smoke path.                            | Docker, CoralOS, TxLINE token, funded wallets.            |
 | `npm run demo:coral`                     | Launch the TxODDS CoralOS round.                                   | Docker, built agent images, TxLINE token, funded wallets. |
 | `npm run marketplace`                    | Launch the classic multi-seller market.                            | Docker and built agent images.                            |
 | `npm run freelancer`                     | Launch verifier-gated harness-seller market.                       | Docker and verifier/seller images.                        |
@@ -111,11 +153,15 @@ Run commands from the repo root unless noted.
 | Process                             | Port     | Responsibility                                                                                        |
 | ----------------------------------- | -------- | ----------------------------------------------------------------------------------------------------- |
 | `examples/txodds/server/proxy.ts` | `8801` | TxLINE subscription, board data, edge analysis, settlement, Solana Pay verification, run persistence. |
+| Coral Server / Coral Console        | `5555` | CoralOS coordinator and built-in visual console at `/ui/console`, when Docker is available.           |
+| `examples/marketplace/feed`         | `4000` | Coral session reader, thread API, run ledger replay, and dashboard-safe feed endpoints.                |
 | `examples/txodds/web/`            | `3020` | Static React UI for fixtures, analysis, settlement links, runs, proof receipts, and grading.          |
 
 The proxy keeps TxLINE credentials and keypairs server-side. Browser calls use local proxy endpoints such as `/api/board`, `/api/edge`, `/api/settle`, `/api/pay-intent`, `/api/pay-verify`, `/api/runs`, and `/api/grade-runs`.
 
 The default paid service is implemented around `examples/txodds/agent/service.ts` and `examples/txodds/agent/edge.ts`.
+
+Coral Console is built into Coral Server and is probed during `npm run dev`. By default, unavailable Docker/CoralOS logs a warning and local TxODDS dev continues. Set `CORAL_CONSOLE_REQUIRED=1` to make dev fail when the console is unavailable, or `CORAL_CONSOLE=0` to skip the probe.
 
 ## Multi-Agent Market Flow
 
@@ -199,11 +245,13 @@ runs/<session>/round-<n>/
   delivery.json
   verification.json
   proof_receipts.json
+  proof.json
+  llm.json
   transcript.jsonl
   txs.json
 ```
 
-The ledger is used by the marketplace feed, visualizer, reputation calculation, TxODDS proxy, and Agent Desk. Finished sessions can be replayed from ledger files when CoralOS is unavailable.
+`proof.json` is the compact E2E success artifact. The ledger is used by the marketplace feed, visualizer, reputation calculation, TxODDS proxy, and Agent Desk. Finished sessions can be replayed from ledger files when CoralOS is unavailable.
 
 ## Policy Boundaries
 
@@ -221,20 +269,26 @@ Enforced checks include:
 
 Harness processes do not hold signing keys. Agents keep wallet authority and call policy before deposits and releases.
 
+This is the mandatory choke point for fund-moving actions in the starter: deposit, release, refund, payout, or rail payment code must pass through the same policy boundary before signing or treating a proof as payable.
+
+## LLM Audit Boundary
+
+LLM traces use `LLM_USED` messages and ledger `llm.json` entries. New traces include provider/model, `usedFor`, optional `inputHash` and `outputHash`, and `affectedFunds=false`. Prompt and completion text are not persisted. The intended boundary is: models may propose, summarize, or explain; deterministic code, policy, verifier checks, and devnet guards control funds.
+
 ## Development Checks
 
-Build/test the shared packages before working on dependents:
+Build/test from the root workspace:
 
 ```sh
-cd packages/agent-runtime && npm install && npm run typecheck && npm test && npm run build
-cd packages/harness-runtime && npm install && npm run typecheck && npm test && npm run build
-cd packages/payment-runtime && npm install && npm run typecheck && npm test && npm run build
+npm run build
+npm run typecheck
+npm test
 ```
 
 Run the deterministic readiness gate from the repo root:
 
 ```sh
-npm run readiness:e2e
+npm run e2e:local
 ```
 
 Package and example READMEs contain narrower test commands.

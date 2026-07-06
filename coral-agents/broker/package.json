@@ -9,11 +9,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@pay/agent-runtime": "file:../../packages/agent-runtime",
+    "@pay/agent-runtime": "0.1.0",
     "@solana/pay": "^0.2.5",
     "@solana/web3.js": "^1.98.0",
-    "bignumber.js": "^9.1.2",
-    "solana-coralos": "file:../.."
+    "bignumber.js": "^9.1.2"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

@@ -10,6 +10,7 @@
  *     delivery.json      (raw + parsed + sha256 content hash)
  *     verification.json
  *     proof_receipts.json (payment-rail receipts, e.g. upstream procurement)
+ *     proof.json          (compact machine-readable e2e proof)
  *     llm.json           (provider/model/status metadata; no prompts or completions)
  *     txs.json
  *     transcript.jsonl   the round's raw Coral messages, one JSON per line
@@ -19,7 +20,7 @@
  */
 import { mkdirSync, readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { RunRecord, TranscriptEntry } from './run.js'
+import { proofArtifact, type RunRecord, type TranscriptEntry } from './run.js'
 
 /** Session ids are uuid-ish, but never trust an id used as a path segment. */
 const safeSegment = (s: string): string => s.replace(/[^a-zA-Z0-9._-]/g, '_')
@@ -44,6 +45,7 @@ export function writeRun(baseDir: string, run: RunRecord, transcript: Transcript
   if (run.delivery) writeJson(dir, 'delivery.json', run.delivery)
   if (run.verification !== undefined) writeJson(dir, 'verification.json', run.verification)
   if (run.proofReceipts?.length) writeJson(dir, 'proof_receipts.json', run.proofReceipts)
+  writeJson(dir, 'proof.json', proofArtifact(run))
   if (run.llm?.length) writeJson(dir, 'llm.json', run.llm)
   if (run.txs.length) writeJson(dir, 'txs.json', run.txs)
   writeFileSync(

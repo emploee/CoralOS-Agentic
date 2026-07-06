@@ -9,7 +9,7 @@
  *   - if the floor exceeds the budget, sit the round out
  * A prompt injection inside a WANT therefore can't make the seller bid at a loss.
  */
-import { complete, llmRuntimeInfo, parseJsonReply, type LlmUse, type Want, type CompleteOpts } from '@pay/agent-runtime'
+import { complete, llmRuntimeInfo, parseJsonReply, sha256Hex, type LlmUse, type Want, type CompleteOpts } from '@pay/agent-runtime'
 import type { SellerConfig, BidDecision } from './types.js'
 
 /** Build a seller's market config from its env (set per persona in coral-agent.toml). */
@@ -25,7 +25,13 @@ export function sellerConfigFromEnv(name: string, env: NodeJS.ProcessEnv = proce
 type Llm = (opts: CompleteOpts) => Promise<string>
 const QUOTE_GUARDRAIL = 'service allowlist plus floor/budget price clamp'
 
-function quoteLlm(want: Want, cfg: SellerConfig, status: LlmUse['status'], reason: string): LlmUse {
+function quoteLlm(
+  want: Want,
+  cfg: SellerConfig,
+  status: LlmUse['status'],
+  reason: string,
+  audit: Pick<LlmUse, 'inputHash' | 'outputHash'> = {},
+): LlmUse {
   const info = status === 'skipped' ? undefined : llmRuntimeInfo({ maxTokens: 120 })
   return {
     round: want.round,
@@ -33,6 +39,9 @@ function quoteLlm(want: Want, cfg: SellerConfig, status: LlmUse['status'], reaso
     purpose: 'seller_quote',
     status,
     ...(info ? { provider: info.provider, model: info.model } : {}),
+    usedFor: 'seller_quote',
+    affectedFunds: false,
+    ...audit,
     reason,
     guardrail: QUOTE_GUARDRAIL,
     createdAt: new Date().toISOString(),
@@ -57,31 +66,32 @@ export async function decideBid(want: Want, cfg: SellerConfig, llm: Llm = comple
     `the buyer's budget caps the price. Reply ONLY with JSON: {"bid": boolean, "price": number, ` +
     `"note": string}. Keep note under 8 words.`
   const user = `service=${want.service} arg=${want.arg} budget=${want.budgetSol} floor=${cfg.floorSol}`
+  const inputHash = sha256Hex(`${system}\n${user}`)
 
   let proposed: number | undefined
   let note = ''
   let llmUse: LlmUse | undefined
   try {
-    const parsed = parseJsonReply<{ bid?: boolean; price?: number; note?: string }>(
-      await llm({ system, user, maxTokens: 120 }),
-    )
+    const text = await llm({ system, user, maxTokens: 120 })
+    const outputHash = sha256Hex(text)
+    const parsed = parseJsonReply<{ bid?: boolean; price?: number; note?: string }>(text)
     if (parsed) {
       if (parsed.bid === false) {
         return {
           bid: false,
           priceSol: 0,
           note: (parsed.note ?? 'declined').slice(0, 60),
-          llm: quoteLlm(want, cfg, 'used', 'model declined to bid'),
+          llm: quoteLlm(want, cfg, 'used', 'model declined to bid', { inputHash, outputHash }),
         }
       }
       proposed = typeof parsed.price === 'number' ? parsed.price : undefined
       note = (parsed.note ?? '').slice(0, 60)
-      llmUse = quoteLlm(want, cfg, 'used', 'model proposed bid terms')
+      llmUse = quoteLlm(want, cfg, 'used', 'model proposed bid terms', { inputHash, outputHash })
     } else {
-      llmUse = quoteLlm(want, cfg, 'fallback', 'model returned unparseable JSON')
+      llmUse = quoteLlm(want, cfg, 'fallback', 'model returned unparseable JSON', { inputHash, outputHash })
     }
   } catch (e) {
-    llmUse = quoteLlm(want, cfg, 'fallback', `LLM unavailable: ${errReason(e)}`)
+    llmUse = quoteLlm(want, cfg, 'fallback', `LLM unavailable: ${errReason(e)}`, { inputHash })
     // LLM unavailable -> deterministic fallback below (bid at floor).
   }
 

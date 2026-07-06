@@ -10,7 +10,7 @@
  *   AWARD  round=<n> to=<seller>                                 buyer  -> market, @winner
  *   ESCROW_REQUIRED round=<n> reference=<R> seller=<addr> amount=<sol> deadline=<secs>  seller -> buyer
  *   DEPOSITED round=<n> reference=<R> buyer=<addr> sig=<sig>     buyer  -> seller
- *   LLM_USED round=<n> agent=<name> purpose=<name> status=used|fallback|skipped|error [provider=<p>] [model=<m>] [reason="..."] [guardrail="..."]
+ *   LLM_USED round=<n> agent=<name> purpose=<name> status=used|fallback|skipped|error [provider=<p>] [model=<m>] [usedFor=<name>] [inputHash=<sha256>] [outputHash=<sha256>] affectedFunds=false [reason="..."] [guardrail="..."]
  *   VERIFY   round=<n> sha=<hash> service=<name> arg=<token> payload=<raw>  buyer -> verifier
  *   VERIFIED round=<n> verdict=pass|fail by=<verifier> [sha=<hash>] [reason="..."]  verifier -> buyer
  *   (then DELIVERED / RELEASED / REFUNDED reuse the round tag)
@@ -114,6 +114,13 @@ export interface LlmUse {
   status: LlmUseStatus
   provider?: string
   model?: string
+  /** Human-stable label for the decision/explanation the model was used for. Defaults to `purpose`. */
+  usedFor?: string
+  /** Hashes let auditors bind traces to local inputs/outputs without storing prompt or completion text. */
+  inputHash?: string
+  outputHash?: string
+  /** Models may explain/propose; deterministic policy and verifier code controls funds. */
+  affectedFunds?: boolean
   reason?: string
   guardrail?: string
   createdAt?: string
@@ -362,6 +369,10 @@ export function formatLlmUsed(l: LlmUse): string {
   ]
   if (l.provider) parts.push(`provider=${l.provider}`)
   if (l.model) parts.push(`model=${l.model}`)
+  parts.push(`usedFor=${l.usedFor ?? l.purpose}`)
+  if (l.inputHash) parts.push(`inputHash=${l.inputHash}`)
+  if (l.outputHash) parts.push(`outputHash=${l.outputHash}`)
+  parts.push(`affectedFunds=${l.affectedFunds === true ? 'true' : 'false'}`)
   if (l.createdAt) parts.push(`createdAt=${l.createdAt}`)
   if (l.reason) parts.push(`reason="${cleanQuote(l.reason)}"`)
   if (l.guardrail) parts.push(`guardrail="${cleanQuote(l.guardrail)}"`)
@@ -380,6 +391,10 @@ export function parseLlmUsed(text: string): LlmUse | null {
   ) return null
   const provider = tok(text, 'provider')
   const model = tok(text, 'model')
+  const usedFor = tok(text, 'usedFor')
+  const inputHash = tok(text, 'inputHash')
+  const outputHash = tok(text, 'outputHash')
+  const affectedFunds = tok(text, 'affectedFunds')
   const createdAt = tok(text, 'createdAt')
   const reason = quoted(text, 'reason')
   const guardrail = quoted(text, 'guardrail')
@@ -387,6 +402,10 @@ export function parseLlmUsed(text: string): LlmUse | null {
     round, agent, purpose, status,
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
+    ...(usedFor ? { usedFor } : {}),
+    ...(inputHash ? { inputHash } : {}),
+    ...(outputHash ? { outputHash } : {}),
+    ...(affectedFunds === 'true' || affectedFunds === 'false' ? { affectedFunds: affectedFunds === 'true' } : {}),
     ...(createdAt ? { createdAt } : {}),
     ...(reason ? { reason } : {}),
     ...(guardrail ? { guardrail } : {}),

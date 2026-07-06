@@ -11,9 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@pay/agent-runtime": "file:../../../packages/agent-runtime",
-    "express": "^4.19.2",
-    "solana-coralos": "file:../../.."
+    "@pay/agent-runtime": "0.1.0",
+    "express": "^4.19.2"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

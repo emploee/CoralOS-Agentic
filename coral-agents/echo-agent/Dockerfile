@@ -4,23 +4,19 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Mirror repo layout so "file:../../packages/agent-runtime" resolves correctly
-COPY packages/agent-runtime/package.json packages/agent-runtime/package-lock.json* ./packages/agent-runtime/
-RUN cd packages/agent-runtime && npm install --ignore-scripts
-COPY packages/agent-runtime/tsconfig.json ./packages/agent-runtime/
-COPY packages/agent-runtime/src/ ./packages/agent-runtime/src/
-RUN cd packages/agent-runtime && npx tsc
-
-# --install-links copies the SDK into node_modules instead of symlinking
-COPY coral-agents/echo-agent/package.json coral-agents/echo-agent/package-lock.json* ./coral-agents/echo-agent/
-RUN cd coral-agents/echo-agent && npm install --ignore-scripts --install-links
-COPY coral-agents/echo-agent/tsconfig.json ./coral-agents/echo-agent/
-COPY coral-agents/echo-agent/src/ ./coral-agents/echo-agent/src/
-RUN cd coral-agents/echo-agent && npx tsc
+COPY package.json ./
+COPY packages ./packages
+COPY coral-agents ./coral-agents
+COPY examples ./examples
+RUN npm install --no-audit --no-fund --ignore-scripts
+RUN npm run build:packages
+RUN npm run build -w echo-agent
 
 FROM node:20-alpine
 WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/coral-agents/echo-agent/dist ./dist
-COPY --from=builder /app/coral-agents/echo-agent/node_modules ./node_modules
+COPY --from=builder /app/coral-agents/echo-agent/package.json ./package.json
 
 CMD ["node", "dist/index.js"]

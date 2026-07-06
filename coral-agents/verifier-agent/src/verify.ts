@@ -15,7 +15,14 @@ import {
 type Llm = (opts: CompleteOpts) => Promise<string>
 export type VerdictWithLlm = Verdict & { llm: LlmUse }
 
-function verifierLlm(req: VerifyRequest, name: string, status: LlmUse['status'], reason: string, includeModel = true): LlmUse {
+function verifierLlm(
+  req: VerifyRequest,
+  name: string,
+  status: LlmUse['status'],
+  reason: string,
+  includeModel = true,
+  audit: Pick<LlmUse, 'inputHash' | 'outputHash'> = {},
+): LlmUse {
   const info = includeModel ? llmRuntimeInfo({ maxTokens: 120 }) : undefined
   return {
     round: req.round,
@@ -23,6 +30,9 @@ function verifierLlm(req: VerifyRequest, name: string, status: LlmUse['status'],
     purpose: 'verifier_judgment',
     status,
     ...(info ? { provider: info.provider, model: info.model } : {}),
+    usedFor: 'verifier_judgment',
+    affectedFunds: false,
+    ...audit,
     reason,
     guardrail: 'content hash and JSON structure checks run before model judgment',
     createdAt: new Date().toISOString(),
@@ -74,24 +84,29 @@ export async function checkDelivery(req: VerifyRequest, name: string, llm: Llm =
   }
 
   try {
-    const parsed = parseJsonReply<{ pass?: boolean; reason?: string }>(await llm({
-      system:
-        'You are an impartial delivery verifier for a paid agent marketplace. Given an order and the ' +
-        'delivered payload, judge whether the payload plausibly fulfils the order. Reply ONLY with ' +
-        'JSON: {"pass": boolean, "reason": string}. Keep reason under 10 words.',
-      user: `order: service=${req.service} arg=${req.arg}\ndelivered payload: ${req.payload.slice(0, 1500)}`,
+    const system =
+      'You are an impartial delivery verifier for a paid agent marketplace. Given an order and the ' +
+      'delivered payload, judge whether the payload plausibly fulfils the order. Reply ONLY with ' +
+      'JSON: {"pass": boolean, "reason": string}. Keep reason under 10 words.'
+    const user = `order: service=${req.service} arg=${req.arg}\ndelivered payload: ${req.payload.slice(0, 1500)}`
+    const inputHash = sha256Hex(`${system}\n${user}`)
+    const text = await llm({
+      system,
+      user,
       maxTokens: 120,
-    }))
+    })
+    const outputHash = sha256Hex(text)
+    const parsed = parseJsonReply<{ pass?: boolean; reason?: string }>(text)
     if (parsed?.pass === false) {
       return withLlm(
         { ...base, verdict: 'fail', reason: (parsed.reason ?? 'judged unacceptable').slice(0, 60) },
-        verifierLlm(req, name, 'used', 'model rejected structurally valid payload'),
+        verifierLlm(req, name, 'used', 'model rejected structurally valid payload', true, { inputHash, outputHash }),
       )
     }
     if (parsed?.pass === true) {
       return withLlm(
         { ...base, verdict: 'pass', reason: (parsed.reason ?? 'checks passed').slice(0, 60) },
-        verifierLlm(req, name, 'used', 'model accepted structurally valid payload'),
+        verifierLlm(req, name, 'used', 'model accepted structurally valid payload', true, { inputHash, outputHash }),
       )
     }
   } catch (e) {

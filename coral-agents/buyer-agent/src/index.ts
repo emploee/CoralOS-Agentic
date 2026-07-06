@@ -70,7 +70,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const expl = (kind: 'tx' | 'address', id: string) => `https://explorer.solana.com/${kind}/${id}?cluster=devnet`
 const selectionGuardrail = 'winner must match collected BID set; fallback is cheapest available bid'
 
-function buyerLlm(round: number, status: LlmUse['status'], reason: string): LlmUse {
+function buyerLlm(
+  round: number,
+  status: LlmUse['status'],
+  reason: string,
+  audit: Pick<LlmUse, 'inputHash' | 'outputHash'> = {},
+): LlmUse {
   const info = status === 'skipped' ? undefined : llmRuntimeInfo({ maxTokens: 100 })
   return {
     round,
@@ -78,6 +83,9 @@ function buyerLlm(round: number, status: LlmUse['status'], reason: string): LlmU
     purpose: 'buyer_award',
     status,
     ...(info ? { provider: info.provider, model: info.model } : {}),
+    usedFor: 'buyer_award',
+    affectedFunds: false,
+    ...audit,
     reason,
     guardrail: selectionGuardrail,
     createdAt: new Date().toISOString(),
@@ -105,13 +113,16 @@ async function pickWinner(
       `service=${service} arg=${arg} budget=${budget}\nbids:\n` +
       pool.map((b) => `- ${b.by}: ${b.priceSol} SOL${b.note ? ` (${b.note})` : ''}`).join('\n') +
       (repLines ? `\ntrack record (derived from the run ledger):\n${repLines}` : '')
-    const parsed = parseJsonReply<{ by?: string; reason?: string }>(await complete({ system, user, maxTokens: 100 }))
+    const inputHash = sha256Hex(`${system}\n${user}`)
+    const text = await complete({ system, user, maxTokens: 100 })
+    const outputHash = sha256Hex(text)
+    const parsed = parseJsonReply<{ by?: string; reason?: string }>(text)
     const chosen = pool.find((b) => b.by === parsed?.by)
     if (chosen) {
       console.error(`[buyer] picked ${chosen.by} (${chosen.priceSol} SOL): ${parsed?.reason ?? ''}`)
-      return { winner: chosen, reason: parsed?.reason, llm: buyerLlm(round, 'used', parsed?.reason ?? 'model selected winner') }
+      return { winner: chosen, reason: parsed?.reason, llm: buyerLlm(round, 'used', parsed?.reason ?? 'model selected winner', { inputHash, outputHash }) }
     }
-    return { winner: pickCheapest(pool)!, reason: 'cheapest available', llm: buyerLlm(round, 'fallback', 'model returned a seller outside the bid pool') }
+    return { winner: pickCheapest(pool)!, reason: 'cheapest available', llm: buyerLlm(round, 'fallback', 'model returned a seller outside the bid pool', { inputHash, outputHash }) }
   } catch (e) {
     return { winner: pickCheapest(pool)!, reason: 'cheapest available', llm: buyerLlm(round, 'fallback', `LLM unavailable: ${errReason(e)}`) }
   }

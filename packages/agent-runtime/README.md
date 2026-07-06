@@ -6,13 +6,13 @@ Shared TypeScript runtime for repository agents and examples. It provides LLM ca
 import { complete, solanaConnection, generatePaymentUrl } from '@pay/agent-runtime'
 ```
 
-Local dependents use a `file:` dependency and import built output from `dist/`, so build this package before dependents:
+Local dependents are npm workspaces and import built output from `dist/`, so build shared packages before dependents:
 
 ```sh
-npm install
-npm run typecheck
-npm test
-npm run build
+npm install --no-audit --no-fund
+npm run build:packages
+npm run typecheck -w @pay/agent-runtime
+npm test -w @pay/agent-runtime
 ```
 
 ## Modules
@@ -23,10 +23,12 @@ npm run build
 | Solana | `src/solana/` | `solanaConnection`, `assertDevnet`, `generatePaymentUrl`, `verifyPayment`, `signTransfer`, `loadKeypairB58`. |
 | CoralOS | `src/coral/` | `startCoralAgent`, `CoralMcpAgent`, context helpers. |
 | Market | `src/market/` | `format*`, `parse*`, `selectBids`, `pickCheapest` for market/payment/verifier messages. |
-| Ledger | `src/ledger/` | `writeRun`, `readRun`, `listRuns`, reputation helpers. |
+| Ledger | `src/ledger/` | `writeRun`, `readRun`, `listRuns`, `proofArtifact`, reputation helpers. |
 | Policy | `src/policy/` | `enforce(action, policy)`, `policyFromEnv`. |
 
 The runtime does not hold keypairs. Agents and examples load keys and call runtime helpers.
+
+Run folders include `proof.json`, a compact machine-readable E2E proof derived from `RunRecord`, alongside the full ledger facets.
 
 ## LLM Provider Notes
 
@@ -70,6 +72,8 @@ The policy module centralizes checks used before value movement:
 - verifier gate.
 
 Solana helpers default to devnet and reject mainnet RPC URLs unless `ALLOW_MAINNET=1` is set.
+
+`LLM_USED` traces carry provider/model, `usedFor`, optional input/output hashes, and `affectedFunds=false`; prompts and completions are not persisted.
 
 ## Extension Points
 

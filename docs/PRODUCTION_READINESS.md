@@ -31,34 +31,43 @@ This document records the repository's current operational readiness. It does no
 Run:
 
 ```sh
-npm run readiness:e2e
+npm run e2e:local
 ```
 
 The gate:
 
-- builds `@pay/agent-runtime`;
+- installs the root npm workspace if needed;
+- builds the workspace runtime packages;
 - starts the marketplace feed against a temporary recorded Coral extended-state fixture;
 - asserts `/api/health`, `/api/feed`, `/api/threads`, and `/api/runs`;
 - verifies a settled round with verifier pass and a proof receipt;
 - verifies `proof_receipts.json` in the run ledger;
+- verifies `proof.json` and copies it to `.artifacts/readiness/proof.json`;
 - checks TxODDS Agent Desk static JavaScript and Tauri JSON configs.
 
 The gate does not require Docker, devnet, wallets, or LLM keys.
+
+The live devnet smoke path is intentionally separate:
+
+```sh
+npm run e2e:devnet
+```
+
+It requires Docker/CoralOS, funded devnet wallets, `ARBITER_KEYPAIR_B58`, and TxLINE access. It builds the workspace and launches the CoralOS devnet round through the same demo path as `npm run demo:coral`.
+
+`npm run coral:console:e2e` starts the repo's `coral` Docker service and verifies that Coral Console is served from the Coral Server `/ui/console` entrypoint. `npm run dev` runs the same probe in allow-skip mode before launching the local TxODDS stack.
 
 ## CI Coverage
 
 Expected CI coverage includes:
 
-- `packages/agent-runtime`: typecheck, tests, build;
-- `packages/harness-runtime`: build, typecheck, tests;
-- `packages/payment-runtime`: build, typecheck, tests;
-- `packages/solana-agent-tools`: build, typecheck, tests, package build, Node 22 SAK smoke;
-- `examples/txodds`: typecheck and tests;
-- `examples/marketplace`: launcher typecheck, feed tests, web tests, Playwright e2e;
-- `examples/agent-economy`: autonomous/quickstart/bridge typechecks and web build;
-- `coral-agents`: buyer/seller/verifier/broker/echo checks;
-- `examples/txodds-agent-desk`: static UI and config smoke;
-- `scripts/readiness-e2e.mjs`: readiness e2e;
+- root workspace install from a fresh checkout;
+- `npm run build`, `npm run typecheck`, `npm test`, and `npm run e2e:local`;
+- `npm run coral:console:e2e` as a live Docker/CoralOS smoke outside the deterministic CI gate;
+- marketplace Playwright e2e against recorded Coral state;
+- Solana Agent Kit mock smoke on Node 22;
+- agent-economy dashboard production build;
+- `examples/txodds-agent-desk`: static UI and config smoke through readiness e2e;
 - `examples/txodds/escrow`: Rust `cargo check --workspace`.
 
 ## Production Checklist
@@ -88,7 +97,7 @@ Expected CI coverage includes:
 | Cost controls | Devnet costs negligible; provider usage controlled by env/policy. | Needs launch budget. |
 | Admin/support | Agent Desk is local and unauthenticated. | Auth/RBAC required before hosting. |
 | Abuse/fraud | Spend caps and devnet guard exist. | Hosted abuse controls missing. |
-| LLM | Provider abstraction, fallbacks, verifier checks, harness isolation. | Formal eval set missing. |
+| LLM | Provider abstraction, fallbacks, verifier checks, harness isolation, auditable `LLM_USED` traces with hashes and `affectedFunds=false`. | Formal eval set missing. |
 | Desktop | Tauri shell has no custom IPC. | Signed builds/platform validation needed. |
 | Vendor risk | CoralOS, Solana RPC/devnet, TxODDS, LLM providers, and payment providers are dependencies. | SLA/incident ownership needed. |
 
@@ -117,4 +126,4 @@ Expected CI coverage includes:
 
 ## Operating Rule
 
-The repository may claim devnet demo readiness when CI and `npm run readiness:e2e` pass. It must not claim production readiness for real users or real funds until the blockers above have owners, mitigations, and tested evidence.
+The repository may claim starter/devnet demo readiness when CI and `npm run e2e:local` pass, with live-devnet behavior covered by `npm run e2e:devnet` in an environment that has funded wallets and CoralOS. It must not claim production readiness for real users or real funds until the blockers above have owners, mitigations, and tested evidence.

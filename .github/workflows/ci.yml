@@ -7,171 +7,58 @@ on:
     branches: [main]
 
 jobs:
-  runtime:
-    name: Agent runtime (packages/agent-runtime)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 20
-      - run: cd packages/agent-runtime && npm install
-      - run: cd packages/agent-runtime && npm run typecheck
-      - run: cd packages/agent-runtime && npm test
-
-  harness-runtime:
-    name: Harness runtime (packages/harness-runtime)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 20
-      - name: Build the agent runtime — the adapter SDK's file dep needs its dist
-        run: cd packages/agent-runtime && npm install && npm run build
-      - run: cd packages/harness-runtime && npm install
-      - run: cd packages/harness-runtime && npm run typecheck
-      - run: cd packages/harness-runtime && npm test
-
-  payment-runtime:
-    name: Payment runtime (packages/payment-runtime)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 20
-      - name: Build the agent runtime — the rails reuse Solana Pay + the devnet guard from its dist
-        run: cd packages/agent-runtime && npm install && npm run build
-      - run: cd packages/payment-runtime && npm install
-      - run: cd packages/payment-runtime && npm run typecheck
-      - run: cd packages/payment-runtime && npm test
-
-  solana-agent-tools:
-    name: Solana agent tools (read-only SAK plugin + example smoke)
+  starter-golden-path:
+    name: Starter golden path
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Build the agent runtime - local file deps need dist
-        run: cd packages/agent-runtime && npm install && npm run build
-      - name: Read-only tools package (typecheck + tests + build)
-        run: cd packages/solana-agent-tools && npm install && npm run typecheck && npm test && npm run build
-      - name: Solana Agent Kit example (typecheck + deterministic smoke)
-        run: cd examples/agent-economy/solana-agent-kit && npm install && npm run typecheck && npm run smoke
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run e2e:local
 
-  txodds:
-    name: TxODDS World Cup Oracle (typecheck + tests)
+  marketplace-playwright:
+    name: Marketplace recorded-state Playwright e2e
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
-      - name: Build the runtime (the example needs its dist)
-        run: cd packages/agent-runtime && npm install && npm run build
-      - name: txodds (typecheck + tests)
-        run: cd examples/txodds && npm install && npm run typecheck && npm test
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run build:packages
+      - run: npm exec -w marketplace-web -- playwright install --with-deps chromium
+      - run: npm run e2e -w marketplace-web
 
-  marketplace:
-    name: Marketplace (feed tests + visualizer unit + Playwright e2e)
+  solana-agent-kit-smoke:
+    name: Solana Agent Kit mock smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
-      - name: Build the runtime (the feed folds rounds with its parsers)
-        run: cd packages/agent-runtime && npm install && npm run build
-      - name: Round launchers (typecheck)
-        run: cd examples/marketplace && npm install && npm run typecheck
-      - name: Feed server (typecheck + foldRounds/persist tests against a recorded transcript)
-        run: cd examples/marketplace/feed && npm install && npm run typecheck && npm test
-      - name: Visualizer (typecheck + component tests)
-        run: cd examples/marketplace/web && npm install && npm run typecheck && npm test
-      - name: Install Playwright browser
-        run: cd examples/marketplace/web && npx playwright install --with-deps chromium
-      # The e2e is the marketplace smoke test: Playwright boots the REAL feed server on a recorded
-      # CoralOS transcript and drives the real React app — no devnet, no Docker, no LLM keys.
-      - name: Smoke — recorded coral state → feed → UI (Playwright)
-        run: cd examples/marketplace/web && npm run e2e
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run build:packages
+      - run: npm run smoke -w agent-economy-solana-agent-kit
 
-  agent-economy:
-    name: Agent economy (typechecks + web build smoke)
+  web-build-smoke:
+    name: Agent economy dashboard build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
-          node-version: 20
-      - name: Autonomous flow (typecheck)
-        run: cd examples/agent-economy/autonomous && npm install && npm run typecheck
-      - name: Quickstart 402 flow (typecheck)
-        run: cd examples/agent-economy/quickstart && npm install && npm run typecheck
-      - name: Bridge (typecheck)
-        run: cd examples/agent-economy/bridge && npm install && npm run typecheck
-      # The web build is this example's smoke test: `npm run build` = tsc --noEmit + a full vite
-      # production build of the checkout/autonomous/swarm UI. (bridge/smoke.ts needs a live
-      # coral-server + a funded devnet wallet, so it stays a local/manual check.)
-      - name: Smoke — dashboard production build
-        run: cd examples/agent-economy/web && npm install && npm run build
-
-  coral-agents:
-    name: Coral agents (buyer / seller / verifier / broker)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 20
-      - name: Build the runtimes (agents need local package dists)
-        run: |
-          cd packages/agent-runtime && npm install && npm run build
-          cd ../harness-runtime && npm install && npm run build
-          cd ../payment-runtime && npm install && npm run build
-      - name: Buyer agent (typecheck + tests — policy, guard, reputation, want feed)
-        run: cd coral-agents/buyer-agent && npm install && npm run typecheck && npm test
-      - name: Seller agent (typecheck + tests — payment, replay, service)
-        run: cd coral-agents/seller-agent && npm install && npm run typecheck && npm test
-      - name: Verifier agent (typecheck + tests)
-        run: cd coral-agents/verifier-agent && npm install && npm run typecheck && npm test
-      - name: Broker (typecheck + tests)
-        run: cd coral-agents/broker && npm install && npm run typecheck && npm test
-      - name: Echo agent (typecheck)
-        run: cd coral-agents/echo-agent && npm install && npm run typecheck
-
-  agent-desk:
-    name: Agent desk (UI syntax + config smoke)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 20
-      # The desk UI is no-build static JS; the Tauri shell needs the full Rust + webkit toolchain,
-      # so CI checks what's cheap and deterministic: the module parses and the configs are valid.
-      - name: UI parses + Tauri configs are valid JSON
-        run: |
-          cd examples/txodds-agent-desk
-          node --check ui/app.js
-          node -e "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json')); JSON.parse(require('fs').readFileSync('src-tauri/capabilities/default.json'))"
-
-  production-readiness:
-    name: Production readiness e2e gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 20
-      # Deterministic end-to-end gate: real feed server, temporary recorded Coral state,
-      # proof_receipts ledger write, threads/runs HTTP APIs, and desk parse/config smoke.
-      - run: npm run readiness:e2e
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm run build -w agent-economy-web
 
   escrow:
-    name: Escrow + arbiter contracts (Rust compile check)
+    name: Escrow + arbiter contracts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -179,8 +66,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: examples/txodds/escrow
-      # `cargo check` compiles both Anchor programs (escrow + arbiter) on the host toolchain — enough to
-      # catch a broken settlement spine on every push without the full Solana/Anchor SBF build. The demo
-      # runs against the already-deployed devnet program ids, so a redeploy isn't part of CI.
-      - name: cargo check (escrow + arbiter)
-        run: cd examples/txodds/escrow && cargo check --workspace
+      - run: cd examples/txodds/escrow && cargo check --workspace

@@ -6,6 +6,17 @@
   "engines": { "node": ">=20" },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -13,7 +24,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@pay/agent-runtime": "file:../agent-runtime"
+    "@pay/agent-runtime": "0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

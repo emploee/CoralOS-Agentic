@@ -8,12 +8,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pay/agent-runtime": "file:../../../packages/agent-runtime",
+    "@pay/agent-runtime": "0.1.0",
     "@solana/pay": "^0.2.5",
     "@solana/web3.js": "^1.98.0",
     "bignumber.js": "^9.1.2",
-    "express": "^4.18.0",
-    "solana-coralos": "file:../../.."
+    "express": "^4.18.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.0",

@@ -1,11 +1,8 @@
 #!/usr/bin/env node
-// Launch any example with cold-start parity (mirrors scripts/txodds.js): build the runtime if the
-// example needs it, install the example's deps on first run, then run its npm script.
+// Launch any example from a fresh checkout: install the root npm workspace, build any local package
+// dist the example imports, then run the requested npm script.
 //
 //   node scripts/run-example.js <relativeDir> <npmScript>
-//
-// Used by the root `npm run marketplace`, `npm run agent-economy`, … shortcuts. So a fresh clone can do
-// `npm run marketplace` and it just works — no manual `npm install` per example.
 
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -18,9 +15,10 @@ if (!rel || !script) {
   console.error('usage: node scripts/run-example.js <relativeDir> <npmScript>')
   process.exit(1)
 }
+
 const dir = join(root, rel)
 if (!existsSync(join(dir, 'package.json'))) {
-  console.error(`[example] no package.json at ${rel} — is the path right?`)
+  console.error(`[example] no package.json at ${rel} - is the path right?`)
   process.exit(1)
 }
 
@@ -31,23 +29,27 @@ const deps = { ...pkg.dependencies, ...pkg.devDependencies }
 
 const requiredNode = pkg.engines?.node?.match(/>=\s*(\d+)/)?.[1] ?? '20'
 if (Number(process.versions.node.split('.')[0]) < Number(requiredNode)) {
-  console.error(`[example] Node ${process.version} detected — ${rel} needs Node ${requiredNode}+. Install from nodejs.org, then re-run.`)
+  console.error(`[example] Node ${process.version} detected - ${rel} needs Node ${requiredNode}+. Install from nodejs.org, then re-run.`)
   process.exit(1)
+}
+
+function ensureWorkspaceInstalled() {
+  if (!existsSync(join(root, 'node_modules'))) {
+    console.log('[example] installing workspace deps ...')
+    npm(root, ['install', '--no-audit', '--no-fund'])
+  }
 }
 
 function ensureBuiltPackage(name, relPath) {
   const packageDir = join(root, relPath)
-  if (!existsSync(join(packageDir, 'node_modules'))) {
-    console.log(`[example] installing ${name} …`)
-    npm(packageDir, ['install', '--no-audit', '--no-fund'])
-  }
   if (!existsSync(join(packageDir, 'dist'))) {
-    console.log(`[example] building ${name} (dist) …`)
-    npm(packageDir, ['run', 'build'])
+    console.log(`[example] building ${name} (dist) ...`)
+    npm(root, ['run', 'build', '-w', name])
   }
 }
 
-// Local `file:` deps read their compiled dist, so build dependencies before installing the example.
+ensureWorkspaceInstalled()
+
 if (deps['@pay/agent-runtime'] || deps['@pay/solana-agent-tools']) {
   ensureBuiltPackage('@pay/agent-runtime', join('packages', 'agent-runtime'))
 }
@@ -55,13 +57,7 @@ if (deps['@pay/solana-agent-tools']) {
   ensureBuiltPackage('@pay/solana-agent-tools', join('packages', 'solana-agent-tools'))
 }
 
-// Install the example's own deps on first run.
-if (!existsSync(join(dir, 'node_modules'))) {
-  console.log(`[example] installing deps in ${rel} …`)
-  npm(dir, ['install', '--no-audit', '--no-fund'])
-}
-
-console.log(`[example] ${rel} → npm run ${script}\n`)
+console.log(`[example] ${rel} -> npm run ${script}\n`)
 const child = spawn('npm', ['run', script], { cwd: dir, shell: true, stdio: 'inherit' })
 child.on('exit', (code) => process.exit(code ?? 0))
 const stop = () => { child.kill(); process.exit(0) }

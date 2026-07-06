@@ -36,6 +36,7 @@ bun.lockb
 *.log
 coverage*.json
 .vercel
+.artifacts/
 
 # Local TxODDS run ledgers
 examples/txodds/data/

@@ -3,26 +3,26 @@
  * Production-readiness e2e gate.
  *
  * Deterministic, no devnet/Docker/LLM required:
- *   1. build the local runtime package the feed imports,
+ *   1. install/build the workspace packages the feed imports,
  *   2. start the real marketplace feed server against a temporary Coral extended-state fixture,
  *   3. assert health/feed/threads/runs/proof-receipts over HTTP,
  *   4. smoke the TxODDS Agent Desk static JS + Tauri JSON configs.
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { platform, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const feedDir = join(root, 'examples', 'marketplace', 'feed')
-const runtimeDir = join(root, 'packages', 'agent-runtime')
 const deskDir = join(root, 'examples', 'txodds-agent-desk')
 const port = process.env.READINESS_PORT ?? String(4100 + Math.floor(Math.random() * 1000))
 const base = `http://localhost:${port}`
 const tmp = mkdtempSync(join(tmpdir(), 'pay-readiness-'))
 const fixturePath = join(tmp, 'coral-session-with-proof.json')
 const runsDir = join(tmp, 'runs')
+const artifactDir = process.env.READINESS_ARTIFACT_DIR ?? join(root, '.artifacts', 'readiness')
 
 function run(cwd, cmd, args) {
   const r = spawnSync(cmd, args, { cwd, shell: true, stdio: 'inherit' })
@@ -102,9 +102,8 @@ async function main() {
   }
   assert(existsSync(join(root, 'docs', 'PRODUCTION_READINESS.md')), 'docs/PRODUCTION_READINESS.md is missing')
 
-  if (!existsSync(join(runtimeDir, 'node_modules'))) run(runtimeDir, 'npm', ['install', '--no-audit', '--no-fund'])
-  run(runtimeDir, 'npm', ['run', 'build'])
-  if (!existsSync(join(feedDir, 'node_modules'))) run(feedDir, 'npm', ['install', '--no-audit', '--no-fund'])
+  if (!existsSync(join(root, 'node_modules'))) run(root, 'npm', ['install', '--no-audit', '--no-fund'])
+  run(root, 'npm', ['run', 'build:packages'])
 
   writeFileSync(fixturePath, JSON.stringify(fixture(), null, 2), 'utf8')
 
@@ -144,11 +143,19 @@ async function main() {
     const receipt = JSON.parse(readFileSync(receiptFile, 'utf8'))[0]
     assert(receipt.provider === 'pay.sh/txodds-context', 'proof receipt provider was not preserved')
 
+    const proofFile = join(runsDir, 'fixture', 'round-42', 'proof.json')
+    assert(existsSync(proofFile), 'proof.json was not written')
+    const proof = JSON.parse(readFileSync(proofFile, 'utf8'))
+    assert(proof.verified === true, 'proof artifact did not record verifier pass')
+    assert(proof.finalState === 'SETTLED', 'proof artifact did not record settled final state')
+    mkdirSync(artifactDir, { recursive: true })
+    copyFileSync(proofFile, join(artifactDir, 'proof.json'))
+
     run(deskDir, 'node', ['--check', 'ui/app.js'])
     JSON.parse(readFileSync(join(deskDir, 'src-tauri', 'tauri.conf.json'), 'utf8'))
     JSON.parse(readFileSync(join(deskDir, 'src-tauri', 'capabilities', 'default.json'), 'utf8'))
 
-    console.log('[readiness] PASS production-readiness e2e gate')
+    console.log(`[readiness] PASS production-readiness e2e gate (proof: ${join(artifactDir, 'proof.json')})`)
   } finally {
     stop(feed)
     rmSync(tmp, { recursive: true, force: true })

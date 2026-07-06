@@ -83,8 +83,43 @@ export interface RunRecord {
   updatedAt: string
 }
 
+export interface RunProofArtifact {
+  /** Same identity as `run.json`; useful when the proof is copied out of the run folder. */
+  roundId: string
+  want?: string
+  bid?: string
+  award?: string
+  escrow?: string
+  depositSignature?: string
+  deliveryHash?: string
+  verified: boolean
+  releaseSignature?: string
+  refundSignature?: string
+  finalState: string
+}
+
 export function runId(session: string, round: number): string {
   return `${session}/round-${round}`
+}
+
+/** A compact machine-readable proof for README/CI/demo success checks. */
+export function proofArtifact(run: RunRecord): RunProofArtifact {
+  const awardedBid = run.award ? run.bids.find((b) => b.by === run.award?.to) : undefined
+  const verification = run.verification as { verdict?: string } | undefined
+  const tx = (kind: string): string | undefined => run.txs.find((t) => t.kind === kind)?.sig
+  return {
+    roundId: run.runId,
+    ...(run.want ? { want: `${run.want.service} ${run.want.arg} budget=${run.want.budgetSol}` } : {}),
+    ...(awardedBid ? { bid: `${awardedBid.by} price=${awardedBid.priceSol}` } : {}),
+    ...(run.award ? { award: run.award.to } : {}),
+    ...(run.escrow ? { escrow: `${run.escrow.reference} seller=${run.escrow.seller} amount=${run.escrow.amountSol}` } : {}),
+    ...(run.escrow?.deposit ? { depositSignature: run.escrow.deposit.sig } : {}),
+    ...(run.delivery ? { deliveryHash: run.delivery.sha256 } : {}),
+    verified: verification?.verdict === 'pass',
+    ...(tx('release') ? { releaseSignature: tx('release') } : {}),
+    ...(tx('refund') ? { refundSignature: tx('refund') } : {}),
+    finalState: run.status.toUpperCase(),
+  }
 }
 
 /** Hex sha256 — the delivery/content hash convention shared with the escrow `reference` binding. */

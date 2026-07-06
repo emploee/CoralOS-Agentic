@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pay/solana-agent-tools": "file:../../../packages/solana-agent-tools",
+    "@pay/solana-agent-tools": "0.1.0",
     "@solana/web3.js": "^1.98.0",
     "solana-agent-kit": "^2.0.10"
   },

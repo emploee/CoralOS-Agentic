@@ -8,8 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@pay/agent-runtime": "file:../../packages/agent-runtime",
-    "solana-coralos": "file:../.."
+    "@pay/agent-runtime": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

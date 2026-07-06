@@ -59,7 +59,7 @@ describe('ledger store', () => {
   it('writes one facet file per present facet, none for absent ones', () => {
     writeRun(base, settledRun(), transcript)
     const dir = runDir(base, session, 1)
-    for (const f of ['run.json', 'want.json', 'bids.json', 'award.json', 'escrow.json', 'delivery.json', 'txs.json', 'transcript.jsonl'])
+    for (const f of ['run.json', 'want.json', 'bids.json', 'award.json', 'escrow.json', 'delivery.json', 'proof.json', 'txs.json', 'transcript.jsonl'])
       expect(existsSync(join(dir, f)), f).toBe(true)
     expect(existsSync(join(dir, 'verification.json'))).toBe(false) // no verifier yet
     expect(existsSync(join(dir, 'proof_receipts.json'))).toBe(false) // no upstream payment leg
@@ -75,6 +75,23 @@ describe('ledger store', () => {
     const dir = runDir(base, session, 1)
     expect(JSON.parse(readFileSync(join(dir, 'proof_receipts.json'), 'utf8'))).toEqual([receipt])
     expect(readRun(base, session, 1)?.run.proofReceipts).toEqual([receipt])
+  })
+
+  it('persists a compact proof artifact for e2e success checks', () => {
+    writeRun(base, { ...settledRun(), verification: { verdict: 'pass', by: 'verifier-agent' } }, transcript)
+    const proof = JSON.parse(readFileSync(join(runDir(base, session, 1), 'proof.json'), 'utf8'))
+    expect(proof).toMatchObject({
+      roundId: 'a1b2c3d4-session/round-1',
+      want: 'coingecko SOL-USDC budget=0.001',
+      bid: 'seller-premium price=0.0005',
+      award: 'seller-premium',
+      escrow: 'DKQy seller=7jwB amount=0.0005',
+      depositSignature: '5syz',
+      deliveryHash: sha256Hex('{"coin":"solana","usd":72.33}'),
+      verified: true,
+      releaseSignature: '3PMa',
+      finalState: 'SETTLED',
+    })
   })
 
   it('persists LLM metadata as a first-class facet', () => {

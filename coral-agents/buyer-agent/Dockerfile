@@ -4,21 +4,19 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-COPY packages/agent-runtime/package.json packages/agent-runtime/package-lock.json* ./packages/agent-runtime/
-RUN cd packages/agent-runtime && npm install --ignore-scripts
-COPY packages/agent-runtime/tsconfig.json ./packages/agent-runtime/
-COPY packages/agent-runtime/src/ ./packages/agent-runtime/src/
-RUN cd packages/agent-runtime && npx tsc
-
-COPY coral-agents/buyer-agent/package.json coral-agents/buyer-agent/package-lock.json* ./coral-agents/buyer-agent/
-RUN cd coral-agents/buyer-agent && npm install --ignore-scripts --install-links
-COPY coral-agents/buyer-agent/tsconfig.json ./coral-agents/buyer-agent/
-COPY coral-agents/buyer-agent/src/ ./coral-agents/buyer-agent/src/
-RUN cd coral-agents/buyer-agent && npx tsc
+COPY package.json ./
+COPY packages ./packages
+COPY coral-agents ./coral-agents
+COPY examples ./examples
+RUN npm install --no-audit --no-fund --ignore-scripts
+RUN npm run build:packages
+RUN npm run build -w buyer-agent
 
 FROM node:20-alpine
 WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/coral-agents/buyer-agent/dist ./dist
-COPY --from=builder /app/coral-agents/buyer-agent/node_modules ./node_modules
+COPY --from=builder /app/coral-agents/buyer-agent/package.json ./package.json
 
 CMD ["node", "dist/index.js"]

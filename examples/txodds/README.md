@@ -28,6 +28,8 @@ examples/txodds/
 | Process | Port | Responsibility |
 |---|---|---|
 | Proxy | `8801` | TxLINE access, edge analysis, payment/settlement endpoints, run ledger. |
+| Coral Console | `5555` | Built-in Coral Server console at `/ui/console`, started/probed when Docker is available. |
+| Feed | `4000` | CoralOS session reader and run ledger replay API. |
 | Web UI | `3020` | Board, analysis, settlement status, runs, proof receipts, grading. |
 
 The browser only calls the local proxy. TxLINE tokens and keypairs stay server-side.
@@ -40,6 +42,8 @@ From the repo root:
 npm run setup
 npm run dev
 ```
+
+`npm run dev` can also be run from this directory. The Coral Console probe is allow-skip by default: local proxy/UI development continues if Docker Desktop is not running. Use `CORAL_CONSOLE_REQUIRED=1 npm run dev` when you want the console to be a hard dev preflight.
 
 From this directory:
 

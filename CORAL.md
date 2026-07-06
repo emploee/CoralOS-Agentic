@@ -9,6 +9,7 @@ Official documentation starts at `https://docs.coralos.ai/welcome`.
 CoralOS provides:
 
 - local session creation from an agent graph;
+- Coral Console at `/ui/console` for local visual inspection and debugging;
 - container launch for registered local agents;
 - thread-based messaging with mentions;
 - blocking coordination primitives;
@@ -142,6 +143,28 @@ The puppet API is send-only for this use case, so the bridge reads seller replie
 | `[docker]`   | Host settings for launched containers.                     |
 
 `docker-compose.yml` runs the pinned CoralOS server container and mounts the local agent registry and Docker socket.
+
+## Coral Console
+
+Coral Server serves Coral Console locally at:
+
+```text
+http://localhost:5555/ui/console
+```
+
+The root dev script probes this endpoint automatically:
+
+```sh
+npm run dev
+```
+
+Run the probe by itself when debugging CoralOS:
+
+```sh
+npm run coral:console:e2e
+```
+
+The probe writes `.artifacts/coral-console/console-e2e.json`. In `npm run dev`, Docker/CoralOS failures are non-fatal unless `CORAL_CONSOLE_REQUIRED=1` is set. Set `CORAL_CONSOLE=0` to skip the probe.
 
 ## Development Notes
 

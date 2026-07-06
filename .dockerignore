@@ -1,0 +1,14 @@
+.git
+.artifacts
+node_modules
+**/node_modules
+dist
+**/dist
+target
+**/target
+.anchor
+test-ledger
+.env
+.env.local
+*.log
+package-lock.json

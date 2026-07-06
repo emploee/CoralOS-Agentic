@@ -65,22 +65,13 @@ These policy helpers complement `packages/agent-runtime/src/policy`, which gates
 
 ## Build and Test
 
-Build `@pay/agent-runtime` first because this package uses a local `file:` dependency:
+Build/test through the root npm workspace so `@pay/*` packages resolve consistently:
 
 ```sh
-cd packages/agent-runtime
-npm install
-npm run build
-```
-
-Then:
-
-```sh
-cd packages/payment-runtime
-npm install
-npm run typecheck
-npm test
-npm run build
+npm install --no-audit --no-fund
+npm run build:packages
+npm run typecheck -w @pay/payment-runtime
+npm test -w @pay/payment-runtime
 ```
 
 ## Promoting a Scaffold Rail

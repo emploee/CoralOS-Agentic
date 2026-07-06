@@ -8,7 +8,7 @@
  * the LLM, the deliverable comes back as JSON. Without an LLM key it returns an error payload, which
  * the verifier fails and the buyer refuses to pay for - no-capability sellers don't get released.
  */
-import { complete, llmRuntimeInfo, parseJsonReply, type LlmUse } from '@pay/agent-runtime'
+import { complete, llmRuntimeInfo, parseJsonReply, sha256Hex, type LlmUse } from '@pay/agent-runtime'
 
 const TXLINE_BASE = process.env.TXLINE_BASE_URL || 'https://txline-dev.txodds.com'
 const SUPPORTED_SERVICES = ['txline', 'freelance', 'risk-policy', 'fan-card']
@@ -25,6 +25,7 @@ function deliveryLlm(
   reason: string,
   guardrail: string,
   opts: { maxTokens?: number; includeModel?: boolean } = {},
+  audit: Pick<LlmUse, 'inputHash' | 'outputHash'> = {},
 ): LlmUse {
   const info = opts.includeModel === false ? undefined : llmRuntimeInfo({ maxTokens: opts.maxTokens ?? 180 })
   return {
@@ -33,6 +34,9 @@ function deliveryLlm(
     purpose: 'seller_delivery',
     status,
     ...(info ? { provider: info.provider, model: info.model } : {}),
+    usedFor: 'seller_delivery_summary',
+    affectedFunds: false,
+    ...audit,
     reason,
     guardrail,
     createdAt: new Date().toISOString(),
@@ -120,20 +124,24 @@ async function fanCardService(request: string, order?: DeliveryOrder): Promise<S
 
 async function freelanceService(brief: string, order?: DeliveryOrder): Promise<ServiceDelivery> {
   try {
+    const system =
+      'You are a freelance agent delivering a PAID order. Produce the deliverable for the brief. ' +
+      'Reply ONLY with JSON: {"deliverable": <string or object>, "notes": "<under 15 words>"}.'
+    const user = `Brief: ${brief || 'unspecified'}`
+    const inputHash = sha256Hex(`${system}\n${user}`)
     const text = await complete({
-      system:
-        'You are a freelance agent delivering a PAID order. Produce the deliverable for the brief. ' +
-        'Reply ONLY with JSON: {"deliverable": <string or object>, "notes": "<under 15 words>"}.',
-      user: `Brief: ${brief || 'unspecified'}`,
+      system,
+      user,
       maxTokens: 700,
     })
+    const outputHash = sha256Hex(text)
     const parsed = parseJsonReply<{ deliverable?: unknown; notes?: string }>(text)
     return {
       payload: JSON.stringify({
         service: 'freelance', brief,
         result: parsed ?? { deliverable: text.trim() },
       }),
-      llm: [deliveryLlm(order, 'used', 'model produced freelance deliverable', 'verifier checks JSON and order fit before release', { maxTokens: 700 })],
+      llm: [deliveryLlm(order, 'used', 'model produced freelance deliverable', 'verifier checks JSON and order fit before release', { maxTokens: 700 }, { inputHash, outputHash })],
     }
   } catch (e) {
     // No LLM -> an honest error payload; the verifier fails it and the escrow is never released.
@@ -215,16 +223,20 @@ async function liveReadOrFallback(
   order?: DeliveryOrder,
 ): Promise<{ value: unknown; llm: LlmUse }> {
   try {
+    const system = 'You are a football trading analyst. Reply only as JSON {"call": string, "confidence": number}.'
+    const user =
+      `For ${matchup}, make a one-line value read from these de-margined World Cup odds. ` +
+      `Odds: ${JSON.stringify(odds).slice(0, 1500)}`
+    const inputHash = sha256Hex(`${system}\n${user}`)
     const text = await complete({
-      system: 'You are a football trading analyst. Reply only as JSON {"call": string, "confidence": number}.',
-      user:
-        `For ${matchup}, make a one-line value read from these de-margined World Cup odds. ` +
-        `Odds: ${JSON.stringify(odds).slice(0, 1500)}`,
+      system,
+      user,
       maxTokens: 180,
     })
+    const outputHash = sha256Hex(text)
     return {
       value: parseJsonReply(text) ?? { call: text },
-      llm: deliveryLlm(order, 'used', 'model produced TxODDS edge analysis', 'TxLINE data fetch plus verifier hash/fixture checks', { maxTokens: 180 }),
+      llm: deliveryLlm(order, 'used', 'model produced TxODDS edge analysis', 'TxLINE data fetch plus verifier hash/fixture checks', { maxTokens: 180 }, { inputHash, outputHash }),
     }
   } catch (e) {
     return {

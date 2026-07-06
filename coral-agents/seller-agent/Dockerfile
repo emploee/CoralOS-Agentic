@@ -4,35 +4,19 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Mirror repo layout so the "file:../../packages/*" deps resolve correctly
-COPY packages/agent-runtime/package.json packages/agent-runtime/package-lock.json* ./packages/agent-runtime/
-RUN cd packages/agent-runtime && npm install --ignore-scripts
-COPY packages/agent-runtime/tsconfig.json ./packages/agent-runtime/
-COPY packages/agent-runtime/src/ ./packages/agent-runtime/src/
-RUN cd packages/agent-runtime && npx tsc
-
-COPY packages/harness-runtime/package.json packages/harness-runtime/package-lock.json* ./packages/harness-runtime/
-RUN cd packages/harness-runtime && npm install --ignore-scripts --install-links
-COPY packages/harness-runtime/tsconfig.json ./packages/harness-runtime/
-COPY packages/harness-runtime/src/ ./packages/harness-runtime/src/
-RUN cd packages/harness-runtime && npx tsc
-
-COPY packages/payment-runtime/package.json packages/payment-runtime/package-lock.json* ./packages/payment-runtime/
-RUN cd packages/payment-runtime && npm install --ignore-scripts --install-links
-COPY packages/payment-runtime/tsconfig.json ./packages/payment-runtime/
-COPY packages/payment-runtime/src/ ./packages/payment-runtime/src/
-RUN cd packages/payment-runtime && npx tsc
-
-# --install-links copies the SDK into node_modules instead of symlinking
-COPY coral-agents/seller-agent/package.json coral-agents/seller-agent/package-lock.json* ./coral-agents/seller-agent/
-RUN cd coral-agents/seller-agent && npm install --ignore-scripts --install-links
-COPY coral-agents/seller-agent/tsconfig.json ./coral-agents/seller-agent/
-COPY coral-agents/seller-agent/src/ ./coral-agents/seller-agent/src/
-RUN cd coral-agents/seller-agent && npx tsc
+COPY package.json ./
+COPY packages ./packages
+COPY coral-agents ./coral-agents
+COPY examples ./examples
+RUN npm install --no-audit --no-fund --ignore-scripts
+RUN npm run build:packages
+RUN npm run build -w seller-agent
 
 FROM node:20-alpine
 WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
 COPY --from=builder /app/coral-agents/seller-agent/dist ./dist
-COPY --from=builder /app/coral-agents/seller-agent/node_modules ./node_modules
+COPY --from=builder /app/coral-agents/seller-agent/package.json ./package.json
 
 CMD ["node", "dist/index.js"]

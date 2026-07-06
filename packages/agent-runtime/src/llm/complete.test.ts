@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { pickProvider, parseJsonReply, complete } from './complete.js'
+import { pickProvider, parseJsonReply, complete, effectiveMaxTokens } from './complete.js'
 
 const env = { ...process.env }
 afterEach(() => {
@@ -59,6 +59,29 @@ describe('complete model resolution', () => {
       global.fetch = realFetch
     }
     expect(sentModel).toBe('claude-haiku-4-5-20251001') // not "" (which Anthropic 400s)
+  })
+
+  it('raises too-small Venice Kimi budgets so reasoning models can emit content', async () => {
+    process.env.LLM_PROVIDER = 'venice'
+    process.env.VENICE_API_KEY = 'k'
+    process.env.LLM_MODEL = 'kimi-k2-7-code'
+    let sentMaxTokens = 0
+    const realFetch = global.fetch
+    global.fetch = vi.fn(async (_url: unknown, init?: { body?: string }) => {
+      sentMaxTokens = JSON.parse(init?.body ?? '{}').max_tokens
+      return { ok: true, json: async () => ({ choices: [{ message: { content: '{"ok":true}' } }] }) }
+    }) as unknown as typeof fetch
+    try {
+      await complete({ system: 's', user: 'u', maxTokens: 120 })
+    } finally {
+      global.fetch = realFetch
+    }
+    expect(sentMaxTokens).toBe(1024)
+  })
+
+  it('leaves non-Kimi token budgets alone', () => {
+    expect(effectiveMaxTokens('venice', 'llama-3.3-70b', 120)).toBe(120)
+    expect(effectiveMaxTokens('openai', 'kimi-k2-7-code', 120)).toBe(120)
   })
 })
 

@@ -52,6 +52,18 @@ All live in the repo-root **`.env`** (gitignored - never committed). `.env.examp
 Default models (override with `LLM_MODEL`): Venice `llama-3.3-70b` — OpenAI `gpt-4o-mini` — Anthropic
 `claude-haiku-4-5-20251001`.
 
+Venice code/reasoning models such as `kimi-k2-7-code` work too:
+
+```ini
+LLM_PROVIDER=venice
+VENICE_API_KEY=...
+LLM_MODEL=kimi-k2-7-code
+```
+
+Kimi may spend a small completion budget on internal reasoning before emitting `message.content`, so
+the runtime automatically raises too-low Venice/Kimi `maxTokens` requests to `1024`. Other providers
+and non-Kimi Venice models keep the caller's requested budget.
+
 ## Set it up — copy/paste
 
 **Venice AI — the kit's LLM (recommended, free credits):**

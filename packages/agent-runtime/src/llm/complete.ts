@@ -2,8 +2,8 @@
  * LLM pillar — one provider-agnostic `complete()` call.
  *
  * SDK-free (`fetch`-based) so the runtime stays dependency-light. Provider is chosen by env, so the
- * whole market flips from Anthropic (dev default) to the sponsored OpenAI key with `LLM_PROVIDER=openai`
- * (or to Venice AI with `LLM_PROVIDER=venice`) and no code change. Callers ask for a single JSON-shaped
+ * whole market flips to Venice AI with `LLM_PROVIDER=venice` (or OpenAI/Anthropic) and no code change.
+ * Callers ask for a single JSON-shaped
  * answer and enforce their own guards on it — the model proposes, code disposes.
  *
  * To add a provider in code: extend `LlmProvider`, add a `DEFAULT_MODEL` entry, teach `pickProvider()`
@@ -27,6 +27,18 @@ const DEFAULT_MODEL: Record<LlmProvider, string> = {
   venice: 'llama-3.3-70b',
 }
 
+const KIMI_MIN_COMPLETION_TOKENS = 1024
+
+/**
+ * Venice-hosted Kimi code models can spend small budgets on internal reasoning before emitting
+ * `message.content`. Keep caller limits for other models, but give Kimi enough room to finish JSON.
+ */
+export function effectiveMaxTokens(provider: LlmProvider, model: string, requested: number): number {
+  return provider === 'venice' && /kimi/i.test(model) && requested < KIMI_MIN_COMPLETION_TOKENS
+    ? KIMI_MIN_COMPLETION_TOKENS
+    : requested
+}
+
 export interface CompleteOpts {
   system: string
   user: string
@@ -43,9 +55,10 @@ export async function complete(opts: CompleteOpts): Promise<string> {
   const provider = pickProvider()
   // `||` not `??`: coral manifests default unset options to "" — an empty LLM_MODEL must not win.
   const model = opts.model || process.env.LLM_MODEL || DEFAULT_MODEL[provider]
-  const maxTokens = opts.maxTokens ?? 512
+  const requestedMaxTokens = opts.maxTokens ?? 512
+  const maxTokens = effectiveMaxTokens(provider, model, requestedMaxTokens)
   const trace = process.env.TRACE === '1'
-  if (trace) console.error(`[llm] provider=${provider} model=${model}`)
+  if (trace) console.error(`[llm] provider=${provider} model=${model} maxTokens=${maxTokens}`)
 
   const text = provider === 'openai'
     ? await completeOpenAI(opts, model, maxTokens)

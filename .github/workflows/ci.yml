@@ -143,6 +143,18 @@ jobs:
           node --check ui/app.js
           node -e "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json')); JSON.parse(require('fs').readFileSync('src-tauri/capabilities/default.json'))"
 
+  production-readiness:
+    name: Production readiness e2e gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+      # Deterministic end-to-end gate: real feed server, temporary recorded Coral state,
+      # proof_receipts ledger write, threads/runs HTTP APIs, and desk parse/config smoke.
+      - run: npm run readiness:e2e
+
   escrow:
     name: Escrow + arbiter contracts (Rust compile check)
     runs-on: ubuntu-latest

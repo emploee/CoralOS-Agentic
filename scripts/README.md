@@ -35,3 +35,14 @@ npm run dev        # = node scripts/txodds.js
 ```
 
 Starts the data/escrow proxy (:8801) + the Oracle UI (:3020) and opens the browser. Devnet only.
+
+## `readiness-e2e.mjs` - production-readiness gate
+
+```sh
+npm run readiness:e2e
+```
+
+Boots the real marketplace feed against a temporary recorded Coral session, asserts the critical
+HTTP surfaces (`/api/health`, `/api/feed`, `/api/threads`, `/api/runs`), verifies a
+`proof_receipts.json` ledger artifact, and smokes the TxODDS Agent Desk JS/config. No Docker, devnet,
+LLM key, or wallet needed.

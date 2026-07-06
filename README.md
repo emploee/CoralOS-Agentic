@@ -148,6 +148,7 @@ One `npm run` per example, from the repo root. **Each command installs that exam
 | Command | Runs | Needs |
 |---|---|---|
 | `npm run dev` | **the default demo** — the oracle proxy + UI, auto-settles on delivery | funded wallet + LLM key (renders demo data without) |
+| `npm run readiness:e2e` | **production-readiness e2e gate** - recorded Coral state -> feed -> ledger/proof receipts + desk smoke | no Docker/devnet/LLM key |
 | `npm run demo:coral` | the same oracle as a **multi-agent CoralOS round** (buyer + competing sellers) | Docker + `docker compose up -d coral` + a TxLINE token (`npm --prefix examples/txodds run mint`) |
 | `npm run marketplace` | **the full market** — a buyer + LLM sellers bidding in one session | Docker + `docker compose up -d coral` + `bash build-agents.sh` |
 | `npm run marketplace:web` | the market **visualizer** — live rounds, bids, settlement badges (:5173) | the marketplace feed running |
@@ -166,6 +167,11 @@ One `npm run` per example, from the repo root. **Each command installs that exam
 > so start it first: `docker compose up -d coral`, and `bash build-agents.sh` to build the agent images.
 > **No-Docker ones** (`dev`, `agent-economy:quickstart`, `:web`, `marketplace:web`, `desk`) run straight
 > from Node; `desk:app` adds the Tauri/Rust shell.
+
+Production-readiness status and the launch blockers live in
+[`docs/PRODUCTION_READINESS.md`](docs/PRODUCTION_READINESS.md). The automated gate is
+`npm run readiness:e2e`: it boots the real marketplace feed with a recorded Coral transcript,
+asserts feed/threads/runs/proof receipts over HTTP, and smokes the Agent Desk.
 
 ## Make it yours
 

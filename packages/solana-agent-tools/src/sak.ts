@@ -11,6 +11,7 @@ export interface SdkActionExample {
   explanation: string
 }
 
+/** Minimal action shape shared by Solana Agent Kit, OpenAI tools, and LangChain adapters. */
 export interface SdkAction {
   name: string
   similes: string[]
@@ -20,6 +21,7 @@ export interface SdkAction {
   handler(agent: unknown, input: Record<string, unknown>): Promise<Record<string, unknown>>
 }
 
+/** SAK-compatible plugin shape for the read-only tool table. */
 export interface ReadonlySolanaToolsPlugin {
   name: 'pay-readonly-solana-tools'
   methods: ReadonlySolanaAgentTools
@@ -56,6 +58,7 @@ function actionResult(value: object): Record<string, unknown> {
   return value as unknown as Record<string, unknown>
 }
 
+/** Create the five allowlisted SAK-style actions backed by `ReadonlySolanaAgentTools`. */
 export function createReadonlySolanaActions(tools: ReadonlySolanaAgentTools): SdkAction[] {
   return [
     {
@@ -135,6 +138,7 @@ export function createReadonlySolanaActions(tools: ReadonlySolanaAgentTools): Sd
   ]
 }
 
+/** Create a Solana Agent Kit-compatible plugin without requesting signing authority from SAK. */
 export function createReadonlySolanaPlugin(
   tools: ReadonlySolanaAgentTools = createSolanaAgentTools(),
 ): ReadonlySolanaToolsPlugin {

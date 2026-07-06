@@ -22,6 +22,20 @@ while the example that loads the plugin into SAK runs on Node 22.
 go through the existing repo path: devnet guard, `policy.enforce()`, explicit user approval,
 simulation/signing UX, ledger receipt, and UI transaction surface.
 
+## Source layout
+
+| File | Responsibility |
+|---|---|
+| `src/constants.ts` | Public ids used by read tools (`SOL_MINT`, `USDC_MINT`, `TOKEN_PROGRAM_ID`). |
+| `src/types.ts` | Shared interfaces for connections, prices, balances, wallets, and transfer-intent simulation. |
+| `src/connection.ts` | Dependency injection for the guarded devnet connection and mocked fetch. |
+| `src/wallet.ts` | Read-only wallet facade; every signer method throws. |
+| `src/balances.ts` | SOL and SPL token balance reads. |
+| `src/prices.ts` | Jupiter Price API V3 and Pyth Hermes reads. |
+| `src/intent.ts` | Non-executable transfer-intent simulation through the repo policy gate. |
+| `src/tools.ts` | Stable facade that composes the allowlisted tools. |
+| `src/sak.ts` | Solana Agent Kit-compatible plugin/action adapter. |
+
 ## Solana Agent Kit
 
 ```ts

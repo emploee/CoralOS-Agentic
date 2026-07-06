@@ -1,118 +1,115 @@
 # Production Readiness
 
-This document applies the production-readiness checklist supplied during the audit to this repo. It is
-not a declaration that the kit is mainnet-production ready. The current production stance is:
+This document records the repository's current operational readiness. It does not declare the system ready for mainnet custody, hosted public use, or real-user funds.
 
-- **Devnet-ready demo infrastructure:** yes.
-- **Deterministic CI/readiness gates for the core flows:** yes.
-- **Mainnet custody or real provider payments:** no.
-- **External launch with user funds:** blocked until the open risks below are closed.
+## Current Position
 
-## Critical Journeys
+| Area | Status |
+|---|---|
+| Devnet demo flows | Implemented. |
+| Deterministic CI/readiness checks | Implemented for critical local flows. |
+| Mainnet custody | Not approved. |
+| Hosted production auth/RBAC | Not implemented. |
+| Live provider payment rails beyond devnet Solana flows | Not implemented unless explicitly marked in package docs. |
+| Production storage/backup/restore | Not implemented. |
 
-These are the user-visible flows that must stay healthy:
+## Critical Local Journeys
 
 | Journey | Evidence |
 |---|---|
-| Single-agent TxODDS oracle | `npm run dev`; proxy persists runs with delivery hashes, escrow txs, and proof receipts. |
-| Coral marketplace | `npm run marketplace`; feed folds Coral session state into rounds, the run ledger, reputation, threads, and proof receipts. |
-| Marketplace visualizer | `examples/marketplace/web` unit tests and Playwright e2e against recorded Coral state. |
-| Payment rail procurement | `@pay/payment-runtime` tests plus `PAYMENT_*` folding into `proofReceipts` and `proof_receipts.json`. |
-| Read-only Solana agent tools | `@pay/solana-agent-tools` tests plus the Solana Agent Kit example smoke in mock mode. |
-| Agent desk | `npm run desk` for browser mode; CI parses UI JS and Tauri configs. |
-| Agent economy front doors | Typecheck/build smoke for autonomous, bridge, quickstart, and web dashboard. |
-| Escrow programs | CI `cargo check --workspace` on escrow + arbiter. |
+| Single-agent TxODDS oracle | `npm run dev`; proxy writes runs with delivery hashes, settlement txs, and proof receipts. |
+| Coral marketplace | `npm run marketplace`; feed folds Coral state into rounds, run ledger, reputation, threads, and receipts. |
+| Marketplace visualizer | Unit tests plus Playwright e2e against recorded Coral state. |
+| Payment rail procurement | `@pay/payment-runtime` tests and `PAYMENT_*` folding into ledger receipts. |
+| Read-only Solana tools | `@pay/solana-agent-tools` tests and Solana Agent Kit mock smoke. |
+| Agent Desk | Browser mode through `npm run desk`; static JS/config smoke in readiness gate. |
+| Agent economy examples | Typecheck/build smoke for autonomous, bridge, quickstart, and dashboard. |
+| Escrow programs | CI `cargo check --workspace` for escrow and arbiter. |
 
-## Automated Gate
+## Readiness Gate
 
-Run the readiness e2e locally:
+Run:
 
 ```sh
 npm run readiness:e2e
 ```
 
-What it proves, without Docker/devnet/LLM keys:
+The gate:
 
-- Builds `@pay/agent-runtime`, because local `file:` dependents import its `dist`.
-- Starts the real marketplace feed against a temporary Coral extended-state fixture.
-- Asserts `/api/health`, `/api/feed`, `/api/threads`, and `/api/runs`.
-- Verifies a settled round with verifier pass and a Pay.sh proof receipt.
-- Verifies `proof_receipts.json` is written to the run ledger.
-- Checks the TxODDS Agent Desk static JS parses and the Tauri JSON configs are valid.
+- builds `@pay/agent-runtime`;
+- starts the marketplace feed against a temporary recorded Coral extended-state fixture;
+- asserts `/api/health`, `/api/feed`, `/api/threads`, and `/api/runs`;
+- verifies a settled round with verifier pass and a proof receipt;
+- verifies `proof_receipts.json` in the run ledger;
+- checks TxODDS Agent Desk static JavaScript and Tauri JSON configs.
 
-This complements, rather than replaces, the existing package tests and Playwright e2e.
+The gate does not require Docker, devnet, wallets, or LLM keys.
 
 ## CI Coverage
 
-The GitHub Actions workflow blocks PRs/pushes on:
+Expected CI coverage includes:
 
-- `packages/agent-runtime`: typecheck, tests.
-- `packages/harness-runtime`: runtime build, typecheck, tests.
-- `packages/payment-runtime`: runtime build, typecheck, tests.
-- `packages/solana-agent-tools`: runtime build, typecheck, tests, package build, and Node 22 SAK example smoke.
-- `examples/txodds`: typecheck, tests.
-- `examples/marketplace`: launcher typecheck, feed typecheck/tests, web typecheck/tests, Playwright e2e.
-- `examples/agent-economy`: autonomous/quickstart/bridge typechecks and web production build smoke.
-- `coral-agents`: buyer/seller/verifier/broker/echo checks.
-- `examples/txodds-agent-desk`: static UI and config smoke.
-- `scripts/readiness-e2e.mjs`: production-readiness e2e gate.
+- `packages/agent-runtime`: typecheck, tests, build;
+- `packages/harness-runtime`: build, typecheck, tests;
+- `packages/payment-runtime`: build, typecheck, tests;
+- `packages/solana-agent-tools`: build, typecheck, tests, package build, Node 22 SAK smoke;
+- `examples/txodds`: typecheck and tests;
+- `examples/marketplace`: launcher typecheck, feed tests, web tests, Playwright e2e;
+- `examples/agent-economy`: autonomous/quickstart/bridge typechecks and web build;
+- `coral-agents`: buyer/seller/verifier/broker/echo checks;
+- `examples/txodds-agent-desk`: static UI and config smoke;
+- `scripts/readiness-e2e.mjs`: readiness e2e;
 - `examples/txodds/escrow`: Rust `cargo check --workspace`.
 
-## Production Checklist Status
+## Production Checklist
 
 | Area | Current answer | Status |
 |---|---|---|
-| Product and launch reality | Starter kit for paid agent services; default product is TxODDS oracle, not the final product. | Demo-ready |
-| Service levels | No public SLA/SLO promised. Devnet demos should degrade clearly when upstreams are down. | Needs launch owner |
-| Architecture | Documented in `README.md`, `CORAL.md`, package READMEs, and example READMEs. Coral coordinates; agents hold keys; Solana settles. | Covered for repo |
-| Source control | CI gates are present. Branch protection, CODEOWNERS, signed commits, and release tags are GitHub-org settings. | External setting |
-| Local development | `npm run setup`, `npm run dev`, example scripts, and `.env.example` cover local setup. Secrets are gitignored. | Covered |
-| Code quality | TypeScript strict packages, tests, protocol parsers, policy choke points, and devnet guard. | Covered for demo |
-| API contracts | Internal HTTP APIs are documented in READMEs. No OpenAPI contract yet. | Needs production API spec |
-| Data/storage | Run ledger is JSON-on-disk, replayable, and proof-receipt aware. No production DB/backup plan. | Demo-ready only |
-| Caching/performance | TxODDS proxy has short board caching. No capacity testing or cache SLO. | Needs launch work |
-| Async/events | Coral thread messages are replayable; watcher queue is simple in-memory demo state. | Demo-ready only |
-| Containers/runtime | Coral agents have Dockerfiles; desk Tauri shell is no-IPC. Resource limits/scanning not configured here. | Needs deployment platform |
-| Cloud/IaC | No cloud production deployment in this repo. | Out of repo |
-| CI/CD | Broad CI exists plus readiness e2e. No artifact signing/SBOM/release promotion. | CI covered, release hardening needed |
-| Security | Devnet guard, gitignored secrets, policy checks, verifier gate. No full threat model or pen test. | Needs security review |
-| Supply chain | Lockfiles are generated locally and ignored by repo policy. No SBOM/SLSA provenance. | Needs production policy |
-| Privacy/legal | No customer PII model in repo; LLM/provider data flow documented at a high level. | Needs product owner |
-| Reliability/resilience | Deterministic replay and degraded UI states exist. No paging, SLO alerts, or chaos testing. | Needs operations plan |
-| Observability | Ledger/transcripts/reputation are audit artifacts; no OpenTelemetry/log aggregation. | Needs production observability |
-| Testing | Unit/integration/e2e/readiness gates cover critical demo journeys. Load/security/restore tests not present. | Demo gate covered |
-| Deployment/rollback | No production deploy pipeline. Devnet examples are run manually. | Needs deployment plan |
-| Incident response | No on-call, severity model, or runbooks beyond troubleshooting docs. | Needs owner |
-| Backup/restore | Ledger is local disk; replay tested. No backup/restore drill. | Needs production storage plan |
-| Cost/FinOps | Devnet costs are negligible; LLM/provider costs bounded by env/policy only. | Needs launch budget |
-| Multi-tenancy | Not a multi-tenant app today. | Not applicable until hosted |
-| Admin/support | Agent Desk is an operator console, not a secured admin system. | Needs auth/RBAC before hosting |
-| Abuse/fraud | Spend caps and devnet guard exist; no bot/rate-limit/fraud controls. | Needs production controls |
-| Notifications/webhooks | Not a notification product. | Not applicable |
-| Analytics/reporting | Reputation and runs are product/audit metrics; no analytics pipeline. | Optional |
-| AI/LLM | Provider abstraction, fallbacks, verifier checks, and harness isolation exist. Prompt/version evals are not formalized. | Needs eval set |
-| Desktop/client | Desk has no IPC/fs/shell permissions beyond Tauri default; Tauri build still needs platform validation. | Needs signed build |
-| Vendor risk | CoralOS, Solana devnet/RPC, TxODDS, LLM providers, Pay.sh/x402 are critical vendors. No vendor SLA map. | Needs launch owner |
-| Docs/ownership | Broad docs exist. Concrete production owner/on-call owner is not assigned in repo. | Needs organization decision |
+| Product scope | Local/devnet reference system for paid agent services. | Demo-ready only. |
+| Service levels | No public SLO or SLA. | Requires owner. |
+| Architecture | Documented in README, CORAL, package READMEs, and example READMEs. | Covered for repo. |
+| Source control | CI gates exist. Branch protection, CODEOWNERS, signed commits, and release tags are external settings. | Requires repo/org setup. |
+| Local development | Setup scripts, examples, and `.env` flow exist. | Covered. |
+| Code quality | TypeScript strict packages, tests, protocol parsers, policy checks, devnet guard. | Covered for demo. |
+| API contracts | Internal APIs are documented in READMEs. | OpenAPI or equivalent needed for hosted production. |
+| Data/storage | JSON run ledger is replayable. | Production DB/backup/retention not defined. |
+| Performance | No capacity or load testing. | Needs production plan. |
+| Containers | Agent Dockerfiles exist. | Resource limits/scanning not configured here. |
+| CI/CD | Broad CI and readiness e2e exist. | Release promotion/signing/SBOM not implemented. |
+| Security | Devnet guard, gitignored secrets, policy checks, verifier gate. | Full threat model and security review needed. |
+| Supply chain | No SBOM/SLSA provenance gate. | Needs production policy. |
+| Privacy/legal | No customer PII model defined. | Needs product owner. |
+| Reliability | Replay/degraded states exist. | No paging, SLO alerts, or chaos testing. |
+| Observability | Ledger/transcripts exist. | No OpenTelemetry/log aggregation. |
+| Testing | Functional demo gates exist. | Load/security/restore tests missing. |
+| Deployment | No production deploy pipeline. | Needs target and rollback plan. |
+| Incident response | No on-call or severity model. | Needs owner. |
+| Backup/restore | Local ledger only. | Needs backend and restore drill. |
+| Cost controls | Devnet costs negligible; provider usage controlled by env/policy. | Needs launch budget. |
+| Admin/support | Agent Desk is local and unauthenticated. | Auth/RBAC required before hosting. |
+| Abuse/fraud | Spend caps and devnet guard exist. | Hosted abuse controls missing. |
+| LLM | Provider abstraction, fallbacks, verifier checks, harness isolation. | Formal eval set missing. |
+| Desktop | Tauri shell has no custom IPC. | Signed builds/platform validation needed. |
+| Vendor risk | CoralOS, Solana RPC/devnet, TxODDS, LLM providers, and payment providers are dependencies. | SLA/incident ownership needed. |
 
-## Must-Answer Before Mainnet Or Real Users
+## Required Before Mainnet or Hosted Users
 
-- Who owns support, incident response, and launch approval?
-- What SLOs are promised for proxy, marketplace feed, desk, and settlement flows?
-- What is the production storage backend for the run ledger, and how is restore tested?
-- How are wallets, RPC keys, provider keys, and arbiter keys injected and rotated?
-- Which payment rails are live-provider backed, and how are provider failures handled?
-- What are the spend limits, kill switches, and operator approvals for real money?
-- How are admin/desk actions authenticated, authorized, and audited?
-- What is the threat model for prompt injection, payment proof replay, malicious sellers, and compromised agents?
-- What deployment target, rollback plan, artifact signing, and SBOM policy are used?
-- What telemetry pages a human, and what is the runbook?
+- Assign support, incident response, and release approval owners.
+- Define SLOs for proxy, feed, desk, and settlement flows.
+- Select production run-ledger storage and test restore.
+- Define secret injection and rotation for wallets, RPC keys, provider keys, and arbiter keys.
+- Promote scaffold rails only after live-provider verification and failure handling are implemented.
+- Define spend limits, kill switches, and operator approvals.
+- Add auth, authorization, and audit logging for admin/desk/feed operations.
+- Complete threat modeling for prompt injection, proof replay, malicious sellers, and compromised agents.
+- Define deployment target, rollback plan, artifact signing, and SBOM policy.
+- Add telemetry, alerts, and runbooks.
 
-## Open Production Blockers
+## Open Blockers
 
-1. Mainnet remains disabled by policy; `assertDevnet` must stay on unless a separate launch review says otherwise.
-2. Pay.sh/x402/USDC/embedded-wallet/payout rails are scaffolds except where explicitly marked live in `packages/payment-runtime/README.md`.
-3. No hosted auth/RBAC layer protects the desk or feed.
+1. Mainnet remains disabled by policy; keep `assertDevnet` unless a separate launch review approves otherwise.
+2. Pay.sh, x402, USDC, embedded-wallet, and payout rails are scaffolds except where package docs explicitly state otherwise.
+3. No hosted auth/RBAC protects desk or feed endpoints.
 4. No production database, backup, restore, or retention policy exists for run ledgers.
 5. No formal SLOs, incident response process, or on-call rotation exists.
 6. No SBOM/artifact-signing/supply-chain provenance gate exists.
@@ -120,6 +117,4 @@ The GitHub Actions workflow blocks PRs/pushes on:
 
 ## Operating Rule
 
-The repo may claim **devnet demo readiness** when CI and `npm run readiness:e2e` are green. It may not
-claim **production readiness for real users or real funds** until the open production blockers have
-named owners, mitigations, and tested evidence.
+The repository may claim devnet demo readiness when CI and `npm run readiness:e2e` pass. It must not claim production readiness for real users or real funds until the blockers above have owners, mitigations, and tested evidence.

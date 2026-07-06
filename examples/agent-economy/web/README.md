@@ -1,50 +1,53 @@
-# web — the React frontend (default demo UI)
+# Agent Economy Web UI
 
-A Vite + React + TypeScript + Solana wallet-adapter app — the polished front door to the agent
-economy. It's the **default** UI: the bridge builds and serves it at `http://localhost:3010`.
+This Vite React app is the dashboard served by the checkout bridge. It talks to the bridge API and does not connect directly to CoralOS or Solana RPC.
 
-Three tabs, all talking only to the bridge (never directly to CoralOS or Solana):
+## Views
 
-- **Autonomous** — click Run; watch an LLM buyer agent pay the seller on-chain, live, with the
-  **MCP-primitive strip** (create-session → create_thread → send_message → wait_for_mention) and
-  `@mention` chips showing what each step rides on.
-- **Checkout** — connect Phantom (Devnet), pick a service, pay with one click. The timeline
-  narrates the **puppet trick**: the bridge posts *as* `user-proxy` into the Coral thread, and the
-  seller's reply is read back from session state.
-- **Swarm** — a broker shops two sellers and resells at a markup; the feed draws **one lane per
-  Coral thread** (buyer↔broker + a private thread per seller) — two on-chain settlements per request.
+| View | Purpose |
+|---|---|
+| Autonomous | Starts and watches the buyer-agent to seller-agent flow. |
+| Checkout | Connects a Devnet wallet, submits an order, signs payment, and submits proof. |
+| Swarm | Starts and watches a broker flow with multiple seller quote lanes. |
 
-Every tab shows a **session header** (session id, agent roster with presence dots, thread count)
-fed by the bridge's `GET /coral`.
+All views display session metadata from the bridge's `/coral` endpoint when available.
 
-## Develop (hot reload)
+## Development
 
-The served build is static, so for live edits run the Vite dev server (React Fast Refresh) with the
-bridge up:
+Start the backend:
 
 ```sh
-docker compose up -d coral bridge        # backend on :3010
-npm install && npm run dev               # → http://localhost:5173, proxied to the bridge
+docker compose up -d coral bridge
 ```
 
-The dev server proxies `/order`, `/autonomous`, `/swarm`, `/coral`, and `/health` to the bridge on
-:3010, so the UI is live while the agents/payments run against the real backend.
+Start Vite:
+
+```sh
+cd examples/agent-economy/web
+npm install
+npm run dev
+```
+
+Vite proxies the bridge endpoints on `:3010`.
 
 ## Build
 
 ```sh
-npm run build                            # → dist/  (what the bridge serves in production)
 npm run typecheck
+npm run build
 ```
 
-## How it's wired
+The bridge Docker image serves the built static app.
 
-- `src/api.ts` — typed client for the bridge endpoints (`/order`, `/order/:ref/paid`,
-  `/autonomous/*`, `/swarm/*`, `/coral`).
-- `src/main.tsx` — wallet providers (Phantom, devnet) + a `Buffer` polyfill for web3.js.
-- `src/hooks/useCheckout.ts` — builds the reference-bound transfer, Phantom signs, submits the
-  proof — narrating each Coral step.
-- `src/hooks/useFeed.ts` — polls a conversation feed (autonomous or swarm).
-- `src/components/SessionHeader.tsx` — the Coral facts behind a tab (roster, presence, threads).
+## Data/API Files
 
-The backend doesn't change — this is purely a nicer window onto the same economy.
+| File | Role |
+|---|---|
+| `src/api.ts` | Typed client for bridge endpoints. |
+| `src/main.tsx` | Wallet providers and browser polyfills. |
+| `src/hooks/useCheckout.ts` | Wallet transfer and payment-proof submission. |
+| `src/hooks/useFeed.ts` | Polling feed for autonomous and swarm views. |
+| `src/components/SessionHeader.tsx` | Session roster/thread metadata. |
+| `src/components/AutonomousTab.tsx` | Autonomous flow rendering. |
+| `src/components/CheckoutTab.tsx` | Checkout flow rendering. |
+| `src/components/SwarmTab.tsx` | Broker/swarm rendering. |

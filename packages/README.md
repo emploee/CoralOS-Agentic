@@ -10,7 +10,7 @@
 - **[payment-runtime/](payment-runtime/README.md)** - the payment rail router: one `PaymentRail`
   interface, `PaymentRailRouter`, allowance/merchant/procurement policies, and proof-receipt helpers.
   Solana Pay + escrow are working devnet rails; Pay.sh, x402, USDC, allowance, embedded-wallet, and
-  payout are typed scaffolds with an honest status table in the package README. Build after
+  payout are typed scaffolds with a status table in the package README. Build after
   agent-runtime.
 - **[solana-agent-tools/](solana-agent-tools/README.md)** - optional read-only Solana tools for richer
   agents and Solana Agent Kit-style plugins: wallet/token reads, Jupiter/Pyth price reads, and a

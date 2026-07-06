@@ -1,66 +1,59 @@
 # buyer-agent
 
-The marketplace buyer broadcasts a `WANT` (or, in event mode, polls a feed for one), collects competing
-seller bids, awards the best value — weighing each seller's ledger-derived track record when
-`REPUTATION_URL` is set — and settles the winner through the arbiter-gated escrow by default.
-**Every deposit and release passes the policy choke point** (`enforce()` from `@pay/agent-runtime`):
-spend caps, service allowlist, payout binding, award-price binding (a seller can't inflate the escrow
-after winning), rate limit, verifier gate.
+The buyer agent creates market demand, collects bids, awards a seller, opens escrow, waits for delivery, optionally verifies it, and releases funds through policy.
+
+## Flow
 
 ```text
 WANT -> BID* -> AWARD
   -> ESCROW_REQUIRED settlement=arbiter reference=<bound order>
-  -> [policy: caps, payout + award-price binding]
+  -> policy check
   -> ARBITER_OPENED / DEPOSITED vault=<vault PDA>
-  -> DELIVERED (hash-bound payload)
-  -> VERIFY -> VERIFIED pass|fail        (when VERIFIER_AGENT is set)
-  -> [policy: verifier gate]
-  -> ARBITER_RELEASED   (fail/timeout -> funds stay refundable)
+  -> DELIVERED
+  -> VERIFY -> VERIFIED pass|fail
+  -> policy check
+  -> ARBITER_RELEASED or refundable hold
 ```
 
-> **CoralOS docs:** these messages ride Coral threads with `@mentions`
-> ([Threads](https://docs.coralos.ai/concepts/threads)); the buyer blocks on bids and waits for sellers
-> to come online via [Coordination](https://docs.coralos.ai/concepts/coordination), all inside a
-> [Session](https://docs.coralos.ai/concepts/sessions). End-to-end wiring: [/CORAL.md](../../CORAL.md).
-
-`SETTLEMENT_MODE=direct` keeps the legacy base escrow path available, but the TxODDS CoralOS round uses
-`SETTLEMENT_MODE=arbiter` so the buyer cannot unilaterally claw back after delivery.
+`SETTLEMENT_MODE=direct` keeps the base escrow path available. `SETTLEMENT_MODE=arbiter` is the default for current marketplace-style flows.
 
 ## Files
 
 | File | Role |
 |---|---|
-| `src/index.ts` | Market loop: WANT, bid collection, award, policy-gated deposit, delivery wait, verify, policy-gated release |
-| `src/arbiter.ts` | Arbiter wrapper client: config, vault PDA, open, release |
-| `src/escrow.ts` | Legacy direct base escrow client |
-| `src/wantFeed.ts` | Event mode: `fetchNextWant()` — poll the research watcher for the next job |
-| `src/reputation.ts` | `fetchReputationLines()` — the feed's `/api/reputation` folded into the award prompt |
-| `src/guard.ts` | Legacy payout guard (subsumed by the policy choke point's `payout-binding` rule) |
+| `src/index.ts` | Market loop and policy-gated deposit/release. |
+| `src/arbiter.ts` | Arbiter client and vault PDA helpers. |
+| `src/escrow.ts` | Direct base escrow client. |
+| `src/wantFeed.ts` | Event-mode polling for external jobs. |
+| `src/reputation.ts` | Reputation lines from feed API. |
+| `src/goal.ts` | Buyer goal defaults. |
+| `src/llm_buyer.ts` | Award reasoning and fallback selection. |
 
-## Env
+## Environment
 
-`BUYER_KEYPAIR_B58` funds the order. `ARBITER_KEYPAIR_B58` signs arbiter release/refund.
-`SELLER_WALLET` binds the payout wallet. `BUYER_SERVICE` defaults to `txline`, `BUYER_ARG` defaults to
-an `edge <fixtureId>` style request, and `MARKET_SELLERS` controls the competing sellers.
+| Variable | Description |
+|---|---|
+| `BUYER_KEYPAIR_B58` | Funds deposits. |
+| `ARBITER_KEYPAIR_B58` | Signs arbiter release/refund. |
+| `SELLER_WALLET` | Payout binding when a specific seller wallet is required. |
+| `BUYER_SERVICE` | Service name, default `txline`. |
+| `BUYER_ARG` / `BUYER_ARGS` | Request argument(s). |
+| `BUYER_MAX_SOL` | Budget cap. |
+| `MARKET_SELLERS` | Seller names to include. |
+| `SETTLEMENT_MODE` | `arbiter` or `direct`. |
+| `VERIFIER_AGENT` | Enables verifier gate when set. |
+| `VERIFY_WINDOW_MS` | Verifier response window. |
+| `WANT_FEED_URL` | Event-mode job source. |
+| `REPUTATION_URL` | Feed reputation endpoint. |
+| `POLICY_MAX_SOL_PER_ROUND` | Policy spend cap per round. |
+| `POLICY_MAX_SOL_PER_SESSION` | Policy spend cap per session. |
+| `POLICY_SERVICES` | Allowed services. |
+| `POLICY_MIN_INTERVAL_MS` | Minimum interval between policy actions. |
+| `LLM_PROVIDER` and provider key | Optional award reasoning. |
 
-New layers (all optional — unset means the classic loop):
+If no LLM provider is configured, award selection falls back to the cheapest valid bid.
 
-- `VERIFIER_AGENT` + `VERIFY_WINDOW_MS` — hand each delivery to this agent and release **only** on a
-  `VERIFIED pass` ([verifier-agent](../verifier-agent/README.md)); no verdict → funds stay refundable.
-- `WANT_FEED_URL` — event mode: poll this URL for the next job instead of rotating `BUYER_ARGS`
-  (the research market's watcher); empty queue → no WANT, no spend.
-- `REPUTATION_URL` — the feed's `/api/reputation`; sellers' run-ledger track records enter the
-  best-value prompt.
-- `POLICY_MAX_SOL_PER_ROUND`, `POLICY_MAX_SOL_PER_SESSION`, `POLICY_SERVICES`,
-  `POLICY_MIN_INTERVAL_MS` — the choke point's knobs (round cap defaults to the budget).
-
-For best-value bid selection set an LLM key — the kit's LLM is **Venice AI** (`LLM_PROVIDER=venice` +
-`VENICE_API_KEY`; new accounts get $50 free via code `IMPERIAL50` at
-[venice.ai/settings/api](https://venice.ai/settings/api)). `ANTHROPIC_API_KEY`, or `LLM_PROVIDER=openai`
-+ `OPENAI_API_KEY`, also work. Without a live key, selection falls back to the cheapest valid bid. See
-[LLM.md](../../LLM.md).
-
-## Test
+## Tests
 
 ```sh
 npm install
@@ -68,4 +61,4 @@ npm run typecheck
 npm test
 ```
 
-Live settlement signs devnet transactions and is exercised through `examples/txodds/coral`.
+Live settlement is exercised through the example launchers.

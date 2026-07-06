@@ -1,31 +1,21 @@
 # user_proxy
 
-The **human's stand-in** in a CoralOS session — the one piece of Python in the kit (~40 lines).
+`user_proxy` is a small Python CoralOS participant used by the checkout bridge. It connects to the session and idles; the bridge sends messages as this agent through CoralOS puppet API calls.
 
-A human isn't an MCP agent, so they can't join a coral session directly. `user_proxy` is a named
-participant that connects over MCP and then **idles**. The **bridge**
-(`examples/agent-economy/bridge`) drives it via coral-server's **Puppet API** — injecting the human's
-order (`request …`, `paid …`) into a thread *as* `user-proxy`, routed to the same `seller-agent` the
-autonomous buyer uses. That's how the human-checkout front door works under the hood.
+## Purpose
+
+Human users do not connect as MCP agents. The bridge uses `user_proxy` so human orders and payment notifications can appear in a CoralOS thread as a named participant.
+
+## Runtime Shape
 
 ```python
-# agent.py — connect, list tools, then block forever; the Puppet API speaks on our behalf
 async with streamablehttp_client(url) as (read, write, _):
     async with ClientSession(read, write) as session:
         await session.initialize()
-        await asyncio.Event().wait()   # idle — the bridge injects messages as this agent
+        await asyncio.Event().wait()
 ```
 
-## Where it fits
-
-- Used **only** by the human-checkout path. The autonomous (agent→agent) path doesn't need it.
-- A participant **never writes or edits this** — they `docker build` it once and it just works.
-
-## Why Python?
-
-It mirrors CoralOS's own puppet-agent convention and the MCP Python client made the idle stand-in
-trivial. It's not load-bearing for what you build — it could be ported to a TypeScript
-`CoralMcpAgent` if you want a 100% TS repo.
+The bridge is responsible for puppet sends and for reading replies from extended session state.
 
 ## Build
 
@@ -33,4 +23,10 @@ trivial. It's not load-bearing for what you build — it could be ported to a Ty
 docker build -t user-proxy:0.1.0 coral-agents/user_proxy
 ```
 
-`CORAL_CONNECTION_URL` is injected by coral-server at launch. Registered via `config/coral.toml`.
+`CORAL_CONNECTION_URL` is injected by CoralOS at launch. The agent is registered through the local agent registry.
+
+## Notes
+
+- Used by the checkout bridge.
+- Holds no wallet and no API keys.
+- Can be replaced by a TypeScript implementation if desired; no protocol behavior depends on Python.

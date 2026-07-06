@@ -1,66 +1,79 @@
-# Marketplace visualizer
+# Marketplace Visualizer
 
-A read-only React app over the live auction, in **three tabs**. It watches agents transact; there's
-no human buyer and **no wallet** — fully on-thesis.
+This Vite React app reads the marketplace feed server and renders market rounds, Coral thread state, run ledger details, proof receipts, verifier results, and seller reputation. The browser does not connect directly to CoralOS or Solana.
 
-- **Market** — each round's `WANT`, the competing bids (winner highlighted, harness tags,
-  self-selected sellers shown as declined), the buyer's reasoning, the **verifier's verdict** (a
-  fail renders "release refused, funds refundable"), upstream **proof receipts**, the on-chain
-  settlement with Explorer links — plus the ledger-derived **reputation** strip and the research
-  watcher's **event queue**.
-- **Coral bus** — the coordination itself: the agent roster with presence, and every thread's
-  messages with sender colors, market-verb badges, and `@mention` chips. The proof it's an MCP
-  session, not a REST poll.
-- **Runs** — the run ledger as a page: expand any round into want → bids → award reasoning →
-  escrow → sha256-bound delivery → verdict → proof receipts → Explorer-linked txs.
+## Views
 
-When coral-server is down, a **replay banner** shows and everything serves from the persisted run
-folders (`source: "ledger"`).
+| View | Data rendered |
+|---|---|
+| Market | `WANT`, bids, winner, award reasoning, verifier verdict, proof receipts, settlement state, transaction links, reputation strip, and watcher events. |
+| Coral bus | Session roster, thread messages, sender labels, market verb badges, and mention chips. |
+| Runs | Persisted ledger records with want, bids, award, escrow, delivery hash, verifier result, proof receipts, and transaction links. |
 
-```
- web/ (React, this app) ──poll──▶ feed/ (Express) ──read──▶ coral session state + runs/ (ledger)
-```
+When `/api/feed` returns `source: "ledger"`, the UI displays replay state instead of live CoralOS state.
 
 ## Run
 
+Start the feed server:
+
 ```sh
-cd ../feed && npm start                 # the feed on :4000 (another shell; SESSION=<id> to pin one)
-npm run dev                             # this app on :5173
-# or from the repo root: npm run marketplace:web
+cd ../feed
+SESSION=<session-id> npm start
 ```
 
-The **Start a market** button asks the feed server (`POST /api/start`) to launch a session and then
-watches it live — fund your wallets first. (Logs-flow alternative: `npm run marketplace` at the
-repo root, then paste the printed session id into the input or open `/?session=<id>`.)
+Start the app:
 
-## How it works
+```sh
+npm run dev
+```
 
-The browser never touches coral or Solana. The **feed server** reads the session's extended state,
-folds the transcript into typed `Round`s with `foldRounds` — which **reuses `@pay/agent-runtime`'s own
-parsers**, so the wire protocol has one source of truth — and serves CORS-enabled JSON the app polls.
+From the repo root:
 
-## Test (no devnet, no LLM key)
+```sh
+npm run marketplace:web
+```
+
+The dashboard can also call `POST /api/start` on the feed server to launch a session, if the local environment has the required Docker and wallet setup.
+
+## Data Contract
+
+The app polls the feed server. The feed server is responsible for CoralOS auth, Solana-derived ledger data, and protocol parsing.
+
+| Endpoint | Use |
+|---|---|
+| `/api/feed` | Market rounds. |
+| `/api/threads` | Coral bus view. |
+| `/api/session` | Agent roster and session state. |
+| `/api/runs` | Run ledger list/detail. |
+| `/api/reputation` | Seller track records. |
+| `/api/events` | Research watcher queue. |
+| `/api/start` | Optional local session launcher. |
+
+`foldRounds` in the feed reuses `@pay/agent-runtime` market parsers, so wire-format parsing has one source of truth.
+
+## Tests
 
 ```sh
 cd examples/marketplace/web
-npm test          # Vitest + Testing Library — rounds, proof receipts, verification pass/fail, harness tags, the bus view
-npm run e2e       # Playwright — the REAL feed server folding a recorded coral transcript → real app,
-                  # incl. the Coral bus tab (mentions/roster) and the Runs tab (ledger + sha256 + txs)
-cd ../feed && npm test   # foldRounds + collectMessages (bus context) verified against the same transcript
+npm test
+npm run e2e
 ```
 
-The e2e is **not** a route mock: Playwright starts the real feed server with a recorded CoralOS
-extended-state response (`feed/tests/coral-session.json`, captured from a settled devnet round), so it
-exercises the actual `collectMessages → foldRounds → HTTP → UI` path. The only thing replaced is coral
-itself — which makes it deterministic and CI-friendly with no devnet or LLM key.
+The Playwright e2e starts the real feed server with `feed/tests/coral-session.json`, then renders the real app against the feed API.
 
-## Fork points
+Feed tests:
 
-| Want… | Edit |
-|-------|------|
-| a new bid field (eta, reputation) | `src/components/BidRow.tsx` + the `Round` type + `../feed/src/foldRounds.ts` |
-| a different look | `src/components/RoundCard.tsx` + `src/styles.css` |
-| live push instead of polling | swap `useFeed`'s `setInterval` for an SSE endpoint on the feed server |
-| let a human fund/settle (advanced) | add wallet-standard via framework-kit — see the `solana-dev` skill |
+```sh
+cd ../feed
+npm test
+```
 
-For the data contract behind every view, see the feed server's [README](../feed/README.md).
+## Edit Points
+
+| Change | Files |
+|---|---|
+| Add bid fields | `src/components/BidRow.tsx`, shared `Round` type, `../feed/src/foldRounds.ts`. |
+| Change round rendering | `src/components/RoundCard.tsx`, `src/styles.css`. |
+| Change Coral bus rendering | `src/components/CoralView.tsx`. |
+| Change run ledger rendering | `src/components/RunsView.tsx`. |
+| Replace polling | `src/api.ts` and feed server API implementation. |

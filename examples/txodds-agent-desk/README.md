@@ -1,63 +1,61 @@
-# TxODDS Agent Desk — the operator console (Tauri)
+# TxODDS Agent Desk
 
-A desktop window onto what the kit already runs: the live board, the **run ledger**, the formal
-**proof receipts**, and the settlement rails. Built as a [Tauri](https://tauri.app) v2 shell around
-a no-build static UI (`ui/`) — the same ethos as the oracle web app.
+The Agent Desk is a browser/Tauri UI over existing local services. It reads proxy, ledger, receipt, settlement, reputation, and watcher APIs. It does not hold keys, sign transactions, or reimplement market logic.
 
-**No bespoke glue, by design.** The desk holds no keys, signs nothing, and re-implements no market
-logic. Every byte it renders and every action it takes is one of the existing HTTP surfaces:
+## Data Sources
 
-| Source | What the desk uses it for |
-|--------|---------------------------|
-| txodds proxy `:8801` (`examples/txodds`, `npm run proxy`) | the live board, `/api/runs` + `/api/run` (the run ledger incl. `proofReceipts`), `/api/settle`, `/api/pay-sh-edge` (payment-runtime procurement), `/api/grade-runs` |
-| marketplace feed `:4000` (optional) | `/api/reputation` — the ledger-derived seller scoreboard |
-| research watcher `:4600` (optional) | the odds-move event queue status |
+| Source | Endpoints used |
+|---|---|
+| TxODDS proxy `:8801` | `/api/runs`, `/api/run`, `/api/settle`, `/api/pay-sh-edge`, `/api/grade-runs`, board data. |
+| Marketplace feed `:4000` | `/api/reputation` when available. |
+| Research watcher `:4600` | Event queue status when available. |
 
-If a source is down, its panel degrades to a hint; the desk never invents data. Settle and
-procurement clicks land on the proxy's **policy-gated** endpoints — the same `enforce()` choke
-point the agents use.
+If a source is unavailable, the corresponding panel shows a local status message. Settlement and procurement actions call proxy endpoints that already apply policy checks.
 
 ## Tabs
 
-- **Runs** — the run ledger as a console: every paid round, its delivery hash, escrow reference,
-  verifier verdict, proof receipts, Explorer-linked txs, and the reality grade.
-- **Receipts** — every `ProofReceipt` across all runs (rail, provider, amount, paid, proof), with
-  scaffold rails honestly badged **simulated** — the money trail the ledger persists as
-  `proof_receipts.json`.
-- **Board** — live fixtures with two buttons per fixture: *buy read + settle* (escrow/arbiter) and
-  *procure via Pay.sh + settle* (the payment-runtime demo).
+| Tab | Data |
+|---|---|
+| Runs | Run ledger records, delivery hash, escrow reference, verifier verdict, proof receipts, transaction links, grading status. |
+| Receipts | `ProofReceipt` records across runs, including rail, provider, amount, paid flag, proof, and simulated flag. |
+| Board | Live fixtures and actions for standard settlement or Pay.sh procurement settlement. |
 
-## Run it
+## Browser Mode
 
-Start the data side first (repo root):
+Start the data side:
 
 ```sh
-npm run dev                    # or: cd examples/txodds && npm run proxy
+npm run dev
 ```
 
-**In a browser (no Rust needed)** — the UI is plain static files:
-
-```sh
-cd examples/txodds-agent-desk && npm run ui    # serves ui/ on :3030
-```
-
-**As the desktop app** — needs the [Tauri prerequisites](https://tauri.app/start/prerequisites/)
-(Rust stable; on Windows: MSVC build tools + WebView2, on Linux: webkit2gtk):
+Serve the UI:
 
 ```sh
 cd examples/txodds-agent-desk
-npm install                    # @tauri-apps/cli
-npm run dev                    # tauri dev — compiles src-tauri, opens the window
-npm run build                  # tauri build — a distributable bundle
+npm run ui
 ```
 
-> The first `npm run dev` compiles the Rust shell (a few minutes). The shell itself is ~10 lines
-> (`src-tauri/src/main.rs`): no commands, no IPC, no fs/shell permissions — the CSP only allows
-> `connect-src` to the three localhost services above. Inside the shell, Explorer links copy to the
-> clipboard (new-window navigation stays blocked); in the browser they open normally.
+Open:
 
-## Why a desk at all
+```text
+http://localhost:3030
+```
 
-The web oracle is the seller's storefront; the marketplace visualizer is the market's spectator
-stand. The desk is the **operator's** seat: one window that answers "what did my agent do for the
-money, what did it pay upstream, and did reality agree" — and lets you poke the rails to find out.
+## Tauri Mode
+
+Requires Tauri prerequisites, Rust stable, and platform-specific WebView dependencies.
+
+```sh
+cd examples/txodds-agent-desk
+npm install
+npm run dev
+npm run build
+```
+
+The Rust shell is intentionally small (`src-tauri/src/main.rs`) and defines no custom commands, IPC, filesystem access, or shell access. The CSP allows connections only to the expected localhost services.
+
+## Security Notes
+
+- The desk is a local operator UI, not a hosted authenticated admin system.
+- Transaction signing remains in the proxy/agent/wallet paths.
+- In Tauri mode, external navigation is blocked; transaction links are copied rather than opened.

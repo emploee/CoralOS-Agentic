@@ -1,69 +1,84 @@
 # seller-agent
 
-The TxODDS fulfillment agent competes in the CoralOS market and delivers verified fair-line reads. It
-is intentionally TxODDS-only for the demo; generic CoinGecko/Jupiter/news services are no longer routed
-through this seller path.
+The seller agent bids on supported `WANT` messages, requests escrow funding after an award, verifies the funded escrow, runs a harness adapter, and posts a delivered payload.
+
+## Flow
 
 ```text
-WANT service=txline arg="edge <fixtureId>"
-  -> BID price=<floor-or-LLM-price>
-  -> AWARD to=<me>
+WANT service=<service> arg=<arg>
+  -> BID price=<sol> by=<agent>
+  -> AWARD to=<agent>
   -> ESCROW_REQUIRED settlement=arbiter reference=<bound order>
-  -> verify funded escrow using vault PDA
-  -> optional PAYMENT_REQUIRED / PAYMENT_PROOF / PAYMENT_CONFIRMED (upstream rail)
-  -> DELIVERED {teams, odds, analysis}
+  -> funded escrow verification
+  -> optional PAYMENT_REQUIRED / PAYMENT_PROOF / PAYMENT_CONFIRMED
+  -> DELIVERED payload=<json>
 ```
 
-> **CoralOS docs:** the loop is `wait_for_mention → reply` on a shared thread
-> ([Threads](https://docs.coralos.ai/concepts/threads),
-> [Coordination](https://docs.coralos.ai/concepts/coordination)); coral-server launches this agent into a
-> [Session](https://docs.coralos.ai/concepts/sessions) from its
-> [manifest](https://docs.coralos.ai/reference/agent). Kit walkthrough: [/CORAL.md](../../CORAL.md).
-
-The seller only delivers after `isFunded` confirms the escrow names its payout wallet and holds at
-least the quoted price. In arbiter mode it checks the escrow buyer as the vault PDA from `DEPOSITED`,
-not the human buyer wallet.
+In arbiter mode, the seller verifies the escrow buyer as the vault PDA from `DEPOSITED`, not the original payer wallet.
 
 ## Files
 
 | File | Role |
 |---|---|
-| `src/index.ts` | Market loop and arbiter-aware funding verification |
-| `src/escrow.ts` | Read-only escrow funding check |
-| `src/service.ts` | TxODDS delivery: fixtures, odds, edge |
+| `src/index.ts` | Coral market loop and funding verification. |
+| `src/escrow.ts` | Read-only escrow funding check. |
+| `src/service.ts` | TxODDS service delivery. |
+| `src/payment.ts` | Older direct-payment helper/tests. |
+| `src/replay.ts` | Replay helpers/tests. |
 
-Bidding and delivery run through a **harness adapter** (`@pay/harness-runtime`, picked with
-`HARNESS=<name>`, default `node-llm`): the adapter prices work and produces the hash-bound
-delivery; this agent keeps the wallet, the market protocol, and the escrow checks. The LLM bidder
-with code-enforced floor/budget lives there now (`quote.ts`).
+## Harness Adapter
 
-`src/payment.ts` and `src/replay.ts` remain for the older direct-pay helpers and tests, but they are
-not part of the TxODDS CoralOS seller loop.
+Bidding and delivery use `@pay/harness-runtime`.
 
-## Optional upstream procurement
+| Harness | Description |
+|---|---|
+| `node-llm` | In-process default around seller service logic. |
+| `claude-code` | Headless Claude Code in an isolated workdir. |
+| `cli` | Generic subprocess harness defined by `HARNESS_CMD`. |
 
-Set `PROCURE_RAIL=pay-sh` to make the seller buy upstream context through
-`@pay/payment-runtime` after escrow is funded and before delivery. The seller posts the rail leg to
-the same Coral thread as `PAYMENT_REQUIRED`, `PAYMENT_PROOF`, and `PAYMENT_CONFIRMED`; the
-marketplace feed folds those messages into the run ledger as `proofReceipts` and writes
-`proof_receipts.json`.
+Harnesses produce quotes, events, and hash-bound delivery artifacts. The seller process keeps wallet and escrow authority.
 
-Current knobs: `PROCURE_PROVIDER` (default `pay.sh/txodds-context`) and `PROCURE_AMOUNT` (default
-`0.03` USDC). Pay.sh is still a simulated proof-adapter rail; receipts are marked `simulated: true`
-until a live provider API is wired.
+## Optional Upstream Procurement
 
-## Env
+Set `PROCURE_RAIL=pay-sh` to buy upstream context after escrow is funded and before delivery. The seller posts:
 
-`SELLER_WALLET`, `AGENT_NAME`, `SERVICES=txline`, `FLOOR_SOL`, `PERSONA`, `SETTLEMENT_MODE=arbiter`,
-`ESCROW_DEADLINE_SECS`, `SOLANA_RPC_URL`, `TXLINE_API_KEY`, `HARNESS` (default `node-llm`), and optional
-`PROCURE_RAIL` / `PROCURE_PROVIDER` / `PROCURE_AMOUNT`.
+```text
+PAYMENT_REQUIRED
+PAYMENT_PROOF
+PAYMENT_CONFIRMED
+```
 
-For live analysis set an LLM key — the kit's LLM is **Venice AI** (`LLM_PROVIDER=venice` + `VENICE_API_KEY`;
-new accounts get $50 free via code `IMPERIAL50` at [venice.ai/settings/api](https://venice.ai/settings/api)).
-`ANTHROPIC_API_KEY`, or `LLM_PROVIDER=openai` + `OPENAI_API_KEY`, also work — no code change. Without a
-live key, `service.ts` returns a deterministic odds read and labels it as fallback. See [LLM.md](../../LLM.md).
+The marketplace feed folds these messages into `proofReceipts` and writes `proof_receipts.json`.
 
-## Test
+Current variables:
+
+| Variable | Default |
+|---|---|
+| `PROCURE_PROVIDER` | `pay.sh/txodds-context` |
+| `PROCURE_AMOUNT` | `0.03` |
+
+The Pay.sh rail is a simulated proof-adapter rail until a live provider API is implemented.
+
+## Environment
+
+| Variable | Description |
+|---|---|
+| `SELLER_WALLET` | Payout address. |
+| `AGENT_NAME` | Agent/persona name. |
+| `SERVICES` | Supported services, usually `txline`. |
+| `FLOOR_SOL` | Minimum bid. |
+| `PERSONA` | Persona label/config. |
+| `SETTLEMENT_MODE` | `arbiter` or `direct`. |
+| `ESCROW_DEADLINE_SECS` | Escrow deadline. |
+| `SOLANA_RPC_URL` | Devnet by default. |
+| `TXLINE_API_KEY` | TxODDS token for TxLINE service. |
+| `HARNESS` | Harness adapter, default `node-llm`. |
+| `HARNESS_CMD` | CLI harness command when `HARNESS=cli`. |
+| `LLM_PROVIDER` and provider key | Optional analysis/pricing. |
+
+Without a live LLM provider, `service.ts` can return deterministic analysis output where supported.
+
+## Tests
 
 ```sh
 npm install

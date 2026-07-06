@@ -1,105 +1,100 @@
-# TXODDS.md — win the $50K TxODDS World Cup hackathon with this kit
+# TxODDS Integration
 
-> **This kit is built on exactly what the hackathon rewards: TxODDS' live football API, settled on
-> Solana.** You're not bending a generic template to fit — the default demo already ingests TxODDS'
-> live World Cup odds and scores (**TxLINE**, free tier, devnet) and settles on-chain through a deployed
-> escrow. This doc maps the kit to each of the three tracks and shows the fork point that gets you to a
-> submission fast.
+This repository includes a TxODDS TxLINE integration used by the default paid service. The integration reads World Cup and International Friendlies data from TxLINE, derives a fair-line analysis, and can bind that analysis to devnet Solana settlement.
 
-**Submit:** [superteam.fun/earn/hackathon/world-cup](https://superteam.fun/earn/hackathon/world-cup) ·
-**Prize pool: $50,000** across three tracks.
+## Data Source
 
-## The three tracks
+| Item | Value |
+|---|---|
+| API host | `https://txline-dev.txodds.com` |
+| Auth flow | `POST /auth/guest/start` plus activated `X-Api-Token` |
+| Subscription script | `examples/txodds/server/mint.ts` |
+| Client | `examples/txodds/agent/txline.ts` |
+| Proxy | `examples/txodds/server/proxy.ts` |
+| Free-tier competitions | World Cup and International Friendlies |
+| Devnet program observed in example | `6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J` |
 
-| Track                                                    | Prize             | What it rewards                                                                                                                              |
-| -------------------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Prediction Markets & Settlement** *(flagship)* | **$18,000** | Markets, resolution and settlement on verifiable World Cup data: outcome markets, oracle tooling, on-chain proof integrations.               |
-| **Trading Tools & Agents**                         | **$16,000** | Autonomous agents that ingest TxODDS' live odds and scores, detect signals, run strategies, and execute decisions without manual input.      |
-| **Consumer & Fan Experiences**                     | **$16,000** | Fan-facing apps, games, bots, or social experiences that use TxODDS' live match data to update instantly during games and keep fans engaged. |
+The browser never receives the TxLINE token. The proxy owns API access and exposes local JSON endpoints to the UI and examples.
 
-## Why this kit is a head start
+## Endpoints Used
 
-The hardest, least-glamorous parts of a submission are already here and working on devnet:
+| TxLINE endpoint | Use in repository |
+|---|---|
+| `GET /api/fixtures/snapshot` | Fixture list, competition metadata, team names, start time. |
+| `GET /api/odds/snapshot/{fixtureId}` | Verified odds markets and de-margined `Pct` probabilities. |
+| `GET /api/scores/snapshot/{fixtureId}` | Score event data; client support exists, proxy/UI exposure is limited. |
 
-- **TxODDS TxLINE integration** — [`agent/txline.ts`](examples/txodds/agent/txline.ts) is a working
-  client for the free World Cup tier (guest auth → **fixtures / odds / scores**), and
-  [`server/proxy.ts`](examples/txodds/server/proxy.ts) subscribes a devnet wallet and serves live,
-  de-margined 1X2 odds. The kit already fixed the published-example gotchas (host, mint, odds path — see
-  [`examples/txodds/README.md`](examples/txodds/README.md)).
-- **Solana settlement spine** — a deployed escrow + arbiter (`examples/txodds/escrow/`): trustless
-  deposit → release on delivery / refund on no-show, with the on-chain `reference` **bound to the data**
-  (`sha256`) so every settlement provably matches the World Cup data it paid for.
-- **Agents + market + LLM + frontends** — CoralOS coordination, a competitive WANT/BID/AWARD market
-  ([`examples/marketplace`](examples/marketplace)), Venice AI reasoning, and no-build React boards.
+The odds endpoint is a path segment endpoint, not a query parameter endpoint.
 
-> The FAQ notes **legacy projects are allowed if they integrate TxODDS now** — this kit *is* that
-> integration, as a base you extend into your own product. Point the data client at the live feed and
-> build your track.
+## Local Proxy API
 
-## Track 1 — Prediction Markets & Settlement ($18K, flagship)
+| Endpoint | Description |
+|---|---|
+| `GET /api/board` | Fixtures with verified live odds, prepared for the UI. |
+| `GET /api/fixtures` | Raw fixture passthrough. |
+| `GET /api/odds?fixtureId=<id>` | Odds passthrough for a fixture. |
+| `GET /api/edge?fixtureId=<id>` | TxLINE odds plus `analyzeEdge()` output. |
+| `GET /api/settle?fixtureId=<id>&amount=<sol>` | Devnet escrow/arbiter settlement path. |
+| `GET /api/pay-intent` | Solana Pay transfer intent. |
+| `GET /api/pay-verify` | Reference-bound transfer verification. |
+| `GET /api/pay-sh-edge` | Simulated Pay.sh procurement plus edge delivery. |
+| `GET /api/runs` / `GET /api/run?runId=<id>` | Persisted run ledger records. |
+| `GET /api/grade-runs` | Grade persisted reads against resolved score data where available. |
 
-**This is the kit's home turf.** Market resolution + settlement on verifiable data is literally the
-escrow spine + the oracle.
+## Correctness Notes
 
-- **Already here:** verified de-margined odds → a fair (break-even) line ([`agent/edge.ts`](examples/txodds/agent/edge.ts));
-  escrow whose `reference` commits to the exact data; arbiter-gated release/refund = trustless
-  settlement; a live Solana Explorer link as on-chain proof.
-- **You build (fork [`deliverService()`](examples/txodds/agent/service.ts)):** an **outcome market** that
-  takes positions on a fixture and **auto-resolves from TxODDS final scores** (TxLINE already exposes
-  scores), releasing the escrow to the winning side. Or ship **oracle tooling** — sell a signed
-  fair-odds/result feed other market apps settle against.
-- **Winning angle:** "the market and its settlement are the same on-chain object" — resolution isn't a
-  trusted admin button, it's the verified TxODDS result bound to the escrow reference.
+The implementation uses the following TxODDS-specific corrections:
 
-## Track 2 — Trading Tools & Agents ($16K)
+1. Use `txline-dev.txodds.com`; the older `oracle-dev.txodds.com` host is not used.
+2. Subscribe with treasury mint `4Zao8ocPhmMgq7PdsYWyxvqySMGx7xb9cMftPMkEokRG`.
+3. Use the legacy `subscribe(1, 4)` path because `subscribe_v2` is present in the IDL but not deployed on devnet.
+4. Fetch odds from `/api/odds/snapshot/{fixtureId}`.
 
-**Autonomous agents that ingest live odds/scores and act** — the kit's buyer/seller agents already do
-this shape.
+## Service Mapping
 
-- **Already here:** agents that ingest live odds (`analyzeEdge()`), reason with an LLM, bid, and settle
-  on-chain — coordinated over CoralOS, no manual input. The **broker agent** ([`coral-agents/broker`](coral-agents/broker))
-  already buys upstream and resells at a markup.
-- **You build:** a **signal/strategy agent** — detect line moves or value edges from the live TxLINE
-  feed, run a strategy, and execute (buy data, take a position, settle) autonomously. Your strategy is
-  the body of `deliverService()` / the buyer's value criteria.
-- **Concrete ideas:** an edge-detection agent that only buys reads with a positive expected value; a
-  market-making seller; a routing broker across competing data sellers.
-- **Run the multi-agent loop:** `docker compose up -d coral` → `bash build-agents.sh` → `npm run marketplace`.
+The default service is implemented in:
 
-## Track 3 — Consumer & Fan Experiences ($16K)
+| File | Responsibility |
+|---|---|
+| `examples/txodds/agent/txline.ts` | TxLINE client and auth/API calls. |
+| `examples/txodds/agent/edge.ts` | Verified odds to fair-line analysis. |
+| `examples/txodds/agent/service.ts` | `deliverService()` wrapper for paid delivery. |
+| `examples/txodds/server/proxy.ts` | API proxy, settlement endpoints, run persistence. |
+| `examples/txodds/research/watcher.ts` | Polls `/api/board` and queues events when odds move. |
+| `examples/marketplace/research.ts` | Consumes watcher jobs as event-driven `WANT` messages. |
 
-**Fan-facing apps that update live during matches** — start from the kit's frontends and live data.
+## Settlement Binding
 
-- **Already here:** a no-build React board ([`examples/txodds/web`](examples/txodds/web)) rendering live
-  odds, a market visualizer ([`examples/marketplace/web`](examples/marketplace/web)) with live rounds and
-  settlement badges, TxODDS live data via the proxy, and Solana Pay checkout (Pay with Phantom/Solflare).
-- **You build:** a fan game/app/bot on the live feed — a **pick-'em or prediction game** where fans stake
-  tiny devnet SOL and settle on the real result; a **live "fair odds vs bookies" dashboard**; a
-  **match-event bot** (goals/red cards from the scores feed) posting to a social feed that updates
-  instantly during games.
-- **Run a frontend:** `npm run marketplace:web` or `npm run agent-economy:web`.
+The paid read is bound to settlement through a `reference` derived from order/delivery data. The run ledger records the delivered payload, the content hash, and related transaction signatures so the paid artifact can be inspected later.
 
-## Where you actually fork
+Devnet escrow programs used by the examples:
 
-| To build…                     | Touch                                                                                 | Run                                                        |
-| ------------------------------ | ------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| a market / oracle / settlement | [`agent/service.ts`](examples/txodds/agent/service.ts) + `escrow/` (deployed)      | `npm run dev`, `npm run marketplace`                   |
-| a trading / signal agent       | `deliverService()` + [`coral-agents/`](coral-agents) personas + buyer criteria     | `npm run marketplace`, `npm run demo:coral`            |
-| a fan app / game / bot         | [`examples/*/web`](examples) + [`server/proxy.ts`](examples/txodds/server/proxy.ts) | `npm run marketplace:web`, `npm run agent-economy:web` |
-| the LLM behind any of them     | `LLM_PROVIDER=venice` (free credits) — see [LLM.md](LLM.md)                         | —                                                         |
+| Program | ID |
+|---|---|
+| Escrow | `R5NWNg9eRLWWQU81Xbzz5Du1k7jTDeeT92Ty6qCeXet` |
+| Arbiter | `FJtuVXsyXuRKqgJBEPAXmktkd13CqStapgevzGwYktXd` |
 
-Every command self-installs on first run — see the **[Run the examples](README.md)** table.
+## Run
 
-## Logistics
+```sh
+npm run setup
+npm run dev
+```
 
-- **Open to** individuals, teams, and companies.
-- **The core requirement:** integrate TxODDS' live World Cup data. The kit does, via TxLINE — keep that
-  integration live in your product.
-- **Confirm on the submission page** (team size cap, whether one team can enter multiple tracks or win
-  multiple prizes — these were unanswered in the brief): [superteam.fun/earn/hackathon/world-cup](https://superteam.fun/earn/hackathon/world-cup).
+For CoralOS market execution:
 
-## Run it on devnet
+```sh
+docker compose up -d coral
+bash build-agents.sh
+npm run demo:coral
+```
 
-The kit runs on Solana **devnet** — free play money, real settlement mechanics, and a live Explorer
-link. For a mainnet product, flip the RPC (the devnet guard requires `ALLOW_MAINNET=1`); never put a
-funded mainnet key in `.env`.
+For event-driven research:
+
+```sh
+npm run dev
+npm run research:watch
+npm run research
+```
+
+Use devnet wallets only unless a separate production review changes the policy.

@@ -1,43 +1,59 @@
-# Quickstart — bare-metal 402 (no Docker, no CoralOS)
+# HTTP 402 Quickstart
 
-The fastest way in. The same pay-per-call idea as the full agent economy, but stripped to two
-local Node processes and plain HTTP `402` — **no Docker, no coral-server**. Good for understanding
-the payment loop before you bring CoralOS in.
+This example implements a minimal pay-per-call flow with two local Node processes and plain HTTP `402` responses. It does not use Docker or CoralOS.
 
-```
-buyer.ts  ──GET /api/data──▶  server.ts
-          ◀──402 + Solana Pay──
-   pays 0.0001 SOL on devnet
-          ──GET /api/data (X-Payment: sig)──▶
-          ◀──200 + data──  (server verified on-chain)
+## Flow
+
+```text
+buyer.ts -> GET /api/data -> server.ts
+server.ts -> 402 + payment challenge
+buyer.ts -> devnet SOL transfer
+buyer.ts -> GET /api/data with proof
+server.ts -> verifies on-chain transfer
+server.ts -> 200 + data
 ```
 
 ## Run
 
 ```sh
 npm install
-# the processes read plain env vars — export your generated wallet + (optional) Anthropic key:
-export SELLER_WALLET=<devnet pubkey>            # or WALLET
+export SELLER_WALLET=<devnet pubkey>
 export BUYER_KEYPAIR_B58=<base58 devnet keypair>
-export ANTHROPIC_API_KEY=sk-ant-...             # optional — buyer skips the LLM step without it
+export LLM_PROVIDER=venice
+export VENICE_API_KEY=...
+# export LLM_MODEL=kimi-k2-7-code
 
-npm run server   # terminal 1 — the 402 seller on :3001
-npm run buyer    # terminal 2 — the LLM buyer pays, then gets data
+npm run server
+npm run buyer
 ```
 
-(Generate + fund a wallet with `node ../../../scripts/setup.js` and the
-[devnet faucet](https://faucet.solana.com).)
+`VENICE_API_KEY` is optional. Without an LLM provider, the buyer uses deterministic budget policy.
 
-## The fork points
+Generate and fund local devnet wallets from the repo root:
 
-```
-server.ts → deliverData()   — what the seller sells (default: a Jupiter swap quote)
-verify.ts → verifyPayment()  — the on-chain check (recipient + amount)
-buyer.ts                     — the LLM buyer's goal + budget guard
+```sh
+node scripts/setup.js
 ```
 
-## Then graduate to CoralOS
+## Files
 
-This is the same economy without the coordination layer. When you're ready for agent discovery,
-multi-agent sessions, and the human checkout front door, move up to the parent
-[`agent-economy`](../README.md) track — same seller logic, now coordinated over coral-server.
+| File | Role |
+|---|---|
+| `server.ts` | HTTP 402 seller and `deliverData()`. |
+| `verify.ts` | On-chain transfer verification. |
+| `buyer.ts` | Buyer loop, budget guard, optional LLM decision/summarization. |
+
+## Environment
+
+| Variable | Description |
+|---|---|
+| `SELLER_WALLET` or `WALLET` | Recipient public key. |
+| `BUYER_KEYPAIR_B58` | Buyer signing keypair for devnet transfer. |
+| `SOLANA_RPC_URL` | Defaults to devnet. |
+| `ENDPOINT` | Seller endpoint, default `http://localhost:3001/api/data`. |
+| `BUYER_MAX_SOL` | Buyer budget cap. |
+| `LLM_PROVIDER`, provider key, `LLM_MODEL` | Optional LLM behavior. |
+
+## Related CoralOS Path
+
+For the coordinated agent version, use `../autonomous` or `../bridge`. The seller logic is still implemented in `coral-agents/seller-agent/src/service.ts`.

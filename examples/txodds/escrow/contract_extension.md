@@ -4,7 +4,7 @@ This explains, with code, how to extend the agent-economy escrow with **other So
 either independent ones that share the workspace, programs that **read** escrow state, or programs
 that **control settlement** via CPI (the real "build on top").
 
-It assumes the escrow as it ships: [`programs/escrow/src/lib.rs`](programs/escrow/src/lib.rs).
+It assumes the escrow implementation in [`programs/escrow/src/lib.rs`](programs/escrow/src/lib.rs).
 
 ---
 

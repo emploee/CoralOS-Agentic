@@ -1,153 +1,111 @@
-# Escrow - the settlement spine
+# Escrow Programs
 
-> **This is the settlement spine - not optional.** Every order settles through this program: the buyer
-> deposits, the agent delivers, the buyer releases (or refunds after a deadline). It is the **only Rust
-> in the kit**; everything else is TypeScript.
->
-> **Status:** done built, **deployed to devnet**, and tested. Program ID
-> [`R5NWNg9eRLWWQU81Xbzz5Du1k7jTDeeT92Ty6qCeXet`](https://explorer.solana.com/address/R5NWNg9eRLWWQU81Xbzz5Du1k7jTDeeT92Ty6qCeXet?cluster=devnet).
-> The 3 integration tests below pass against the live program (lifecycle + the two security
-> constraints). Re-deploy your own with the steps below.
+This Anchor workspace contains the SOL escrow and arbiter programs used by the devnet examples.
 
----
+| Program | Devnet ID | Role |
+|---|---|---|
+| Escrow | `R5NWNg9eRLWWQU81Xbzz5Du1k7jTDeeT92Ty6qCeXet` | Per-order SOL escrow PDA. |
+| Arbiter | `FJtuVXsyXuRKqgJBEPAXmktkd13CqStapgevzGwYktXd` | Vault-as-buyer wrapper for neutral release/refund. |
 
-## Why escrow
+The TypeScript examples call the deployed devnet programs by default. Rebuild or redeploy only when changing program behavior.
 
-A naive **pay-first** flow has the buyer pay, *then* trust the seller to deliver - if the seller takes
-the money and delivers nothing, the buyer is out the funds. Escrow flips that to **conditional
-settlement**:
+## Workspace
 
-```
-buyer deposits SOL into a per-order escrow PDA      (funds locked on-chain)
-seller delivers the service                          (off-chain)
-buyer releases  -> seller is paid                     (buyer confirms delivery)
-   ...or...
-deadline passes -> buyer refunds                      (seller never delivered)
-```
-
-**The base escrow protects the buyer, not the seller.** The seller can't take funds without a `release`,
-and the buyer can't claw back before the deadline. But only the **buyer** signs `release`/`refund`, so a
-malicious buyer could take delivery, sit out the deadline, and `refund` - the seller delivered for
-nothing. So the base escrow alone is **buyer-released**, not seller-protected.
-
-**That's fixed by the arbiter - and it's shipped.** [`programs/arbiter`](programs/arbiter/src/lib.rs) is
-a deployed wrapper (`FJtuVXsyXuRKqgJBEPAXmktkd13CqStapgevzGwYktXd`) that uses the vault-as-buyer pattern
-(see [`contract_extension.md`](contract_extension.md)): the payer funds a vault PDA that becomes the
-escrow's buyer, and a **neutral arbiter** is the only party that can `arbitrate_release` (pay the seller
-on verified delivery) or `arbitrate_refund` (return funds to the payer after the deadline). The demo
-settles through the arbiter, so the buyer can't take delivery and refund. It is still a *trusted*
-third-party arbiter - a single trusted keypair in this demo.
-
----
-
-## How it's built
-
-```
+```text
 escrow/
-  Cargo.toml                    the Cargo workspace (escrow + arbiter)
+  Cargo.toml
   Anchor.toml
-  programs/escrow/src/lib.rs    the settlement spine (initialize / release / refund)
-  programs/arbiter/src/lib.rs   the trusted-neutral wrapper (open / arbitrate_release / arbitrate_refund)
-  client/escrow.ts              TypeScript client - deposit / release / refund
-  tests/escrow.ts               integration tests (lifecycle + security) - run against devnet
+  programs/escrow/src/lib.rs
+  programs/arbiter/src/lib.rs
+  client/escrow.ts
+  tests/escrow.ts
   package.json
 ```
 
-The arbiter's TS client is [`../agent/arbiter.ts`](../agent/arbiter.ts) (bundled IDL at
-`../agent/arbiter_idl.json`); the demo's proxy settles through it.
+The arbiter TypeScript client used by the TxODDS proxy lives at `../agent/arbiter.ts` and uses the bundled IDL `../agent/arbiter_idl.json`.
 
-### The program (`lib.rs`)
+## Base Escrow Interface
 
-| Instruction | Who signs | What it does |
+| Instruction | Signer | Effect |
 |---|---|---|
-| `initialize(amount, reference, deadline)` | buyer | Creates a per-order escrow PDA and deposits `amount` SOL into it |
-| `release()` | buyer | Pays the escrowed `amount` to the seller; closes the escrow (rent -> buyer) |
-| `refund()` | buyer | After the `deadline`, returns the whole balance to the buyer |
+| `initialize(amount, reference, deadline)` | `buyer` | Creates the escrow PDA and deposits `amount` lamports. |
+| `release()` | `buyer` | Transfers the escrowed amount to `seller` and closes the account. |
+| `refund()` | `buyer` after `deadline` | Returns the escrow balance to `buyer`. |
 
-The escrow PDA is seeded by `[b"escrow", buyer, reference]` - the **`reference`** is the same Solana
-Pay key the seller already mints per request, so escrow slots into the existing protocol without a new
-identifier.
+Escrow PDA seed:
 
-### Security (from the solana-dev skill's checklist)
+```text
+[b"escrow", buyer, reference]
+```
 
-- **`init`, never `init_if_needed`** - no reinitialization attacks.
-- **Per-(buyer, reference) PDA seeds** - no shared-PDA "master key" across orders.
-- **`Signer` + `has_one = buyer` / `has_one = seller`** - only the bound parties can release/refund.
-- **`close = buyer`** - secure closure returns rent and prevents account revival.
-- **Checked math** on every lamport move.
+The `reference` is the order/delivery binding used by the TypeScript clients and Solana Pay paths.
 
----
+## Arbiter Wrapper
 
-## Build, test, deploy
+The arbiter program applies the vault-as-buyer pattern:
 
-Prereqs: Rust, the Solana CLI, and Anchor 0.32.x (`avm install 0.32.1 && avm use 0.32.1`). The
-[`solana-dev`](../../../SKILLS.md) skill can set this up and help debug.
+1. The payer funds a system-owned vault PDA controlled by the arbiter program.
+2. The vault PDA becomes the `buyer` in the base escrow.
+3. The configured arbiter signer calls `arbitrate_release` or `arbitrate_refund`.
+
+This prevents the original payer from directly releasing or refunding the base escrow after the arbiter order is opened.
+
+## Security Properties
+
+Program checks include:
+
+- `init`, not `init_if_needed`;
+- per-order PDA seeds;
+- `Signer` requirements;
+- `has_one` constraints for bound buyer and seller roles;
+- `close = buyer`;
+- checked arithmetic on lamport movement;
+- explicit deadline check for refunds.
+
+The arbiter is a trusted single-key authority in this demo implementation.
+
+## Build, Test, Deploy
+
+Prerequisites:
+
+- Rust;
+- Solana CLI;
+- Anchor 0.32.x.
 
 ```sh
 cd examples/txodds/escrow
-anchor build                              # compiles the program + generates the IDL & TS types
-anchor keys sync                          # set the program id to your keypair's
-anchor deploy --provider.cluster devnet   # deploy (needs a funded devnet wallet)
+anchor build
+anchor keys sync
+anchor deploy --provider.cluster devnet
+```
 
-# integration tests against the DEPLOYED program (no local validator needed):
+Integration tests against a deployed program:
+
+```sh
 npm install
 ANCHOR_PROVIDER_URL=https://api.devnet.solana.com \
 ANCHOR_WALLET=$HOME/.config/solana/id.json \
 npx ts-mocha -p ./tsconfig.json -t 1000000 tests/escrow.ts
 ```
 
-> **Windows note:** `anchor build` may emit the IDL but skip the `.so`. If `target/deploy/escrow.so`
-> is missing, run `cd programs/escrow && cargo build-sbf` then
-> `cp programs/escrow/target/deploy/escrow.so ../../target/deploy/` before `anchor deploy`.
-> (Also in `TROUBLESHOOTING.md`.) For fast in-process unit tests, port `tests/escrow.ts` to **LiteSVM**.
+Windows note: if `anchor build` emits IDL output but does not produce the `.so`, run `cargo build-sbf` from the program folder and copy the artifact into `target/deploy/` before deploy.
 
----
-
-## Wiring it into the agent flow
-
-The drop-in change: where the buyer currently **transfers** SOL, it **deposits** into escrow instead,
-and **releases** after it has the delivered data.
+## TypeScript Client Pattern
 
 ```ts
 import { deposit, release } from './client/escrow'
 
-// buyer-agent, instead of payFromUrl(...):
-await deposit(program, buyer, sellerPubkey, reference, amountSol, /* deadline */ 600)
-// -> tell the seller "paid via escrow reference=<reference>"
-// seller verifies the escrow PDA exists + is funded, then delivers
-// buyer, once it has DELIVERED data:
+await deposit(program, buyer, sellerPubkey, reference, amountSol, 600)
 await release(program, buyer, sellerPubkey, reference)
 ```
 
-The seller-side check changes from "did a transfer land?" to "is there a funded escrow PDA for this
-reference, with me as the seller?" - and it only delivers once it sees the deposit. (For a fully
-seller-protected delivery proof you'd add an arbiter - see below.)
+Seller-side delivery should wait until the funded escrow exists, names the seller payout address, and holds at least the awarded amount.
 
----
+## Extension Notes
 
-## What you could build on this
+- For program-controlled settlement, make the escrow `buyer` a PDA controlled by the wrapper program.
+- Keep vault PDAs system-owned if they need to fund the base escrow through system transfers.
+- SPL token settlement requires a token-aware program; the current base escrow holds native SOL only.
+- New program IDs require `anchor keys sync`, client updates, and test updates.
 
-The escrow is the foundation; the interesting agent-economy mechanisms are built on top:
-
-| Build | Idea |
-|---|---|
-| **Dispute / arbiter agent** | Add a third `arbiter` signer that can release-to-seller or refund-to-buyer when the two disagree - a reputation-staked agent that adjudicates delivery |
-| **Milestone / streaming payments** | Multiple partial releases as a long task completes, instead of one lump sum - pay an agent as it makes progress |
-| **Subscriptions** | A recurring escrow the seller can claim once per period while the buyer keeps it funded |
-| **Multi-token settlement** | Escrow **USDC** (or any SPL / Token-2022) instead of SOL for price stability - swap `SystemProgram` transfers for `token_interface` transfers |
-| **On-chain agent registry** | A PDA per agent storing identity, accepted tokens, and a **reputation** score - buyers check it before escrowing; releases/refunds update it |
-| **x402 facilitator** | Make the program the on-chain verify/settle step of the HTTP 402 flow, replacing any trusted facilitator |
-| **Slashing / staking** | Sellers stake into the program; failed deliveries (via the arbiter) slash the stake - Sybil resistance for an open marketplace |
-
-Each of these is a hackathon project in its own right, and the `solana-dev` skill is set up to help
-build them (Anchor scaffolding, LiteSVM tests, Codama client generation, the security checklist).
-
----
-
-## When to use the escrow
-
-- **Escrow** gives conditional, refundable settlement — funds release on delivery (buyer-released in the
-  base contract; the arbiter adds seller protection).
-- It is the one **Rust** piece in an otherwise TypeScript kit and adds a build/deploy toolchain.
-- If you only need **price stability**, not conditional settlement, accept **USDC** via SPL token
-  transfers in the TS flow — escrow is specifically about *conditional release*, not tokens.
+See `contract_extension.md` for CPI patterns.

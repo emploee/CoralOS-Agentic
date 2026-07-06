@@ -1,41 +1,53 @@
-# broker — the swarm coordinator
+# broker
 
-A market-maker agent that is **both a buyer and a seller**. It powers the **Swarm** tab:
+The broker agent acts as both buyer and seller. It quotes a buyer, requests upstream quotes from configured sellers, pays one seller, then resells the result to the buyer.
 
+## Flow
+
+```text
+buyer -> request <service> -> broker
+broker -> quote requests to SWARM_SELLERS, one thread per seller
+seller -> quote reply
+broker -> pays selected seller on devnet
+broker -> charges buyer with markup
+broker -> delivers result to buyer
 ```
-buyer ──"request <service>"──▶ broker
-  broker quotes every seller in SWARM_SELLERS (each in its own thread)
-  broker buys from the cheapest            (broker PAYS the seller on-chain)
-  broker resells to the buyer at +MARKUP   (buyer PAYS the broker on-chain)
+
+The broker uses one Coral thread per upstream seller and correlates replies with `ctx.waitForMentionInThread()`.
+
+## Files
+
+| File | Role |
+|---|---|
+| `src/index.ts` | Broker coordination and quote selection. |
+| `src/payment.ts` | Seller-side payment request/verification helpers. |
+| `src/wallet.ts` | Buyer-side payment helper for upstream seller payment. |
+| `src/logic.ts` | Pure broker logic. |
+
+## Configuration
+
+| Variable | Description |
+|---|---|
+| `BROKER_KEYPAIR_B58` | Keypair used to pay upstream sellers and receive buyer payment. |
+| `SELLER_WALLET` | Broker receive wallet, usually broker public key. |
+| `SWARM_SELLERS` | Comma-separated seller names. |
+| `MARKUP` | Resale markup. |
+| `BROKER_MAX_SOL` | Upstream spend cap. |
+| `SOLANA_RPC_URL` | Devnet RPC by default. |
+
+Provision local broker and seller wallets:
+
+```sh
+node scripts/provision-swarm.js
 ```
 
-Two on-chain settlements per request; the broker keeps the spread. This is "money flowing through a
-graph of agents" — the agent-economy headline.
+Fund the broker wallet on devnet before running the flow.
 
-> **CoralOS docs:** the broker opens **one Coral thread per seller** and correlates each reply per-thread
-> — [Threads](https://docs.coralos.ai/concepts/threads) +
-> [Coordination](https://docs.coralos.ai/concepts/coordination). How it's wired in the kit:
-> [/CORAL.md](../../CORAL.md).
+## Edit Points
 
-## How it works
-
-- Reuses the kit's pieces: `payment.ts` (seller-side — charges the buyer, dynamic price) and
-  `wallet.ts` (buyer-side — pays sellers from `BROKER_KEYPAIR_B58`).
-- Correlates each seller's quote by thread via the runtime's `ctx.waitForMentionInThread()`.
-
-## Fork points (build your own swarm app)
-
-- **Who it shops** — `SWARM_SELLERS` (csv of seller agent names).
-- **How it picks** — `src/index.ts`, the `quotes.sort(...)` (price today; weight reliability,
-  speed, reputation…).
-- **The markup** — `MARKUP`.
-
-Turn it into a best-price aggregator, a cheapest-compute router, a subcontractor, an auction house —
-start from the fork points above.
-
-## Options (coral-agent.toml)
-
-`BROKER_KEYPAIR_B58` (pays sellers; its pubkey also receives the buyer's payment) · `SELLER_WALLET`
-(= broker pubkey) · `SWARM_SELLERS` · `MARKUP` · `BROKER_MAX_SOL` · `SOLANA_RPC_URL`.
-
-Provision a funded broker wallet + seller wallets with `node scripts/provision-swarm.js`.
+| Change | Location |
+|---|---|
+| Upstream seller set | `SWARM_SELLERS`. |
+| Selection algorithm | `src/index.ts` / `src/logic.ts`. |
+| Markup | `MARKUP`. |
+| Payment guardrails | `BROKER_MAX_SOL` and wallet logic. |

@@ -21,9 +21,32 @@ export interface Round {
   /** The independent verifier's verdict — release is gated on it when a verifier is in session. */
   verification?: { verdict: 'pass' | 'fail'; by: string; reason?: string }
   proofReceipts?: ProofReceipt[]
+  /** Model-selection audit trail for this round (mirrors LLM_USED market messages). Never prompts/completions. */
+  llm?: LlmUse[]
   release?: { sig: string }
   refunded?: boolean
   status: RoundStatus
+}
+
+// ── LLM audit trail (mirrors LlmUse in packages/agent-runtime/src/market/protocol.ts) ─────────
+
+export type LlmUseStatus = 'used' | 'fallback' | 'skipped' | 'error'
+
+export interface LlmUse {
+  round: number
+  agent: string
+  purpose: string
+  status: LlmUseStatus
+  provider?: string
+  model?: string
+  usedFor?: string
+  inputHash?: string
+  outputHash?: string
+  /** Should always be false — models propose, deterministic policy/verifier code controls funds. */
+  affectedFunds?: boolean
+  reason?: string
+  guardrail?: string
+  createdAt?: string
 }
 
 export interface Feed {

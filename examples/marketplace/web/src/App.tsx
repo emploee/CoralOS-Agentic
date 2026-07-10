@@ -4,6 +4,7 @@ import { MarketView } from './components/MarketView'
 import { CoralView } from './components/CoralView'
 import { RunsView } from './components/RunsView'
 import { ReputationPanel } from './components/ReputationPanel'
+import { ArenaLeaderboard } from './components/ArenaLeaderboard'
 import { EventsStrip } from './components/EventsStrip'
 import { Explainer } from './components/Explainer'
 
@@ -82,6 +83,7 @@ export default function App() {
             <>
               <EventsStrip events={events} />
               <ReputationPanel reputation={reputation} />
+              <ArenaLeaderboard reputation={reputation} />
               <MarketView rounds={rounds} />
             </>
           ) : (

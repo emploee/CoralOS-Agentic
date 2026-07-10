@@ -24,8 +24,7 @@ the repo-root `.env` (`BROKER_KEYPAIR_B58`, `BROKER_WALLET`, `SELLER_CHEAP_WALLE
 `SELLER_PREMIUM_WALLET`), appending the addresses to `WALLETS.txt`. Run `node scripts/setup.js`
 first (it creates the base wallets), then fund the broker at
 [faucet.solana.com](https://faucet.solana.com) — it pays the upstream sellers. Needed by the
-agent-economy **Swarm** tab and the marketplace's `ENABLE_BROKER=1` round; both print a hint
-pointing here when the keys are missing.
+marketplace's `ENABLE_BROKER=1` round, which prints a hint pointing here when the keys are missing.
 
 ## `txodds.js` — run the demo
 
@@ -49,13 +48,12 @@ the Coral Console HTML entrypoint, and writes `.artifacts/coral-console/console-
 ## `run-example.js` - run an example with local package bootstrap
 
 ```sh
-node scripts/run-example.js examples/agent-economy/solana-agent-kit demo
+node scripts/run-example.js examples/marketplace start
 ```
 
-Installs the root workspace on first run and builds local workspace dependencies first. Today that
-means `@pay/agent-runtime` and, for the optional Solana Agent Kit example, `@pay/solana-agent-tools`.
-It also enforces per-example Node floors, so the SAK example can require Node 22 without moving the
-repo-wide Node 20 baseline.
+Installs the root workspace on first run and builds local workspace dependencies first (`@pay/agent-runtime`,
+and `@pay/solana-agent-tools` for any example that imports it). It also enforces per-example Node floors,
+so an example can require a newer Node without moving the repo-wide Node 20 baseline.
 
 ## `readiness-e2e.mjs` - production-readiness gate
 
@@ -65,5 +63,5 @@ npm run e2e:local
 
 Boots the real marketplace feed against a temporary recorded Coral session, asserts the critical
 HTTP surfaces (`/api/health`, `/api/feed`, `/api/threads`, `/api/runs`), verifies a
-`proof_receipts.json` ledger artifact, verifies/copies `proof.json` to `.artifacts/readiness/proof.json`,
-and smokes the TxODDS Agent Desk JS/config. No Docker, devnet, LLM key, or wallet needed.
+`proof_receipts.json` ledger artifact, and verifies/copies `proof.json` to `.artifacts/readiness/proof.json`.
+No Docker, devnet, LLM key, or wallet needed.

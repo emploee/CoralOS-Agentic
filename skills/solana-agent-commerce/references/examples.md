@@ -1,10 +1,9 @@
 # Examples
 
-Good example locations:
+First-class, actively maintained examples — put new example code here unless there's a strong reason for a new top-level example directory:
 
-- `examples/agent-economy`
-- `examples/marketplace`
-- `examples/txodds`
+- `examples/txodds` — the default paid service (single agent, no CoralOS required for the web flow).
+- `examples/marketplace` — the multi-agent CoralOS market (classic / freelancer / research launchers, feed server, React visualizer). See `docs/AGENT_ORCHESTRATION.md` for the deeper agent-framework patterns (capability/safety/tool-loop, signal agents, trace/arena UI) that live here.
 
 Suggested new examples:
 

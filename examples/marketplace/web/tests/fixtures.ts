@@ -40,6 +40,19 @@ export const verifiedRound: Round = {
   deposit: { sig: 'depSig3', buyer: '47Dp' },
   delivered: { raw: '{"service":"freelance","result":{"deliverable":"Ship faster"}}' },
   verification: { verdict: 'pass', by: 'verifier-agent', reason: 'hash + structure verified' },
+  llm: [
+    {
+      round: 3, agent: 'seller-scribe', purpose: 'seller_delivery', status: 'used',
+      provider: 'venice', model: 'llama-3.3-70b', usedFor: 'seller_delivery_summary',
+      inputHash: 'a1b2c3d4e5', outputHash: 'f6a7b8c9d0', affectedFunds: false,
+      reason: 'model produced freelance deliverable', guardrail: 'verifier checks JSON and order fit before release',
+    },
+    {
+      round: 3, agent: 'verifier-agent', purpose: 'verifier_judgment', status: 'skipped',
+      usedFor: 'verifier_judgment', affectedFunds: false,
+      reason: 'txline fixture matched deterministic verifier', guardrail: 'content hash and JSON structure checks run before model judgment',
+    },
+  ],
   proofReceipts: [{
     rail: 'pay-sh',
     provider: 'pay.sh/txodds-context',

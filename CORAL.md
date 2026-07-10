@@ -13,8 +13,7 @@ CoralOS provides:
 - container launch for registered local agents;
 - thread-based messaging with mentions;
 - blocking coordination primitives;
-- extended session state for feeds and dashboards;
-- puppet API calls used by the human checkout bridge.
+- extended session state for feeds and dashboards.
 
 CoralOS does not hold wallets in this repository. `examples/txodds/coral/coral.toml` has no wallet section, and all value movement is performed by agent processes through Solana clients.
 
@@ -26,7 +25,7 @@ CoralOS does not hold wallets in this repository. `examples/txodds/coral/coral.t
 | Protocol      | `packages/agent-runtime/src/market/protocol.ts`                       | Market message formatters/parsers. Coral transports these as strings.  |
 | Agents        | `coral-agents/`                                                       | Buyer, seller, verifier, broker, echo, and user-proxy implementations. |
 | Orchestration | `docker-compose.yml`, `examples/*/coral*.ts`, marketplace launchers | Start CoralOS and create sessions from agent graphs.                   |
-| UI/feed       | `examples/marketplace/feed`, `examples/agent-economy/bridge`        | Read extended session state and expose browser-safe APIs.              |
+| UI/feed       | `examples/marketplace/feed`                                          | Read extended session state and expose browser-safe APIs.              |
 
 ## Runtime API
 
@@ -65,7 +64,7 @@ Tool names are discovered dynamically by substring to tolerate small CoralOS nam
 | `verifier-agent` | Checks delivery hash/structure and replies `VERIFIED pass                                          |
 | `broker`         | Opens private seller threads, buys upstream, and resells with a markup.                            |
 | `echo-agent`     | Minimal connectivity test agent.                                                                   |
-| `user_proxy`     | Idle session participant driven by the puppet API for human checkout.                              |
+| `user_proxy`     | Idle session participant driven by the puppet API. No example currently launches it.                |
 
 Seller personas reuse the seller image with different manifest options.
 
@@ -87,7 +86,6 @@ Relevant examples:
 | `examples/marketplace/start.ts`           | Classic market.                           |
 | `examples/marketplace/freelancer.ts`      | Harness sellers plus verifier.            |
 | `examples/marketplace/research.ts`        | Event-driven buyer plus research sellers. |
-| `examples/agent-economy/bridge/server.ts` | Seller plus`user-proxy` for checkout.   |
 
 ## Market Flow
 
@@ -121,16 +119,6 @@ The Solana deposit/release/refund calls are outside CoralOS. CoralOS carries coo
 | `/api/reputation` | Ledger-derived seller reputation.       |
 
 When CoralOS is unavailable, feed endpoints can replay finished sessions from ledger files.
-
-## Puppet API
-
-The checkout bridge uses the puppet API to send messages as `user-proxy`:
-
-```text
-POST /api/v1/puppet/{namespace}/{session}/user-proxy/thread...
-```
-
-The puppet API is send-only for this use case, so the bridge reads seller replies through extended session state.
 
 ## Configuration
 

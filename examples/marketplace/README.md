@@ -68,9 +68,13 @@ Research market:
 
 ```sh
 cd ../txodds && npm run proxy
-cd ../txodds && npm run watch
-cd ../marketplace && npm run research
+cd ../../coral-agents/signal-agent && npm install && npm run build && npm start   # or: cd ../txodds && npm run watch
+cd ../../examples/marketplace && npm run research
 ```
+
+The event feed can come from either `coral-agents/signal-agent` (a Coral-native participant, bounded
+by the agent-safety framework — see its README) or the legacy `examples/txodds` watcher; both serve
+the same `/next` `/queue` `/api/health` contract on `:4600` by default.
 
 ## Configuration
 
@@ -161,3 +165,4 @@ The web e2e starts the real feed server with a recorded Coral extended-state fix
 | `web/src/` | React visualizer. |
 | `../../coral-agents/buyer-agent` | Buyer market loop. |
 | `../../coral-agents/seller-agent` | Seller market loop and harness adapter boundary. |
+| `../../coral-agents/signal-agent` | Odds-move detector feeding the research market's event mode. |

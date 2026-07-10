@@ -27,7 +27,7 @@ Responsibilities are separated by subsystem:
 | Harness runtime | Adapter boundary for seller execution through`node-llm`, `claude-code`, or an arbitrary CLI.                     |
 | Payment runtime | Rail abstraction, rail routing, payment verification records, and rail-specific policy helpers.                      |
 | TxODDS example  | Default paid service, proxy, browser UI, research watcher, escrow clients, and Anchor programs.                      |
-| Coral agents    | Buyer, seller, verifier, broker, echo, and user-proxy agent processes launched per session.                          |
+| Coral agents    | Buyer, seller, verifier, broker, and echo agent processes launched per session.                                      |
 
 ## Repository Layout
 
@@ -40,16 +40,14 @@ Responsibilities are separated by subsystem:
 | `coral-agents/`                | Dockerized agents registered with CoralOS.                                                             |
 | `examples/txodds/`             | Default TxODDS oracle, proxy, web UI, research watcher, and escrow programs.                           |
 | `examples/marketplace/`        | Multi-seller market launchers, feed server, React visualizer, and run ledger persistence.              |
-| `examples/agent-economy/`      | Autonomous agent purchase, human checkout bridge, bare HTTP 402 quickstart, and dashboard.             |
-| `examples/txodds-agent-desk/`  | Browser/Tauri operator UI over proxy, ledger, receipts, settlement, reputation, and watcher data.      |
 | `scripts/`                     | Setup, example launcher, wallet provisioning, and readiness gate scripts.                              |
 
 ## Requirements
 
 | Requirement                     | Used by                                                                               |
 | ------------------------------- | ------------------------------------------------------------------------------------- |
-| Node.js 20+                     | Runtime packages, scripts, TxODDS, marketplace, agent economy, desk browser mode.     |
-| Docker                          | CoralOS sessions, marketplace, verifier/buyer/seller/broker/user-proxy agents.        |
+| Node.js 20+                     | Runtime packages, scripts, TxODDS, marketplace.                                       |
+| Docker                          | CoralOS sessions, marketplace, verifier/buyer/seller/broker agents.                   |
 | Devnet SOL                      | Buyer, broker, and wallet checkout flows.                                             |
 | LLM provider key                | Optional for live model output; deterministic fallbacks are present in several paths. |
 | Rust, Solana CLI, Anchor 0.32.x | Only needed to rebuild or redeploy`examples/txodds/escrow`.                         |
@@ -138,13 +136,6 @@ Run commands from the repo root unless noted.
 | `npm run research`                       | Launch event-driven research market.                               | Docker plus TxODDS proxy and watcher.                     |
 | `npm run research:watch`                 | Start the TxODDS odds-move watcher.                                | TxODDS proxy.                                             |
 | `npm run marketplace:web`                | Start the React market visualizer.                                 | Feed server or dashboard start endpoint.                  |
-| `npm run agent-economy`                  | Start autonomous agent-to-agent purchase example.                  | Docker and built agent images.                            |
-| `npm run agent-economy:bridge`           | Start human checkout bridge.                                       | Docker, CoralOS, wallet setup.                            |
-| `npm run agent-economy:quickstart`       | Start bare HTTP 402 seller.                                        | Node and wallet env.                                      |
-| `npm run agent-economy:quickstart:buyer` | Start bare HTTP 402 buyer.                                         | Quickstart server running.                                |
-| `npm run agent-economy:web`              | Start the agent-economy dashboard.                                 | Bridge backend.                                           |
-| `npm run desk`                           | Start the TxODDS Agent Desk in browser mode.                       | TxODDS proxy recommended.                                 |
-| `npm run desk:app`                       | Start the Tauri desktop shell.                                     | Rust/Tauri prerequisites.                                 |
 
 ## TxODDS Single-Agent Flow
 
@@ -174,6 +165,8 @@ npm run marketplace
 ```
 
 The buyer opens a market thread, posts `WANT`, collects `BID` messages, awards a seller, deposits to escrow, waits for delivery, optionally requests verifier approval, and releases through policy.
+
+`examples/marketplace/` is a first-class, self-standing example: it also ships a shared agent framework (capability grants, budget/step safety gates, a bounded LLM tool-call loop), a Coral-native signal agent that folds live odds-move detection into the market itself, and a trace/arena UI. See [docs/AGENT_ORCHESTRATION.md](docs/AGENT_ORCHESTRATION.md) for the full pattern set and how to extend it with new agent roles.
 
 The marketplace feed server converts Coral extended session state into typed rounds and ledger records:
 
@@ -251,7 +244,7 @@ runs/<session>/round-<n>/
   txs.json
 ```
 
-`proof.json` is the compact E2E success artifact. The ledger is used by the marketplace feed, visualizer, reputation calculation, TxODDS proxy, and Agent Desk. Finished sessions can be replayed from ledger files when CoralOS is unavailable.
+`proof.json` is the compact E2E success artifact. The ledger is used by the marketplace feed, visualizer, reputation calculation, and TxODDS proxy. Finished sessions can be replayed from ledger files when CoralOS is unavailable.
 
 ## Policy Boundaries
 
@@ -298,7 +291,6 @@ Package and example READMEs contain narrower test commands.
 - Do not commit `.env`, private keys, API keys, seed phrases, or generated wallet secrets.
 - Treat RPC responses, receipts, LLM output, verifier payloads, and Coral messages as untrusted input.
 - Keep mainnet disabled unless a separate review defines custody, policy, monitoring, and rollback controls.
-- The Agent Desk is a local operator UI, not an authenticated hosted admin system.
 
 ## License
 

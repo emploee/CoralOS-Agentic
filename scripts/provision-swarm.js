@@ -3,7 +3,7 @@
 // of the base wallets from `node scripts/setup.js`. Writes the keys/addresses to .env and WALLETS.txt.
 // Safe to re-run: existing values are preserved; only what's missing is generated.
 //
-// Used by:  examples/marketplace (ENABLE_BROKER=1) and examples/agent-economy (the /swarm door).
+// Used by:  examples/marketplace (ENABLE_BROKER=1).
 // Usage:    node scripts/provision-swarm.js
 //
 // The BROKER signs and FUNDS the upstream leg (it deposits into the sellers' escrow before reselling),
@@ -65,7 +65,6 @@ const block = [
   '',
   'Then enable the swarm:',
   '  • marketplace:   ENABLE_BROKER=1 npm run marketplace',
-  '  • agent-economy: the /swarm door (see examples/agent-economy)',
   '',
 ].join('\n')
 // Append the swarm block to WALLETS.txt (keep the base-wallet report from setup.js if present).

@@ -24,9 +24,7 @@ The Rust surface is limited to `examples/txodds/escrow`, which contains the escr
 | `packages/solana-agent-tools/` | Read-only Solana context tools and optional Solana Agent Kit adapter. |
 | `examples/txodds/` | TxODDS proxy, web UI, service implementation, research watcher, and escrow workspace. |
 | `examples/marketplace/` | CoralOS market launchers, feed server, React visualizer, and ledger persistence. |
-| `examples/agent-economy/` | Autonomous purchase, checkout bridge, HTTP 402 quickstart, and dashboard. |
-| `examples/txodds-agent-desk/` | Browser/Tauri operator UI over proxy, ledger, receipts, reputation, and watcher data. |
-| `coral-agents/` | Buyer, seller, verifier, broker, echo, and user-proxy agent containers. |
+| `coral-agents/` | Buyer, seller, verifier, broker, and echo agent containers. |
 | `scripts/` | Setup, wallet provisioning, example runner, and readiness e2e scripts. |
 
 ## Common Commands
@@ -82,10 +80,18 @@ CoralOS provides:
 - per-session agent launching;
 - thread messages and mentions;
 - blocking wait primitives;
-- extended session state for feed/UI replay;
-- puppet API for the checkout bridge.
+- extended session state for feed/UI replay.
 
 The market protocol is owned by `packages/agent-runtime/src/market/protocol.ts`; Coral transports opaque strings.
+
+## Agent Orchestration Framework
+
+`packages/agent-runtime/src/agent/` holds capability grants, process-level safety gates
+(`BudgetGuard`/`StepCounter`), a `Tool` contract with an audit-log shape, an evaluation/ranking
+helper, and a bounded provider-agnostic LLM tool-calling loop (`runToolLoop`). `coral-agents/signal-agent`
+is the first agent built on it — a Coral-native replacement for hand-running the TxODDS research
+watcher. See `docs/AGENT_ORCHESTRATION.md` for the full pattern set, a maturity ladder, and a worked
+example for adding a new specialist agent.
 
 ## Payment and Policy
 

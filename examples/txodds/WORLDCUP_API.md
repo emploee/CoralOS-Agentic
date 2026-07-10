@@ -2,6 +2,8 @@
 
 This file documents the TxLINE API surface used by `examples/txodds`. The implementation intentionally derives local features from TxLINE fixture, odds, and score snapshots rather than adding unrelated data providers.
 
+**This is a time-boxed free tier, not a permanent API.** The guest/free-tier TxLINE access this example subscribes to is provided for the World Cup 2026 tournament period. It is not guaranteed to work before or after that window. Do not build a fork that assumes indefinite free access — plan for either commercial TxODDS credentials or an alternate data source once the tournament period ends.
+
 ## Access Model
 
 | Item | Detail |
@@ -58,6 +60,7 @@ These extensions remain inside the TxLINE API surface:
 - Keep TxLINE credentials server-side.
 - Keep settlement on devnet unless the repository policy changes through a separate review.
 - Treat API responses as untrusted input and validate before using them in paid delivery or grading.
+- Free-tier guest access is scoped to the World Cup 2026 period; do not assume it remains available afterward (see the disclaimer in `README.md`).
 
 ## Related Files
 

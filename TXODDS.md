@@ -2,6 +2,8 @@
 
 This repository includes a TxODDS TxLINE integration used by the default paid service. The integration reads World Cup and International Friendlies data from TxLINE, derives a fair-line analysis, and can bind that analysis to devnet Solana settlement.
 
+> **The free TxLINE guest tier is scoped to the World Cup 2026 tournament window.** It is a promotional grant tied to that event, not a standing free API — do not build against it assuming indefinite availability. See `examples/txodds/README.md` and `examples/txodds/WORLDCUP_API.md` for details.
+
 ## Data Source
 
 | Item | Value |

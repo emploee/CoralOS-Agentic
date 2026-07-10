@@ -1,5 +1,5 @@
 {
-  "name": "agent-economy-escrow",
+  "name": "txodds-escrow",
   "private": true,
   "description": "Anchor escrow — escrow-protected, buyer-released settlement (devnet)",
   "scripts": {

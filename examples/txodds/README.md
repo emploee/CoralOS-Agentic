@@ -2,6 +2,8 @@
 
 This example runs the default paid service: TxODDS TxLINE data is read by a server-side proxy, transformed into a fair-line analysis, and optionally settled through devnet Solana escrow.
 
+> **Free-tier disclaimer:** the TxLINE guest/free-tier access this example subscribes to (`npm run mint`, `agent/txline.ts`) is scoped to the **World Cup 2026 tournament window** and International Friendlies — it is a promotional data grant tied to that event, not a permanent free API. Outside that window, guest subscription or the odds/fixtures endpoints may stop returning live data or may be withdrawn entirely. If you fork this kit after the World Cup 2026 period, expect to either (a) obtain your own commercial TxODDS/TxLINE credentials, or (b) swap in a different data source behind `agent/service.ts` — the market protocol, policy, ledger, and escrow paths are service-agnostic and do not depend on TxODDS specifically. See `WORLDCUP_API.md` for the exact endpoints and constraints this assumption applies to.
+
 ## Layout
 
 ```text

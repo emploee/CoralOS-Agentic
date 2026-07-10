@@ -5,8 +5,7 @@
  * Deterministic, no devnet/Docker/LLM required:
  *   1. install/build the workspace packages the feed imports,
  *   2. start the real marketplace feed server against a temporary Coral extended-state fixture,
- *   3. assert health/feed/threads/runs/proof-receipts over HTTP,
- *   4. smoke the TxODDS Agent Desk static JS + Tauri JSON configs.
+ *   3. assert health/feed/threads/runs/proof-receipts over HTTP.
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -16,7 +15,6 @@ import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const feedDir = join(root, 'examples', 'marketplace', 'feed')
-const deskDir = join(root, 'examples', 'txodds-agent-desk')
 const port = process.env.READINESS_PORT ?? String(4100 + Math.floor(Math.random() * 1000))
 const base = `http://localhost:${port}`
 const tmp = mkdtempSync(join(tmpdir(), 'pay-readiness-'))
@@ -150,10 +148,6 @@ async function main() {
     assert(proof.finalState === 'SETTLED', 'proof artifact did not record settled final state')
     mkdirSync(artifactDir, { recursive: true })
     copyFileSync(proofFile, join(artifactDir, 'proof.json'))
-
-    run(deskDir, 'node', ['--check', 'ui/app.js'])
-    JSON.parse(readFileSync(join(deskDir, 'src-tauri', 'tauri.conf.json'), 'utf8'))
-    JSON.parse(readFileSync(join(deskDir, 'src-tauri', 'capabilities', 'default.json'), 'utf8'))
 
     console.log(`[readiness] PASS production-readiness e2e gate (proof: ${join(artifactDir, 'proof.json')})`)
   } finally {

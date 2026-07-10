@@ -72,4 +72,23 @@ describe('RoundCard', () => {
     render(<RoundCard round={settledRound} />)
     expect(screen.queryByTestId('verification')).toBeNull()
   })
+
+  it('shows the LLM audit trail when the round carries one', () => {
+    render(<RoundCard round={verifiedRound} />)
+    const rows = screen.getAllByTestId('trace-row')
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain('seller-scribe')
+    expect(rows[0].textContent).toContain('venice/llama-3.3-70b')
+    expect(screen.getAllByTestId('trace-status').map((el) => el.textContent)).toEqual(['used', 'skipped'])
+  })
+
+  it('never renders an affected-funds flag for the recorded fixtures (models never move funds)', () => {
+    render(<RoundCard round={verifiedRound} />)
+    expect(screen.queryByTestId('trace-funds')).toBeNull()
+  })
+
+  it('renders no trace section for a round with no LLM_USED entries', () => {
+    render(<RoundCard round={settledRound} />)
+    expect(screen.queryByTestId('agent-trace')).toBeNull()
+  })
 })

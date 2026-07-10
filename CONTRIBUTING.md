@@ -11,8 +11,7 @@ Contributions are welcome. The `main` branch is the integration branch — targe
 | `examples/txodds/` | TypeScript | The World Cup Oracle — the edge transform, the proxy (+ run grading), the web app, the research watcher |
 | `examples/txodds/escrow/` | Rust (Anchor) | The escrow + arbiter settlement contracts |
 | `examples/marketplace/` | TypeScript | The competitive market (3 rounds: classic / freelancer / research), the feed server, the React visualizer |
-| `examples/agent-economy/` | TypeScript | Autonomous purchase, bridge checkout, quickstart, and dashboard |
-| `coral-agents/` | TypeScript | The per-session agents: buyer, seller (+ personas), verifier, broker, echo, user-proxy |
+| `coral-agents/` | TypeScript | The per-session agents: buyer, seller (+ personas), verifier, broker, echo |
 
 ## Prerequisites
 

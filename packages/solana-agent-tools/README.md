@@ -60,7 +60,7 @@ The read-only wallet satisfies SAK's wallet interface for read tools while refus
 method. If a future example needs a signing wallet, it should be a new package path with a transaction
 review surface, not an expansion of this read-only plugin.
 
-Executable example: [`examples/agent-economy/solana-agent-kit`](../../examples/agent-economy/solana-agent-kit/README.md).
+This package has no standalone runnable example in this kit; see its own tests (`npm test`) for exercised usage of every tool.
 
 ## Dev
 

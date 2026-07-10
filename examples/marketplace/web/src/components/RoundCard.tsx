@@ -4,6 +4,7 @@ import { BidRow, DeclinedRow } from './BidRow'
 import { SettlementBadge } from './SettlementBadge'
 import { VerificationBadge } from './VerificationBadge'
 import { WorldCupPanel } from './WorldCupPanel'
+import { AgentTraceLog } from './AgentTraceLog'
 
 const short = (s: string | undefined) => s ? `${s.slice(0, 8)}...` : ''
 
@@ -65,6 +66,8 @@ export function RoundCard({ round }: { round: Round }) {
         {round.release && <SettlementBadge label="release" sig={round.release.sig} />}
         {round.refunded && <span className="settle settle-refund" data-testid="refund">refunded</span>}
       </footer>
+
+      <AgentTraceLog llm={round.llm} />
     </article>
   )
 }

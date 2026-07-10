@@ -10,8 +10,9 @@
  *   → VERIFY → VERIFIED pass → ARBITER_RELEASED
  *
  * Run order (three terminals or backgrounds):
- *   1. cd examples/txodds && npm run proxy       # the live board on :8801
- *   2. cd examples/txodds && npm run watch       # the event watcher on :4600 (research/watcher.ts)
+ *   1. cd examples/txodds && npm run proxy                     # the live board on :8801
+ *   2. cd coral-agents/signal-agent && npm start                # the event detector on :4600
+ *      (or: cd examples/txodds && npm run watch — the legacy bare-HTTP watcher, same contract)
  *   3. docker compose up -d coral && cd examples/marketplace && npm run research
  *
  * A deep-research tier (e.g. xpriment626/delve) joins as a persona with

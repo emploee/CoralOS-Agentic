@@ -1,43 +1,56 @@
 import { describe, expect, it } from 'vitest'
-import { PaymentRailRouter, escrowRail, payShRail, splUsdcRail } from './index.js'
+import { Keypair } from '@solana/web3.js'
+import { PaymentRailRouter, escrowRail, solanaPayRail, x402ClientRail } from './index.js'
 
 describe('PaymentRailRouter', () => {
-  it('routes stablecoin orders to the USDC rail when no explicit rail is set', async () => {
-    const router = new PaymentRailRouter([escrowRail(), splUsdcRail()])
+  it('honors an explicit rail over the default', async () => {
+    const router = new PaymentRailRouter([escrowRail(), x402ClientRail()])
+    const quote = await router.quote({
+      rail: 'x402',
+      service: 'upstream-call',
+      buyer: 'seller-agent',
+      amount: 0.0005,
+      currency: 'SOL',
+    })
+    expect(quote.rail).toBe('x402')
+  })
+
+  it('defaults to solana-pay when no rail is specified and it is registered', async () => {
+    const recipient = Keypair.generate().publicKey.toBase58()
+    const router = new PaymentRailRouter([escrowRail(), solanaPayRail({ recipient })])
     const request = await router.requestPayment({
       id: 'order-1',
       service: 'research-brief',
       buyer: 'buyer',
-      seller: 'seller',
+      seller: recipient,
       amount: '0.20',
-      currency: 'USDC',
+      currency: 'SOL',
     })
-    expect(request.rail).toBe('spl-usdc')
-    expect(request.metadata?.tokenProgram).toBe('spl-token')
+    expect(request.rail).toBe('solana-pay')
+    expect(request.payTo).toBe(recipient)
   })
 
-  it('honors explicit rails', async () => {
-    const router = new PaymentRailRouter([escrowRail(), payShRail({ providerAllowlist: ['pay.sh/exa'] })])
+  it('routes to escrow when requireEscrow is set, regardless of registration order', async () => {
+    const recipient = Keypair.generate().publicKey.toBase58()
+    const router = new PaymentRailRouter([solanaPayRail({ recipient }), escrowRail()])
     const quote = await router.quote({
-      rail: 'pay-sh',
-      service: 'upstream-search',
-      buyer: 'seller-agent',
-      amount: 0.03,
-      currency: 'USDC',
-      metadata: { provider: 'pay.sh/exa' },
+      requireEscrow: true,
+      service: 'dispute-prone-work',
+      buyer: 'buyer',
+      seller: 'seller',
+      amount: 1,
+      currency: 'SOL',
     })
-    expect(quote.rail).toBe('pay-sh')
+    expect(quote.rail).toBe('escrow')
   })
 
-  it('rejects disallowed Pay.sh providers', async () => {
-    const router = new PaymentRailRouter([payShRail({ providerAllowlist: ['pay.sh/exa'] })])
-    await expect(router.quote({
-      rail: 'pay-sh',
-      service: 'upstream-search',
-      buyer: 'seller-agent',
-      amount: 0.03,
-      currency: 'USDC',
-      metadata: { provider: 'pay.sh/perplexity' },
-    })).rejects.toThrow('provider not allowed')
+  it('throws registering the same rail kind twice', () => {
+    const recipient = Keypair.generate().publicKey.toBase58()
+    expect(() => new PaymentRailRouter([solanaPayRail({ recipient }), solanaPayRail({ recipient })])).toThrow(/already registered/)
+  })
+
+  it('throws asking for an unregistered rail', () => {
+    const router = new PaymentRailRouter([escrowRail()])
+    expect(() => router.get('x402')).toThrow(/not registered/)
   })
 })

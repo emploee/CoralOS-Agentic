@@ -2,7 +2,7 @@
 
 This repository includes a TxODDS TxLINE integration used by the default paid service. The integration reads World Cup and International Friendlies data from TxLINE, derives a fair-line analysis, and can bind that analysis to devnet Solana settlement.
 
-> **The free TxLINE guest tier is scoped to the World Cup 2026 tournament window.** It is a promotional grant tied to that event, not a standing free API — do not build against it assuming indefinite availability. See `examples/txodds/README.md` and `examples/txodds/WORLDCUP_API.md` for details.
+**Note:** The free TxLINE guest tier is scoped to the World Cup 2026 tournament window. See `examples/txodds/README.md` and `examples/txodds/WORLDCUP_API.md` for details.
 
 ## Data Source
 
@@ -63,7 +63,6 @@ The default service is implemented in:
 | `examples/txodds/agent/service.ts` | `deliverService()` wrapper for paid delivery. |
 | `examples/txodds/server/proxy.ts` | API proxy, settlement endpoints, run persistence. |
 | `examples/txodds/research/watcher.ts` | Polls `/api/board` and queues events when odds move. |
-| `examples/marketplace/research.ts` | Consumes watcher jobs as event-driven `WANT` messages. |
 
 ## Settlement Binding
 
@@ -91,12 +90,11 @@ bash build-agents.sh
 npm run demo:coral
 ```
 
-For event-driven research:
+For the odds-move research watcher:
 
 ```sh
 npm run dev
 npm run research:watch
-npm run research
 ```
 
 Use devnet wallets only unless a separate production review changes the policy.

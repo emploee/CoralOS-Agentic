@@ -871,7 +871,6 @@ main { max-width: 1120px; margin: 0 auto; padding: 22px 24px 64px; }
 }
 .path-card.primary { border-color: rgba(255,206,77,.32); }
 .path-card.wallet { border-color: rgba(185,164,255,.34); }
-.path-card.payrail { border-color: rgba(20,241,149,.28); }
 .path-top {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -936,12 +935,6 @@ main { max-width: 1120px; margin: 0 auto; padding: 22px 24px 64px; }
   transition: transform .12s, box-shadow .12s; box-shadow: 0 8px 22px rgba(124,92,255,.3); }
 .pay-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(124,92,255,.45); }
 .pay-btn:disabled { opacity: .65; cursor: default; }
-.pay-sh-btn { font: 700 13px 'Inter', sans-serif; color: #06210f; background: linear-gradient(90deg, var(--sol), #8dfbd0);
-  border: none; border-radius: 10px; padding: 10px 16px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
-  transition: transform .12s, box-shadow .12s; box-shadow: 0 8px 22px rgba(20,241,149,.22); }
-.pay-sh-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(20,241,149,.34); }
-.pay-sh-btn:disabled { opacity: .58; cursor: default; }
-.pay-sh-result { flex-basis: 100%; }
 .pay-err { font-size: 12px; color: var(--away); }
 .settled { font-size: 13px; }
 .settled.ok { color: var(--sol); }

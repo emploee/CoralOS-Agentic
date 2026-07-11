@@ -2,8 +2,8 @@
 
 The **minimal CoralOS agent** — it connects over MCP and echoes back any mention. Its jobs:
 
-1. **Connectivity check** — proves the MCP handshake works (this is "Gate A" in the smoke test:
-   `scripts/smoke/smoke-mcp.ts` drives an echo round-trip via the puppet API).
+1. **Connectivity check** — the smallest possible round-trip to prove the MCP handshake works
+   before debugging a real agent's logic.
 2. **Template** — the smallest possible `startCoralAgent` example to copy when writing a new agent.
 
 ```ts
@@ -24,4 +24,5 @@ buyer are this pattern with real logic inside.
 `CORAL_CONNECTION_URL` — injected by coral-server when it launches the container. No wallet, no keys.
 
 Build with `docker build -f coral-agents/echo-agent/Dockerfile -t echo-agent:0.1.0 .` (from repo
-root). Registered automatically via `config/coral.toml`'s `localAgents` scan.
+root). Registered via the launching example's `coral.toml` `[registry] localAgents` scan — see
+`examples/txodds/coral/coral.toml` for the pattern.

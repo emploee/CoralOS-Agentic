@@ -22,17 +22,15 @@ The Rust surface is limited to `examples/txodds/escrow`, which contains the escr
 | `packages/harness-runtime/` | Seller execution adapter SDK for `node-llm`, `claude-code`, and arbitrary CLI harnesses. |
 | `packages/payment-runtime/` | Rail interface/router, working devnet Solana Pay and escrow rails, scaffold rails, and proof receipts. |
 | `packages/solana-agent-tools/` | Read-only Solana context tools and optional Solana Agent Kit adapter. |
-| `examples/txodds/` | TxODDS proxy, web UI, service implementation, research watcher, and escrow workspace. |
-| `examples/marketplace/` | CoralOS market launchers, feed server, React visualizer, and ledger persistence. |
-| `coral-agents/` | Buyer, seller, verifier, broker, and echo agent containers. |
-| `scripts/` | Setup, wallet provisioning, example runner, and readiness e2e scripts. |
+| `examples/txodds/` | TxODDS proxy, web UI, service implementation, feed server, research watcher, and escrow workspace. |
+| `coral-agents/` | Buyer, seller, verifier, and echo agent containers. |
+| `scripts/` | Setup, wallet provisioning, and example runner scripts. |
 
 ## Common Commands
 
 ```sh
 npm run setup
 npm run dev
-npm run readiness:e2e
 ```
 
 Runtime package checks:
@@ -47,13 +45,7 @@ TxODDS checks:
 
 ```sh
 cd examples/txodds && npm install && npm run typecheck && npm test
-```
-
-Marketplace feed/web checks:
-
-```sh
-cd examples/marketplace/feed && npm install && npm test
-cd examples/marketplace/web && npm install && npm test && npm run e2e
+cd examples/txodds/feed && npm install && npm run typecheck && npm test
 ```
 
 ## TxODDS Example
@@ -88,10 +80,8 @@ The market protocol is owned by `packages/agent-runtime/src/market/protocol.ts`;
 
 `packages/agent-runtime/src/agent/` holds capability grants, process-level safety gates
 (`BudgetGuard`/`StepCounter`), a `Tool` contract with an audit-log shape, an evaluation/ranking
-helper, and a bounded provider-agnostic LLM tool-calling loop (`runToolLoop`). `coral-agents/signal-agent`
-is the first agent built on it — a Coral-native replacement for hand-running the TxODDS research
-watcher. See `docs/AGENT_ORCHESTRATION.md` for the full pattern set, a maturity ladder, and a worked
-example for adding a new specialist agent.
+helper, and a bounded provider-agnostic LLM tool-calling loop (`runToolLoop`), available for
+building new Coral-native agents.
 
 ## Payment and Policy
 
@@ -99,7 +89,7 @@ Solana value movement is devnet by default. Runtime helpers reject mainnet RPC U
 
 Policy checks are centralized in `packages/agent-runtime/src/policy` and cover spend caps, service allowlists, payout binding, award-price binding, rate limiting, and verifier gating.
 
-Harness processes should not receive signing keys. Agent processes hold wallet authority and call policy before deposits/releases.
+Harness processes should not receive signing keys. Agent processes hold wallet authority and call policy before deposits/releases. See `PAY.md` for how the three payment rails (Solana Pay, escrow, x402) are actually used, `CORAL.md` for how the coordination layer works, and `LLM.md` for how LLM-backed decisions are proposed and enforced.
 
 ## Environment
 

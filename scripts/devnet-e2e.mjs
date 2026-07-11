@@ -2,9 +2,7 @@
 /**
  * Live devnet smoke path.
  *
- * This intentionally stays separate from `e2e:local`: it uses real devnet wallets, CoralOS/Docker,
- * TxODDS credentials, and the escrow/arbiter clients. The deterministic no-secret gate is
- * `npm run e2e:local`.
+ * Uses real devnet wallets, CoralOS/Docker, TxODDS credentials, and the escrow/arbiter clients.
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'

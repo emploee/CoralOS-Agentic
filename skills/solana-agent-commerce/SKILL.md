@@ -1,6 +1,6 @@
 ---
 name: solana-agent-commerce
-description: Extend this repo with paid Solana agent services, seller personas, verifier gates, payment rails, Pay.sh procurement, x402 endpoints, USDC settlement, and marketplace examples.
+description: Extend this repo with paid Solana agent services, seller personas, verifier gates, payment rails, x402 procurement, and CoralOS market rounds.
 ---
 
 # Solana Agent Commerce Skill

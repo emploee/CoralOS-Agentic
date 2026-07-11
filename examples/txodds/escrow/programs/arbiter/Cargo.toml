@@ -14,9 +14,11 @@ cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
-idl-build = ["anchor-lang/idl-build", "escrow/idl-build"]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build", "escrow/idl-build"]
 
 [dependencies]
 anchor-lang = "0.32.1"
-# the escrow crate, with its `cpi` feature so we can call escrow::cpi::{initialize,release,refund}
+anchor-spl = { version = "0.32.1", features = ["token"] }
+# the escrow crate, with its `cpi` feature so we can call escrow::cpi::{initialize,release,refund,
+# initialize_spl,release_spl,refund_spl}
 escrow = { path = "../escrow", features = ["cpi"] }

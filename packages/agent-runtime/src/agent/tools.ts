@@ -28,8 +28,7 @@ export type ToolCallOutcome =
 
 /**
  * Written before execution begins and updated once the result is known — a tamper-evident audit
- * trail an agent desk UI can render per-agent, per-round (see `ToolCallAuditLog` in
- * examples/marketplace/web).
+ * trail an agent desk UI can render per-agent, per-round.
  */
 export interface ToolCallRecord {
   traceId: string

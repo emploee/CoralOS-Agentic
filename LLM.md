@@ -1,62 +1,42 @@
 # LLM Provider Configuration
 
-The shared LLM integration lives in `packages/agent-runtime/src/llm/complete.ts`. It exposes one SDK-free `complete()` function over `fetch` and supports Venice, OpenAI, and Anthropic through environment configuration.
-
-LLM calls are used for seller delivery, bid pricing, buyer award reasoning, verifier acceptance checks, and small example-specific summaries. Several paths have deterministic fallbacks so the demos can still run when no provider key is configured.
+`packages/agent-runtime/src/llm/complete.ts` exposes one SDK-free `complete()` function over `fetch`. Supports Venice, OpenAI, and Anthropic.
 
 ## Environment Variables
 
-Store provider keys in the repo-root `.env`, which is gitignored.
-
 | Variable | Description |
 |---|---|
-| `LLM_PROVIDER` | `venice`, `openai`, or `anthropic`. Set explicitly when more than one provider key exists. |
-| `VENICE_API_KEY` | Venice API key. Venice uses an OpenAI-compatible chat completion shape. |
+| `LLM_PROVIDER` | `venice`, `openai`, or `anthropic`. Set explicitly when more than one key exists. |
+| `VENICE_API_KEY` | Venice API key. |
 | `OPENAI_API_KEY` | OpenAI API key. |
 | `ANTHROPIC_API_KEY` | Anthropic API key. |
 | `LLM_MODEL` | Optional model override. |
 | `TRACE` | Set to `1` to log provider/model selection and raw replies. |
 
-Recommended explicit configuration:
-
 ```ini
+# .env (gitignored)
 LLM_PROVIDER=venice
 VENICE_API_KEY=...
-# LLM_MODEL=llama-3.3-70b
-```
-
-Alternative providers:
-
-```ini
-LLM_PROVIDER=openai
-OPENAI_API_KEY=sk-...
-```
-
-```ini
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 ## Provider Selection
 
-`pickProvider()` resolves the provider in this order:
+`pickProvider()` resolves in order:
 
-1. If `LLM_PROVIDER` is set to `venice`, `openai`, or `anthropic`, use it.
-2. Otherwise, if `OPENAI_API_KEY` exists, use OpenAI.
-3. Otherwise, if `VENICE_API_KEY` exists, use Venice.
-4. Otherwise, use Anthropic and let the call fail if no Anthropic key is configured.
-
-If multiple keys are set, configure `LLM_PROVIDER` explicitly.
+1. `LLM_PROVIDER` set explicitly → use it.
+2. `OPENAI_API_KEY` exists → OpenAI.
+3. `VENICE_API_KEY` exists → Venice.
+4. Fallback → Anthropic (fails if no key).
 
 ## Default Models
 
-| Provider | Default model |
+| Provider | Default Model |
 |---|---|
 | Venice | `llama-3.3-70b` |
 | OpenAI | `gpt-4o-mini` |
 | Anthropic | `claude-haiku-4-5-20251001` |
 
-`LLM_MODEL` overrides the default. Venice code/reasoning models such as `kimi-k2-7-code` are supported:
+Override with `LLM_MODEL`:
 
 ```ini
 LLM_PROVIDER=venice
@@ -64,9 +44,9 @@ VENICE_API_KEY=...
 LLM_MODEL=kimi-k2-7-code
 ```
 
-For Venice Kimi models, the runtime raises very small `maxTokens` requests to `1024` because those models may spend part of the budget before emitting `message.content`. Other providers and non-Kimi Venice models keep the caller's requested budget.
+Venice Kimi models: the runtime raises `maxTokens` requests below `1024` to `1024` (Kimi may consume budget on reasoning before emitting content).
 
-## Call Site Example
+## Usage
 
 ```ts
 import { complete } from '@pay/agent-runtime'
@@ -74,23 +54,72 @@ import { complete } from '@pay/agent-runtime'
 const text = await complete({
   system: 'Return one concise technical sentence.',
   user: 'Summarize this paid API result.',
-  model: 'llama-3.3-70b',
+  model: 'llama-3.3-70b',    // optional — overrides LLM_MODEL and provider default
   maxTokens: 256,
 })
 ```
 
-A per-call `model` value wins over `LLM_MODEL` and provider defaults.
+## Decision Points
+
+| Decision | File | How LLM Output Is Used |
+|---|---|---|
+| Seller bid pricing | `packages/harness-runtime/src/quote.ts` | Bounded tool-calling loop (`runToolLoop`, max 4 rounds). Price re-clamped into `[floor, budget]` by code. |
+| Buyer award pick | `coral-agents/buyer-agent/src/index.ts` | Single call, falls back to cheapest bid. Must name a seller from the actual bid pool. |
+| Verifier acceptance | `coral-agents/verifier-agent/src/verify.ts` | Deterministic checks (hash, structure) run first. LLM only consulted if those pass. |
+
+Every decision follows **propose → enforce**: the model proposes, deterministic code clamps/validates.
+
+### Bid Review (Optional)
+
+Set `BID_REVIEW_ENABLED=1` on a seller persona to add a second, independently-prompted loop that can veto a proposed bid. The reviewer has no visibility into the first loop's reasoning.
+
+```toml
+# coral-agents/seller-worldcup/coral-agent.toml
+[agent.env]
+BID_REVIEW_ENABLED = "1"
+```
+
+## Safety
+
+| Mechanism | File | Purpose |
+|---|---|---|
+| `BudgetGuard` | `packages/agent-runtime/src/agent/safety.ts` | Caps tool calls, spend, wall-clock duration per agent process. |
+| `StepCounter` | `packages/agent-runtime/src/agent/safety.ts` | Caps consecutive loop iterations. |
+| `wrapUntrusted()` | `packages/agent-runtime/src/agent/safety.ts` | Delimits external text before re-entering a prompt. |
+| Policy enforcement | `packages/agent-runtime/src/policy/` | Gates fund-moving actions independently of LLM output. |
+
+## Audit Trail
+
+Every LLM-backed decision emits an `LlmUse` record into the run ledger:
+
+```ts
+{
+  round: 1,
+  agent: 'seller-worldcup',
+  purpose: 'bid-decision',
+  status: 'ok',
+  provider: 'venice',
+  model: 'llama-3.3-70b',
+  inputHash: 'sha256:...',
+  outputHash: 'sha256:...',
+  affectedFunds: false,          // always false — fund-moving is policy-gated
+}
+```
+
+## Fallback Behavior
+
+When a provider key is absent, invalid, rate-limited, or exhausted, callers either surface the error or use a deterministic fallback. TxODDS UI labels deterministic reads separately from LLM reads.
 
 ## Adding a Provider
 
-All provider wiring is in `packages/agent-runtime/src/llm/complete.ts`:
+All wiring is in `packages/agent-runtime/src/llm/complete.ts`:
 
 1. Add the provider to `LlmProvider`.
 2. Add a default model.
 3. Update `pickProvider()`.
 4. Add a `complete*()` implementation and dispatch from `complete()`.
 
-For OpenAI-compatible providers, reuse the shared request helper:
+For OpenAI-compatible providers:
 
 ```ts
 async function completeCustom(opts: CompleteOpts, model: string, maxTokens: number): Promise<string> {
@@ -104,14 +133,11 @@ async function completeCustom(opts: CompleteOpts, model: string, maxTokens: numb
 }
 ```
 
-After runtime edits:
+After changes:
 
 ```sh
-cd packages/agent-runtime
-npm run build
+cd packages/agent-runtime && npm run build
 ```
-
-Local `file:` dependents read the built `dist/` output.
 
 ## Restart Requirements
 
@@ -120,15 +146,8 @@ Restart processes after changing `.env`:
 | Process | Restart |
 |---|---|
 | TxODDS web demo | Restart `npm run dev`. |
-| CoralOS round | Re-run the launcher; it forwards `.env` values to agent options. |
-| Agent-economy bridge | Restart the bridge container/process. |
-
-## Fallback Behavior
-
-When a provider key is absent, invalid, rate-limited, or exhausted, callers either surface the error or use a deterministic fallback depending on the flow. TxODDS UI output labels deterministic reads separately from live LLM reads.
-
-Use `TRACE=1` when diagnosing provider/model selection.
+| CoralOS round | Re-run the launcher. |
 
 ## Security
 
-Provider keys must stay in `.env` or deployment secrets. Do not commit provider keys, log them in full, or pass them to harness processes unless a specific harness requires model access and the risk is reviewed.
+Provider keys must stay in `.env` or deployment secrets. Do not commit keys, log them, or pass them to harness processes.

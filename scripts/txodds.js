@@ -18,7 +18,7 @@ import { platform } from 'node:os'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const txDir = join(root, 'examples', 'txodds')
-const feedDir = join(root, 'examples', 'marketplace', 'feed')
+const feedDir = join(root, 'examples', 'txodds', 'feed')
 const agenticRunsDir = join(txDir, 'data', 'agentic-runs')
 const feedPort = process.env.TXODDS_FEED_PORT ?? '4000'
 const proxyPort = process.env.TXODDS_PROXY_PORT ?? '8801'

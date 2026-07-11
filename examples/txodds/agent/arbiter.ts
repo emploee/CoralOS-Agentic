@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 import anchor from '@coral-xyz/anchor'
 import type { Program } from '@coral-xyz/anchor'
 import { Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram } from '@solana/web3.js'
+import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync, getMint } from '@solana/spl-token'
 import { solanaConnection } from '@pay/agent-runtime'
 import { PROGRAM_ID as ESCROW_PROGRAM_ID } from './escrow.js'
 
@@ -35,6 +36,9 @@ export const vaultPda = (reference: PublicKey): PublicKey =>
 /** The escrow PDA for an arbitrated order - seeded by the VAULT (its buyer), not the human payer. */
 export const arbitratedEscrowPda = (vault: PublicKey, reference: PublicKey): PublicKey =>
   PublicKey.findProgramAddressSync([Buffer.from('escrow'), vault.toBuffer(), reference.toBuffer()], ESCROW_PROGRAM_ID)[0]
+/** SPL analog of `arbitratedEscrowPda` - a distinct PDA (`escrow_spl` seed) from the SOL escrow. */
+export const arbitratedEscrowSplPda = (vault: PublicKey, reference: PublicKey): PublicKey =>
+  PublicKey.findProgramAddressSync([Buffer.from('escrow_spl'), vault.toBuffer(), reference.toBuffer()], ESCROW_PROGRAM_ID)[0]
 
 /** Program handle. `signer` is the provider wallet that pays fees (the payer for open, the arbiter for arbitrate). */
 export function makeArbiter(signer: Keypair, rpcUrl: string): Program {
@@ -86,6 +90,82 @@ export async function arbitrateRefund(
     .accounts({
       arbiter: arbiter.publicKey, config: configPda(), vault, payer, escrow,
       escrowProgram: ESCROW_PROGRAM_ID, systemProgram: SystemProgram.programId,
+    })
+    .signers([arbiter]).rpc()
+}
+
+// --- SPL-token arbitrated escrow (same 3-party flow, an EscrowSpl vault under `escrow_spl`) ---
+
+export async function openSpl(
+  program: Program, payer: Keypair, seller: PublicKey, mint: PublicKey, reference: PublicKey, amount: number, deadlineSecs: number,
+): Promise<string> {
+  const vault = vaultPda(reference)
+  const escrow = arbitratedEscrowSplPda(vault, reference)
+  const deadline = new BN(Math.floor(Date.now() / 1000) + deadlineSecs)
+  const decimals = (await getMint(program.provider.connection, mint)).decimals
+  return (program.methods as any)
+    .openSpl(new BN(Math.round(amount * 10 ** decimals)), reference, deadline)
+    .accounts({
+      payer: payer.publicKey,
+      mint,
+      payerAta: getAssociatedTokenAddressSync(mint, payer.publicKey),
+      vault,
+      vaultAta: getAssociatedTokenAddressSync(mint, vault, true),
+      seller,
+      escrow,
+      escrowAta: getAssociatedTokenAddressSync(mint, escrow, true),
+      escrowProgram: ESCROW_PROGRAM_ID,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .signers([payer]).rpc()
+}
+
+export async function arbitrateReleaseSpl(
+  program: Program, arbiter: Keypair, seller: PublicKey, mint: PublicKey, reference: PublicKey,
+): Promise<string> {
+  const vault = vaultPda(reference)
+  const escrow = arbitratedEscrowSplPda(vault, reference)
+  return (program.methods as any)
+    .arbitrateReleaseSpl(reference)
+    .accounts({
+      arbiter: arbiter.publicKey,
+      config: configPda(),
+      mint,
+      vault,
+      seller,
+      sellerAta: getAssociatedTokenAddressSync(mint, seller),
+      escrow,
+      escrowAta: getAssociatedTokenAddressSync(mint, escrow, true),
+      escrowProgram: ESCROW_PROGRAM_ID,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .signers([arbiter]).rpc()
+}
+
+export async function arbitrateRefundSpl(
+  program: Program, arbiter: Keypair, payer: PublicKey, mint: PublicKey, reference: PublicKey,
+): Promise<string> {
+  const vault = vaultPda(reference)
+  const escrow = arbitratedEscrowSplPda(vault, reference)
+  return (program.methods as any)
+    .arbitrateRefundSpl(reference)
+    .accounts({
+      arbiter: arbiter.publicKey,
+      config: configPda(),
+      mint,
+      vault,
+      vaultAta: getAssociatedTokenAddressSync(mint, vault, true),
+      payer,
+      payerAta: getAssociatedTokenAddressSync(mint, payer),
+      escrow,
+      escrowAta: getAssociatedTokenAddressSync(mint, escrow, true),
+      escrowProgram: ESCROW_PROGRAM_ID,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
     })
     .signers([arbiter]).rpc()
 }

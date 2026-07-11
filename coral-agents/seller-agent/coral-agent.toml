@@ -21,6 +21,7 @@ AGENT_NAME = { type = "string", default = "seller-agent", description = "Market 
 SERVICES = { type = "string", default = "txline", description = "Inventory; the TxODDS demo uses txline" }
 FLOOR_SOL = { type = "f64", default = 0.0005, description = "Minimum bid in SOL" }
 PERSONA = { type = "string", default = "a TxODDS specialist selling verified fair-line reads", description = "Bidding persona" }
+BID_REVIEW_ENABLED = { type = "string", default = "0", description = "Set to 1 to run a second, adversarial review loop before posting a bid" }
 SERVICE = { type = "string", default = "txline", description = "Delivery service; only txline is routed" }
 SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL" }
 SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter (default) | direct legacy base escrow" }

@@ -1,189 +1,154 @@
 # Solana CoralOS Agent Commerce
 
-This repository implements a devnet reference system for paid agent services. Agents coordinate through CoralOS, exchange typed market messages, and settle orders through Solana payment rails. The default service uses TxODDS TxLINE football data, but the protocol, runtime packages, and examples are organized so other services can use the same payment and verification path.
+Devnet reference system for paid agent services. Agents coordinate through CoralOS, exchange typed market messages, and settle orders through Solana payment rails. The default service uses TxODDS TxLINE football data; the protocol, runtime packages, and examples support any service.
 
-The repository is not mainnet production software. The working value flows are devnet-only unless a separate launch review changes the policy and configuration.
+Not mainnet production software. All value flows are devnet-only unless a separate launch review changes the policy.
 
 ## System Model
-
-The core market lifecycle is:
 
 ```text
 WANT -> BID -> AWARD -> ESCROW_REQUIRED -> DEPOSITED -> DELIVERED -> VERIFIED -> RELEASED
 ```
 
-For rail-based procurement, the market protocol also supports:
+Rail-based procurement:
 
 ```text
 PAYMENT_REQUIRED -> PAYMENT_PROOF -> PAYMENT_CONFIRMED -> SETTLED
 ```
 
-Responsibilities are separated by subsystem:
+| Subsystem | Responsibility |
+|---|---|
+| CoralOS | Session orchestration, agent discovery, threads, mentions, blocking coordination. |
+| Agent runtime | LLM calls, Coral MCP client, market parsers, run ledger, Solana helpers, policy, bounded tool-calling loop. |
+| Harness runtime | Seller execution adapter (`node-llm`, `claude-code`, or arbitrary CLI). |
+| Payment runtime | Rail abstraction, routing, verification records, rail-specific policy. |
+| TxODDS example | Default paid service, proxy, browser UI, live agent feed, research watcher, escrow clients, Anchor programs. |
+| Coral agents | Buyer, seller, verifier, and echo agent processes. |
 
-| Subsystem       | Responsibility                                                                                                       |
-| --------------- | -------------------------------------------------------------------------------------------------------------------- |
-| CoralOS         | Session orchestration, agent discovery, threads, mentions, and blocking coordination.                                |
-| Agent runtime   | LLM provider calls, Coral MCP client, market parsers/formatters, run ledger, Solana helpers, and policy enforcement. |
-| Harness runtime | Adapter boundary for seller execution through`node-llm`, `claude-code`, or an arbitrary CLI.                     |
-| Payment runtime | Rail abstraction, rail routing, payment verification records, and rail-specific policy helpers.                      |
-| TxODDS example  | Default paid service, proxy, browser UI, research watcher, escrow clients, and Anchor programs.                      |
-| Coral agents    | Buyer, seller, verifier, broker, and echo agent processes launched per session.                                      |
+## Coral Agents
+
+| Agent | Role | Launched as |
+|---|---|---|
+| `buyer-agent` | Posts `WANT`, collects bids, awards, deposits to escrow, verifies delivery, releases/refunds. | CoralOS container. |
+| `seller-agent` | Bids, verifies funded escrow, runs harness adapter, delivers. Base image for `seller-worldcup`. | CoralOS container. |
+| `verifier-agent` | Checks delivery hash/structure, replies `VERIFIED pass\|fail`. Holds no wallet. | CoralOS container. |
+| `echo-agent` | MCP connectivity smoke test and new-agent template. | CoralOS container. |
+
+**Persona pattern:** `seller-worldcup` has no code — a `coral-agent.toml` pointing at the `seller-agent` Docker image with its own `AGENT_NAME`/`PERSONA`/`FLOOR_SOL`/`SERVICES`. Copy this for a new persona.
+
+**Agent discovery:** `examples/txodds/coral/coral.toml` uses `[registry] localAgents = ["/agents/*"]` to wildcard-scan `coral-agents/` for any `coral-agent.toml`. No manual registration needed.
+
+## Forking This Kit
+
+1. **Replace the service.** `examples/txodds/agent/service.ts` → `deliverService()` is marked "THE fork point."
+2. **Point sellers at it.** Set `SERVICES` in a persona manifest or env var.
+3. **Choose your rails.** Solana Pay works with no setup. Escrow needs deployed programs (see below). x402 needs `PROCURE_RAIL=x402` (see below).
+4. **Devnet-only by default.** `ALLOW_MAINNET=1` must be explicitly set to use mainnet.
+5. **Three payment rails ship.** Solana Pay, escrow, x402. All others were removed by design — see [PAYMENT_RAIL_INTEGRATION.md](docs/PAYMENT_RAIL_INTEGRATION.md).
 
 ## Repository Layout
 
-| Path                             | Purpose                                                                                                |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `packages/agent-runtime/`      | Shared runtime: LLM shim, Coral MCP client, market protocol, Solana guard/helpers, ledger, and policy. |
-| `packages/harness-runtime/`    | Seller execution adapter interface and adapter implementations.                                        |
-| `packages/payment-runtime/`    | Payment rail interface, router, rail implementations/scaffolds, and proof receipts.                    |
-| `packages/solana-agent-tools/` | Read-only Solana context tools and Solana Agent Kit-compatible plugin.                                 |
-| `coral-agents/`                | Dockerized agents registered with CoralOS.                                                             |
-| `examples/txodds/`             | Default TxODDS oracle, proxy, web UI, research watcher, and escrow programs.                           |
-| `examples/marketplace/`        | Multi-seller market launchers, feed server, React visualizer, and run ledger persistence.              |
-| `scripts/`                     | Setup, example launcher, wallet provisioning, and readiness gate scripts.                              |
+| Path | Purpose |
+|---|---|
+| `packages/agent-runtime/` | Shared runtime: LLM shim, Coral MCP client, market protocol, Solana guard/helpers, ledger, policy. |
+| `packages/harness-runtime/` | Seller execution adapter interface and implementations. |
+| `packages/payment-runtime/` | Payment rail interface, router, implementations, proof receipts. |
+| `packages/solana-agent-tools/` | Read-only Solana context tools and Solana Agent Kit plugin. |
+| `coral-agents/` | Dockerized agents registered with CoralOS. |
+| `examples/txodds/` | TxODDS oracle, proxy, web UI, feed, research watcher, escrow programs. |
+| `scripts/` | Setup, example launcher, wallet provisioning. |
 
 ## Requirements
 
-| Requirement                     | Used by                                                                               |
-| ------------------------------- | ------------------------------------------------------------------------------------- |
-| Node.js 20+                     | Runtime packages, scripts, TxODDS, marketplace.                                       |
-| Docker                          | CoralOS sessions, marketplace, verifier/buyer/seller/broker agents.                   |
-| Devnet SOL                      | Buyer, broker, and wallet checkout flows.                                             |
-| LLM provider key                | Optional for live model output; deterministic fallbacks are present in several paths. |
-| Rust, Solana CLI, Anchor 0.32.x | Only needed to rebuild or redeploy`examples/txodds/escrow`.                         |
-| Node.js 22+                     | Only needed for the optional Solana Agent Kit example.                                |
+| Requirement | Used by |
+|---|---|
+| Node.js 20+ | Runtime packages, scripts, TxODDS. |
+| Docker | CoralOS sessions and agent containers. |
+| Devnet SOL | Buyer and wallet checkout flows. |
+| LLM provider key | Optional; deterministic fallbacks exist. |
+| Rust, Solana CLI, Anchor 0.32.x | Only for rebuilding `examples/txodds/escrow`. |
 
-Secrets and generated wallets belong in the repo-root `.env`, which is gitignored.
+Secrets and generated wallets go in `.env` (gitignored).
 
-## Initial Setup
+## Setup
 
 ```sh
 npm run setup
 ```
 
-The setup command installs the root npm workspace, installs setup-script dependencies, writes devnet wallet variables to `.env`, and records public addresses in `WALLETS.txt`. Fund the buyer address with devnet SOL before running settlement flows.
+Installs the workspace, writes devnet wallet variables to `.env`, records public addresses in `WALLETS.txt`. Fund the buyer address with devnet SOL before running settlement flows.
 
-LLM configuration is optional for many demos but required for live model reasoning:
+Optional LLM configuration:
 
 ```ini
 LLM_PROVIDER=venice
 VENICE_API_KEY=...
-# or:
-# LLM_PROVIDER=openai
-# OPENAI_API_KEY=...
-# or:
-# LLM_PROVIDER=anthropic
-# ANTHROPIC_API_KEY=...
 ```
 
-See [LLM.md](LLM.md) for provider selection, model override behavior, and fallback behavior.
+See [LLM.md](LLM.md) for provider selection and fallback behavior.
 
-## Canonical Starter Path
-
-The deterministic local path is the starter repo's main "done E2E" check:
+## Verify
 
 ```sh
-npm run setup
 npm run build
 npm run typecheck
 npm test
-npm run e2e:local
 ```
 
-Success means the workspace packages build to `dist`, all package/example/agent typechecks and unit tests pass, the recorded Coral market settles through the feed/ledger path, `proof_receipts.json` is written, and `.artifacts/readiness/proof.json` records:
+No Docker, devnet, wallets, or LLM keys required.
 
-```json
-{
-  "roundId": "fixture/round-42",
-  "want": "txline edge-9001 budget=0.001",
-  "bid": "seller-premium price=0.0005",
-  "award": "seller-premium",
-  "escrow": "Ref42 seller=7jwB amount=0.0005",
-  "depositSignature": "dep42",
-  "deliveryHash": "...",
-  "verified": true,
-  "releaseSignature": "rel42",
-  "finalState": "SETTLED"
-}
-```
-
-The live devnet path is separate:
+## Live Devnet E2E
 
 ```sh
 npm run e2e:devnet
 ```
 
-It preflights `.env`, builds the workspace and agents, optionally builds Docker agent images, and launches the CoralOS devnet round. It requires Docker/CoralOS, funded devnet wallets, `ARBITER_KEYPAIR_B58`, and TxLINE access. LLM keys remain optional when deterministic fallbacks are available.
+Requires Docker/CoralOS, funded devnet wallets, `ARBITER_KEYPAIR_B58`, and TxLINE access.
 
-## Common Commands
+### Prerequisites
 
-Run commands from the repo root unless noted.
+- **Docker running.** Checked with `docker info`.
+- **`.env` has `WALLET`, `BUYER_KEYPAIR_B58`, `ARBITER_KEYPAIR_B58`, `TXLINE_API_KEY`.** `npm run setup` generates the first three; `TXLINE_API_KEY` needs `npm run mint`.
+- **Buyer wallet funded.** Devnet SOL from the web faucet (CLI/RPC airdrops are gated).
+- **Arbiter wallet funded** for multi-agent flow. The single-agent path (`npm run dev`) auto-tops it up; `demo:coral` does not.
+- **`TXLINE_API_KEY` fresh.** Short-lived; re-run `cd examples/txodds && npm run mint` before each session.
+- **First run builds Docker images** (`build-agents.sh`). Set `BUILD_AGENT_IMAGES=0` to skip rebuilds.
 
-| Command                                    | Description                                                        | Requirements                                              |
-| ------------------------------------------ | ------------------------------------------------------------------ | --------------------------------------------------------- |
-| `npm run setup`                          | Install workspace/script deps and generate `.env` wallets.        | Node 20+.                                                 |
-| `npm run build`                          | Build workspace packages and Coral agents.                       | Root workspace installed.                                 |
-| `npm run typecheck`                      | Typecheck packages, examples, and Coral agents.                  | Root workspace installed.                                 |
-| `npm test`                               | Run package, example, and Coral agent unit tests.                | Root workspace installed.                                 |
-| `npm run dev`                            | Start the TxODDS proxy, feed, static UI, and Coral Console probe. | Funded buyer wallet for settlement; Docker optional for console. |
-| `npm run coral:console:e2e`              | Start Coral Server and verify Coral Console at `/ui/console`.   | Docker/CoralOS.                                           |
-| `npm run readiness:e2e`                  | Deterministic readiness gate using recorded data.                  | No Docker, devnet, wallet, or LLM key required.           |
-| `npm run e2e:local`                      | Alias for the deterministic readiness gate.                       | No Docker, devnet, wallet, or LLM key required.           |
-| `npm run e2e:devnet`                     | Live devnet CoralOS/escrow smoke path.                            | Docker, CoralOS, TxLINE token, funded wallets.            |
-| `npm run demo:coral`                     | Launch the TxODDS CoralOS round.                                   | Docker, built agent images, TxLINE token, funded wallets. |
-| `npm run marketplace`                    | Launch the classic multi-seller market.                            | Docker and built agent images.                            |
-| `npm run freelancer`                     | Launch verifier-gated harness-seller market.                       | Docker and verifier/seller images.                        |
-| `npm run research`                       | Launch event-driven research market.                               | Docker plus TxODDS proxy and watcher.                     |
-| `npm run research:watch`                 | Start the TxODDS odds-move watcher.                                | TxODDS proxy.                                             |
-| `npm run marketplace:web`                | Start the React market visualizer.                                 | Feed server or dashboard start endpoint.                  |
+## Commands
 
-## TxODDS Single-Agent Flow
+| Command | Description | Requirements |
+|---|---|---|
+| `npm run setup` | Install workspace, generate `.env` wallets. | Node 20+. |
+| `npm run build` | Build workspace packages and agents. | Workspace installed. |
+| `npm run typecheck` | Typecheck everything. | Workspace installed. |
+| `npm test` | Run all unit tests. | Workspace installed. |
+| `npm run dev` | Start TxODDS proxy, feed, UI, Coral Console probe. | Funded buyer wallet; Docker optional for console. |
+| `npm run e2e:devnet` | Live devnet CoralOS/escrow smoke. | Docker, CoralOS, TxLINE, funded wallets. |
+| `npm run demo:coral` | Launch TxODDS CoralOS round. | Docker, built images, TxLINE, funded wallets. |
+| `npm run research:watch` | Start odds-move watcher. | TxODDS proxy running. |
+
+## Single-Agent Flow
 
 `npm run dev` starts:
 
-| Process                             | Port     | Responsibility                                                                                        |
-| ----------------------------------- | -------- | ----------------------------------------------------------------------------------------------------- |
+| Process | Port | Responsibility |
+|---|---|---|
 | `examples/txodds/server/proxy.ts` | `8801` | TxLINE subscription, board data, edge analysis, settlement, Solana Pay verification, run persistence. |
-| Coral Server / Coral Console        | `5555` | CoralOS coordinator and built-in visual console at `/ui/console`, when Docker is available.           |
-| `examples/marketplace/feed`         | `4000` | Coral session reader, thread API, run ledger replay, and dashboard-safe feed endpoints.                |
-| `examples/txodds/web/`            | `3020` | Static React UI for fixtures, analysis, settlement links, runs, proof receipts, and grading.          |
+| Coral Server / Console | `5555` | CoralOS coordinator and visual console at `/ui/console` (when Docker available). |
+| `examples/txodds/feed` | `4000` | Coral session reader, thread API, run ledger replay, feed endpoints. |
+| `examples/txodds/web/` | `3020` | Static React UI for fixtures, analysis, settlement, runs, proof receipts, grading. |
 
-The proxy keeps TxLINE credentials and keypairs server-side. Browser calls use local proxy endpoints such as `/api/board`, `/api/edge`, `/api/settle`, `/api/pay-intent`, `/api/pay-verify`, `/api/runs`, and `/api/grade-runs`.
-
-The default paid service is implemented around `examples/txodds/agent/service.ts` and `examples/txodds/agent/edge.ts`.
-
-Coral Console is built into Coral Server and is probed during `npm run dev`. By default, unavailable Docker/CoralOS logs a warning and local TxODDS dev continues. Set `CORAL_CONSOLE_REQUIRED=1` to make dev fail when the console is unavailable, or `CORAL_CONSOLE=0` to skip the probe.
-
-## Multi-Agent Market Flow
-
-Multi-agent examples use CoralOS through `docker-compose.yml`:
+## Multi-Agent Flow
 
 ```sh
 docker compose up -d coral
 bash build-agents.sh
-npm run marketplace
+npm run demo:coral
 ```
 
-The buyer opens a market thread, posts `WANT`, collects `BID` messages, awards a seller, deposits to escrow, waits for delivery, optionally requests verifier approval, and releases through policy.
-
-`examples/marketplace/` is a first-class, self-standing example: it also ships a shared agent framework (capability grants, budget/step safety gates, a bounded LLM tool-call loop), a Coral-native signal agent that folds live odds-move detection into the market itself, and a trace/arena UI. See [docs/AGENT_ORCHESTRATION.md](docs/AGENT_ORCHESTRATION.md) for the full pattern set and how to extend it with new agent roles.
-
-The marketplace feed server converts Coral extended session state into typed rounds and ledger records:
-
-```sh
-cd examples/marketplace/feed
-SESSION=<session-id> npm start
-```
-
-The visualizer reads the feed API:
-
-```sh
-npm run marketplace:web
-```
+Buyer opens a market thread, posts `WANT`, collects `BID`, awards a seller, deposits to escrow, waits for delivery, requests verification, releases through policy.
 
 ## Payment Rails
-
-`packages/payment-runtime` exposes one `PaymentRail` interface:
 
 ```ts
 interface PaymentRail {
@@ -196,101 +161,85 @@ interface PaymentRail {
 }
 ```
 
-Rail status:
+| Rail | Status |
+|---|---|
+| Solana Pay | Working devnet demo with reference-bound verification. |
+| Escrow | Working devnet rail — SOL and SPL flows deployed and tested. |
+| x402 | Working: challenge/settle flow. Consumer: `coral-agents/seller-agent` with `PROCURE_RAIL=x402`. |
 
-| Rail            | Status                                                       |
-| --------------- | ------------------------------------------------------------ |
-| Solana Pay      | Working devnet demo rail with reference-bound verification.  |
-| Escrow          | Working devnet rail through deployed escrow/arbiter clients. |
-| Pay.sh          | Simulated/proof-adapter rail with caller-supplied receipts.  |
-| x402            | HTTP 402 challenge/proof scaffold.                           |
-| SPL USDC        | Metadata/token-escrow scaffold; no SPL transfer is sent.     |
-| Allowance       | Policy wrapper around an inner rail.                         |
-| Embedded wallet | Provider wrapper scaffold.                                   |
-| Payout          | Seller-side payout proof scaffold.                           |
+### x402 Upstream Procurement
 
-Proofs can be normalized into `ProofReceipt` records and written to the run ledger.
+| Variable | Purpose |
+|---|---|
+| `PROCURE_RAIL=x402` | Enables the x402 procurement leg. Off by default. |
+| `SELLER_KEYPAIR_B58` | Seller's spend key for this leg (distinct from `SELLER_WALLET`). Needs devnet SOL. |
+| `PROCURE_X402_URL` | x402-protected resource URL. Defaults to `http://host.docker.internal:8801/api/edge-x402`. |
+
+```sh
+PROCURE_RAIL=x402 SELLER_KEYPAIR_B58=<base58> npm run demo:coral
+```
 
 ## Escrow Programs
 
-The Anchor workspace in `examples/txodds/escrow` contains two deployed devnet programs:
+| Program | Devnet ID | Role |
+|---|---|---|
+| Escrow | `R5NWNg9eRLWWQU81Xbzz5Du1k7jTDeeT92Ty6qCeXet` | Per-order SOL PDA with `initialize`, `release`, `refund`. |
+| Arbiter | `FJtuVXsyXuRKqgJBEPAXmktkd13CqStapgevzGwYktXd` | Vault-as-buyer wrapper with neutral release/refund authority. |
 
-| Program | Devnet id                                        | Role                                                               |
-| ------- | ------------------------------------------------ | ------------------------------------------------------------------ |
-| Escrow  | `R5NWNg9eRLWWQU81Xbzz5Du1k7jTDeeT92Ty6qCeXet`  | Per-order SOL PDA with`initialize`, `release`, and `refund`. |
-| Arbiter | `FJtuVXsyXuRKqgJBEPAXmktkd13CqStapgevzGwYktXd` | Vault-as-buyer wrapper with neutral release/refund authority.      |
+### Deploying Your Own
 
-The base escrow PDA is seeded by `(buyer, reference)`. The arbiter wrapper funds a vault PDA that becomes the escrow buyer, so the payer cannot unilaterally release or refund after delivery.
+```sh
+cd examples/txodds/escrow
+anchor keys sync   # for a genuinely new deploy
+anchor build
+anchor deploy --provider.cluster devnet
+```
 
-Use devnet by default. The runtime guard rejects mainnet RPC URLs unless `ALLOW_MAINNET=1` is set.
+For upgrades to already-deployed programs, see `examples/txodds/escrow/README.md`.
 
 ## Run Ledger
 
-The run ledger records paid rounds as directories containing JSON artifacts:
-
 ```text
 runs/<session>/round-<n>/
-  run.json
-  want.json
-  bids.json
-  award.json
-  escrow.json
-  delivery.json
-  verification.json
-  proof_receipts.json
-  proof.json
-  llm.json
-  transcript.jsonl
-  txs.json
+  run.json, want.json, bids.json, award.json, escrow.json,
+  delivery.json, verification.json, proof_receipts.json,
+  proof.json, llm.json, transcript.jsonl, txs.json
 ```
 
-`proof.json` is the compact E2E success artifact. The ledger is used by the marketplace feed, visualizer, reputation calculation, and TxODDS proxy. Finished sessions can be replayed from ledger files when CoralOS is unavailable.
+`proof.json` is the compact E2E success artifact. Used by `examples/txodds/feed`, reputation, and the proxy.
 
-## Policy Boundaries
+## Policy
 
-Policy checks live in `packages/agent-runtime/src/policy`.
+Policy checks in `packages/agent-runtime/src/policy`:
 
-Enforced checks include:
+- Per-round and per-session spend caps
+- Service allowlist
+- Payout wallet binding
+- Award-price binding
+- Rate limiting
+- Verifier gate for release
+- Devnet guard
 
-- per-round and per-session spend caps;
-- service allowlist;
-- payout wallet binding;
-- award-price binding;
-- minimum interval/rate limiting;
-- verifier gate for release;
-- devnet guard through Solana connection helpers.
+Harness processes hold no signing keys. Agents call policy before deposits and releases.
 
-Harness processes do not hold signing keys. Agents keep wallet authority and call policy before deposits and releases.
+## Further Reading
 
-This is the mandatory choke point for fund-moving actions in the starter: deposit, release, refund, payout, or rail payment code must pass through the same policy boundary before signing or treating a proof as payable.
+| Doc | Covers |
+|---|---|
+| [PAY.md](PAY.md) | Payment rails usage, policy enforcement, code examples. |
+| [CORAL.md](CORAL.md) | CoralOS session/agent mechanics. |
+| [LLM.md](LLM.md) | Provider selection, model override, fallback behavior. |
+| [API.md](API.md) | Service-agnostic API usage guide for any integration. |
+| [docs/AGENT_DEPTH_PLAN.md](docs/AGENT_DEPTH_PLAN.md) | Bounded tool-calling loop and adversarial review. |
+| [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) | Readiness status, promotion checklist, open blockers. |
+| [docs/PAYMENT_RAIL_INTEGRATION.md](docs/PAYMENT_RAIL_INTEGRATION.md) | Deployed rails and where each is wired. |
+| [TXODDS.md](TXODDS.md) | TxODDS TxLINE integration details. |
 
-## LLM Audit Boundary
+## Security
 
-LLM traces use `LLM_USED` messages and ledger `llm.json` entries. New traces include provider/model, `usedFor`, optional `inputHash` and `outputHash`, and `affectedFunds=false`. Prompt and completion text are not persisted. The intended boundary is: models may propose, summarize, or explain; deterministic code, policy, verifier checks, and devnet guards control funds.
-
-## Development Checks
-
-Build/test from the root workspace:
-
-```sh
-npm run build
-npm run typecheck
-npm test
-```
-
-Run the deterministic readiness gate from the repo root:
-
-```sh
-npm run e2e:local
-```
-
-Package and example READMEs contain narrower test commands.
-
-## Security Notes
-
-- Do not commit `.env`, private keys, API keys, seed phrases, or generated wallet secrets.
-- Treat RPC responses, receipts, LLM output, verifier payloads, and Coral messages as untrusted input.
-- Keep mainnet disabled unless a separate review defines custody, policy, monitoring, and rollback controls.
+- Do not commit `.env`, private keys, API keys, or seed phrases.
+- Treat RPC responses, receipts, LLM output, and Coral messages as untrusted input.
+- Keep mainnet disabled unless a separate review approves.
 
 ## License
 

@@ -17,10 +17,14 @@ AGENT_NAME = { type = "string", default = "seller-worldcup", description = "Mark
 SERVICES = { type = "string", default = "txline", description = "Inventory - this specialist bids only on txline (World Cup data)" }
 FLOOR_SOL = { type = "f64", default = 0.0005, description = "Cost floor - the LLM may never bid below this (the edge runs a real Claude call)" }
 PERSONA = { type = "string", default = "a World Cup trading specialist who sells verified TxODDS odds and a sharp one-line value call", description = "Bidding persona (LLM system prompt)" }
+BID_REVIEW_ENABLED = { type = "string", default = "0", description = "Set to 1 to run a second, adversarial review loop before posting a bid" }
 SERVICE = { type = "string", default = "txline", description = "What deliverService returns: txline (fixtures | odds <id> | edge <id>)" }
 SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }
 SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter (default) | direct legacy base escrow" }
 ESCROW_DEADLINE_SECS = { type = "f64", default = 600, description = "Refund deadline for escrow deposits (seconds)" }
+PROCURE_RAIL = { type = "string", default = "", description = "Set to x402 to buy an upstream resource for real before delivering (see coral-agents/seller-agent/README.md)" }
+SELLER_KEYPAIR_B58 = { type = "string", default = "", description = "The seller's own spend key for the x402 procurement leg - distinct from SELLER_WALLET, which only receives" }
+PROCURE_X402_URL = { type = "string", default = "", description = "The x402-protected resource to buy when PROCURE_RAIL=x402" }
 TXLINE_API_KEY = { type = "string", default = "", description = "Activated TxLINE API token (from the one-time devnet subscribe - see examples/txodds)" }
 TXLINE_BASE_URL = { type = "string", default = "", description = "Override the TxLINE host (defaults to txline-dev.txodds.com)" }
 ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key - the edge verb runs a Claude completion" }

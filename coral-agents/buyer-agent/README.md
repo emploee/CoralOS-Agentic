@@ -15,7 +15,7 @@ WANT -> BID* -> AWARD
   -> ARBITER_RELEASED or refundable hold
 ```
 
-`SETTLEMENT_MODE=direct` keeps the base escrow path available. `SETTLEMENT_MODE=arbiter` is the default for current marketplace-style flows.
+`SETTLEMENT_MODE=direct` keeps the base escrow path available. `SETTLEMENT_MODE=arbiter` is the default for the current CoralOS round flow.
 
 ## Files
 

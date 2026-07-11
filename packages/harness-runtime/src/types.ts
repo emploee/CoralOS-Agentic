@@ -11,6 +11,8 @@ export interface SellerConfig {
   services: string[]
   floorSol: number
   persona: string
+  /** Run a second, independently-prompted adversarial review before posting a proposed bid. */
+  reviewEnabled?: boolean
 }
 
 export interface BidDecision {

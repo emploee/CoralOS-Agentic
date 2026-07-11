@@ -130,7 +130,7 @@ Watcher endpoints:
 | `GET /queue` | Current queued events. |
 | `GET /next` | Pop the next event for event-mode buyer. |
 
-The research marketplace launcher consumes this queue through `WANT_FEED_URL`.
+`buyer-agent`'s event-mode consumes this queue through `WANT_FEED_URL` (see `coral-agents/buyer-agent/src/wantFeed.ts`).
 
 ## TxODDS Notes
 

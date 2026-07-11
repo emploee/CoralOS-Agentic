@@ -2,11 +2,6 @@ export type PaymentRailKind =
   | 'solana-pay'
   | 'escrow'
   | 'x402'
-  | 'pay-sh'
-  | 'spl-usdc'
-  | 'allowance'
-  | 'embedded-wallet'
-  | 'payout'
 
 export type PaymentCurrency = 'SOL' | 'USDC' | 'PYUSD' | 'USDG'
 

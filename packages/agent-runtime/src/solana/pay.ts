@@ -27,7 +27,7 @@ export interface PaymentUrl {
    * This makes a payment proof non-transferable — and it is the same key that seeds the escrow PDA.
    */
   reference: string
-  /** Requested amount in SOL. */
+  /** Requested amount, in the token's human units (SOL, or the SPL token when `mint` is set). */
   amountSol: number
 }
 
@@ -51,12 +51,23 @@ export function loadKeypairB58(envVar: string): Keypair {
   return Keypair.fromSecretKey(bytes)
 }
 
+/**
+ * A fresh, single-use Solana Pay-style reference key (base58) — the same non-transferability
+ * binding {@link generatePaymentUrl} uses, exposed standalone for protocols (like x402) that need
+ * the key without a full payment URL.
+ */
+export function generateReference(): string {
+  return Keypair.generate().publicKey.toBase58()
+}
+
 /** Generate a Solana Pay transfer URL tagged with a fresh, single-use reference key. */
 export function generatePaymentUrl(opts: {
   recipient: string
   amountSol: number
   label?: string
   message?: string
+  /** SPL mint address — requests payment in that token instead of native SOL. */
+  mint?: string
 }): PaymentUrl {
   const reference = Keypair.generate().publicKey // unique per order — single-use binding
   const url = encodeURL({
@@ -65,17 +76,20 @@ export function generatePaymentUrl(opts: {
     reference,
     label: opts.label ?? 'Agent Service',
     message: (opts.message ?? '').slice(0, 100),
+    ...(opts.mint ? { splToken: new PublicKey(opts.mint) } : {}),
   })
   return { url: url.toString(), reference: reference.toBase58(), amountSol: opts.amountSol }
 }
 
 /**
  * Verify on-chain that `sig` transferred `amountSol` to `recipient` carrying `reference`. Binding to
- * the per-order reference is what makes the proof non-transferable. Returns `false` on any error.
+ * the per-order reference is what makes the proof non-transferable. Pass `mint` to verify an SPL
+ * token transfer instead of native SOL — `@solana/pay` reads the mint's decimals on-chain, so
+ * `amountSol` stays in the token's human units (e.g. `5.5` USDC) either way. Returns `false` on any error.
  */
 export async function verifyPayment(
   sig: string,
-  opts: { recipient: string; amountSol: number; reference: string },
+  opts: { recipient: string; amountSol: number; reference: string; mint?: string },
 ): Promise<boolean> {
   try {
     await validateTransfer(
@@ -85,6 +99,7 @@ export async function verifyPayment(
         recipient: new PublicKey(opts.recipient),
         amount: new BigNumber(opts.amountSol),
         reference: new PublicKey(opts.reference),
+        ...(opts.mint ? { splToken: new PublicKey(opts.mint) } : {}),
       },
       { commitment: 'confirmed' },
     )

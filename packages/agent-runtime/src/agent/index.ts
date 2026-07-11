@@ -1,6 +1,6 @@
 // Agent pillar — capability grants, safety gates, tool contracts, and a bounded LLM tool-calling
 // loop. The shared substrate a coral-agent adopts to move from "a script that replies" to a
-// capability-scoped, budget-bounded, audited agent loop. See docs/AGENT_ORCHESTRATION.md.
+// capability-scoped, budget-bounded, audited agent loop.
 
 export { grantCapabilities, hasCapability, requireCapability, type Capability, type CapabilityGrant } from './capability.js'
 export {

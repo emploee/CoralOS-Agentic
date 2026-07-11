@@ -25,6 +25,7 @@ npm test -w @pay/agent-runtime
 | Market | `src/market/` | `format*`, `parse*`, `selectBids`, `pickCheapest` for market/payment/verifier messages. |
 | Ledger | `src/ledger/` | `writeRun`, `readRun`, `listRuns`, `proofArtifact`, reputation helpers. |
 | Policy | `src/policy/` | `enforce(action, policy)`, `policyFromEnv`. |
+| Agent | `src/agent/` | `grantCapabilities`/`requireCapability`, `BudgetGuard`/`StepCounter`/`wrapUntrusted`, the `Tool` contract, `rank`/`best`/`evaluateDirectionalCall`, `runToolLoop()`. |
 
 The runtime does not hold keypairs. Agents and examples load keys and call runtime helpers.
 
@@ -75,6 +76,28 @@ Solana helpers default to devnet and reject mainnet RPC URLs unless `ALLOW_MAINN
 
 `LLM_USED` traces carry provider/model, `usedFor`, optional input/output hashes, and `affectedFunds=false`; prompts and completions are not persisted.
 
+## Agent Orchestration
+
+`src/agent/` is a separate concern from `policy/`: policy gates one fund-moving action, this module
+bounds a whole agent *process*.
+
+```ts
+import { grantCapabilities, requireCapability, BudgetGuard, StepCounter, runToolLoop } from '@pay/agent-runtime'
+
+const grant = grantCapabilities('seller-agent', ['detect'])
+const budget = new BudgetGuard({ maxToolCalls: 2000, maxSpendLamports: 0, maxDurationSecs: 6 * 3600 })
+const steps = new StepCounter(2000)
+
+budget.check()   // throws BudgetExceededError past any limit
+steps.tick()      // throws StepCapExceededError past the consecutive-step cap
+requireCapability(grant, 'settle') // throws — this agent was never granted it
+```
+
+`runToolLoop()` is a bounded, provider-agnostic multi-turn tool-calling loop built on `complete()` —
+the model replies with strict `{"tool": "...", "input": {...}}` JSON each round instead of relying on
+a provider's native function-calling format, so the same loop runs under Venice, OpenAI, or
+Anthropic.
+
 ## Extension Points
 
 | Task | Location |
@@ -83,3 +106,4 @@ Solana helpers default to devnet and reject mainnet RPC URLs unless `ALLOW_MAINN
 | Add provider support | `src/llm/complete.ts`. |
 | Change run persistence | `src/ledger/`. |
 | Change spend/release rules | `src/policy/`. |
+| Add a capability, safety limit, or tool | `src/agent/`. |

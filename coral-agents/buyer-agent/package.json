@@ -13,9 +13,7 @@
     "@pay/agent-runtime": "0.1.0",
     "@coral-xyz/anchor": "^0.32.1",
     "@anthropic-ai/sdk": "^0.100.0",
-    "@solana/web3.js": "^1.98.0",
-    "@solana/pay": "^0.2.5",
-    "bignumber.js": "^9.1.2"
+    "@solana/web3.js": "^1.98.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",

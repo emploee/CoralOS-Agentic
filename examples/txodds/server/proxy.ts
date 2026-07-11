@@ -31,8 +31,8 @@ import {
   assertDevnet, enforce, explorerTx, listRuns, policyFromEnv, readRun, sha256Hex, verifyPayment, writeRun,
 } from '@pay/agent-runtime'
 import type { RunRecord, TranscriptEntry, TxEntry } from '@pay/agent-runtime'
+import { x402Challenge, settleX402, type X402Accept } from '@pay/payment-runtime'
 import { analyzeEdge, fairLine } from '../agent/edge.js'
-import { procureTxOddsContext, type PayShProcurement } from '../agent/procurement.js'
 import { createTxOddsRound } from '../coral/round.js'
 import {
   makeArbiter, initConfig, open as arbiterOpen, arbitrateRelease,
@@ -271,7 +271,6 @@ function persistWebRun(args: {
   amountSol: number
   fixtureId: string
   payVerify?: any
-  procurement?: PayShProcurement
 }): any {
   const round = latestRound() + 1
   const now = new Date().toISOString()
@@ -301,22 +300,18 @@ function persistWebRun(args: {
     verification: {
       verdict: deliveredOk(args.read.delivery) ? 'pass' : 'fail',
       checked: 'delivery-present',
-      ...(args.procurement ? { upstreamPayment: args.procurement.verification } : {}),
     },
-    ...(args.procurement ? { proofReceipts: [args.procurement.receipt] } : {}),
     txs,
     updatedAt: now,
   }
   const transcript: TranscriptEntry[] = [
     { sender: 'web', text: JSON.stringify(args.read.request) },
-    ...(args.procurement?.messages.map((text) => ({ sender: 'seller-agent', text })) ?? []),
     { sender: 'oracle', text: rawDelivery },
     { sender: 'settlement', text: JSON.stringify(args.settle ?? args.payVerify) },
   ]
   const dir = writeRun(RUNS_DIR, run, transcript)
   fs.writeFileSync(join(dir, 'read_request.json'), JSON.stringify(args.read.request, null, 2) + '\n', 'utf8')
   fs.writeFileSync(join(dir, 'delivered_read.json'), JSON.stringify(args.read.delivery, null, 2) + '\n', 'utf8')
-  if (args.procurement) fs.writeFileSync(join(dir, 'procurement.json'), JSON.stringify(args.procurement, null, 2) + '\n', 'utf8')
   return { ...args.settle, runId: run.runId, runDir: dir }
 }
 
@@ -495,6 +490,64 @@ async function settleViaArbiter(amountSol: number, fixtureId: string, read: Read
   }
 }
 
+/**
+ * x402 reference merchant — `/api/edge` stays free (the World Cup demo's default path); this is a
+ * second, gated door onto the exact same `readEdge()` product, demonstrating the repo's x402 rail
+ * (`@pay/payment-runtime`'s `x402Challenge`/`settleX402`) end to end: no `X-PAYMENT` header -> 402
+ * with a fresh reference-bound challenge; a valid `X-PAYMENT` -> submit, confirm, verify on-chain,
+ * then deliver with `X-PAYMENT-RESPONSE` set. Priced in native SOL — no SPL mint dependency.
+ *
+ * Challenges are held in memory only, keyed by reference, and evicted once too many are open at
+ * once — this is a devnet demo endpoint, not a production payment queue.
+ */
+const X402_PRICE_SOL = process.env.X402_PRICE_SOL ?? '0.0005'
+const MAX_OPEN_X402_CHALLENGES = 50
+const openX402Challenges = new Map<string, X402Accept>()
+
+function x402Recipient(): string {
+  return process.env.SELLER_WALLET || process.env.WALLET || buyerKeypair().publicKey.toBase58()
+}
+
+async function handleEdgeX402(req: http.IncomingMessage, res: http.ServerResponse, fixtureId: string): Promise<void> {
+  const paymentHeader = req.headers['x-payment']
+  if (typeof paymentHeader === 'string' && paymentHeader) {
+    let reference: string | undefined
+    try {
+      reference = (JSON.parse(Buffer.from(paymentHeader, 'base64').toString('utf8')) as { payload?: { reference?: string } }).payload?.reference
+    } catch { /* settleX402 below reports the malformed-header case */ }
+    const accept = reference ? openX402Challenges.get(reference) : undefined
+    if (!accept) {
+      res.statusCode = 402
+      res.end(JSON.stringify({ error: 'unknown or expired x402 reference — request the resource again to get a fresh challenge' }))
+      return
+    }
+    const result = await settleX402(paymentHeader, accept)
+    if (!result.settled) {
+      res.statusCode = 402
+      res.end(JSON.stringify({ error: result.reason ?? 'x402 settlement failed' }))
+      return
+    }
+    openX402Challenges.delete(reference!)
+    res.setHeader('X-PAYMENT-RESPONSE', Buffer.from(JSON.stringify({ settled: true, txSignature: result.txSignature })).toString('base64'))
+    res.end(JSON.stringify((await readEdge(fixtureId)).delivery))
+    return
+  }
+
+  const challenge = x402Challenge(
+    { id: `x402:${fixtureId}:${Date.now()}`, service: 'txline-edge', buyer: 'anonymous', seller: x402Recipient(), amount: X402_PRICE_SOL, currency: 'SOL' },
+    { id: 'req', rail: 'x402', orderId: 'order', amount: X402_PRICE_SOL, currency: 'SOL', buyer: 'anonymous', headers: { 'X-PAYMENT-NETWORK': 'solana' } },
+    `/api/edge-x402?fixtureId=${fixtureId}`,
+  )
+  const accept = challenge.body.accepts[0]
+  if (openX402Challenges.size >= MAX_OPEN_X402_CHALLENGES) {
+    const oldest = openX402Challenges.keys().next().value
+    if (oldest) openX402Challenges.delete(oldest)
+  }
+  openX402Challenges.set(accept.reference, accept)
+  res.statusCode = 402
+  res.end(JSON.stringify(challenge.body))
+}
+
 http
   .createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -514,6 +567,10 @@ http
         // verified data (TxLINE) -> LLM call: the on-thesis product, shared with the agent via analyzeEdge.
         const fixtureId = url.searchParams.get('fixtureId') ?? ''
         res.end(JSON.stringify((await readEdge(fixtureId)).delivery))
+      } else if (url.pathname === '/api/edge-x402') {
+        // The same product as /api/edge, gated behind a real x402 challenge/pay/settle round trip —
+        // see handleEdgeX402 above. /api/edge itself stays free; this is the paid reference path.
+        await handleEdgeX402(req, res, url.searchParams.get('fixtureId') ?? '')
       } else if (url.pathname === '/api/agentic/start') {
         if (req.method !== 'POST') {
           res.statusCode = 405
@@ -552,41 +609,6 @@ http
         }
         result = persistWebRun({ read, settle: result, amountSol: amount, fixtureId })
         res.end(JSON.stringify(result))
-      } else if (url.pathname === '/api/pay-sh-edge') {
-        // Seller-style demo: before delivering, the TxODDS seller buys upstream context through the
-        // payment-runtime Pay.sh rail, records the receipt, then settles the buyer payment as usual.
-        const amount = Number(url.searchParams.get('amount') ?? '0.001')
-        const upstreamUsdc = url.searchParams.get('upstreamUsdc') ?? '0.03'
-        const fixtureId = url.searchParams.get('fixtureId') ?? ''
-        const round = latestRound() + 1
-        const read = latestRead.get(fixtureId) ?? await readEdge(fixtureId)
-        const procurement = await procureTxOddsContext({
-          orderId: `${WEB_SESSION}/round-${round}/pay-sh`,
-          round,
-          fixtureId,
-          buyer: 'txodds-seller-agent',
-          seller: 'pay.sh/txodds-context',
-          amount: upstreamUsdc,
-        })
-        let result: any
-        if (arbiterKeypair()) {
-          try { result = await settleViaArbiter(amount, fixtureId, read, round) }
-          catch (e) { result = await settle(amount, fixtureId, read, round); result.arbiterError = (e as Error).message }
-        } else {
-          result = await settle(amount, fixtureId, read, round)
-        }
-        result = persistWebRun({ read, settle: result, amountSol: amount, fixtureId, procurement })
-        res.end(JSON.stringify({
-          ...result,
-          procurement: {
-            provider: procurement.provider,
-            amount: procurement.request.amount,
-            currency: procurement.request.currency,
-            paid: procurement.verification.paid,
-            proof: procurement.verification.proof,
-            receipt: procurement.receipt,
-          },
-        }))
       } else if (url.pathname === '/api/runs') {
         res.end(JSON.stringify(listRuns(RUNS_DIR).filter((r) => r.session === WEB_SESSION).sort((a, b) => b.round - a.round)))
       } else if (url.pathname === '/api/run') {
@@ -634,4 +656,4 @@ http
       res.end(JSON.stringify({ error: (e as Error).message, detail: (e as any)?.response?.data }))
     }
   })
-  .listen(PORT, () => console.error(`[proxy] http://localhost:${PORT}  (GET /api/board - /api/fixtures - /api/odds?fixtureId= - /api/edge?fixtureId= - /api/settle?amount=)`))
+  .listen(PORT, () => console.error(`[proxy] http://localhost:${PORT}  (GET /api/board - /api/fixtures - /api/odds?fixtureId= - /api/edge?fixtureId= - /api/edge-x402?fixtureId= - /api/settle?amount=)`))

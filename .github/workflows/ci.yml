@@ -19,20 +19,6 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - run: npm test
-      - run: npm run e2e:local
-
-  marketplace-playwright:
-    name: Marketplace recorded-state Playwright e2e
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-      - run: npm install --no-audit --no-fund
-      - run: npm run build:packages
-      - run: npm exec -w marketplace-web -- playwright install --with-deps chromium
-      - run: npm run e2e -w marketplace-web
 
   escrow:
     name: Escrow + arbiter contracts

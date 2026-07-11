@@ -46,7 +46,7 @@ const AGENT_SOURCES = [
   ['seller services', 'coral-agents/seller-agent/src/service.ts'],
   ['verifier-agent', 'coral-agents/verifier-agent/src/index.ts'],
   ['LLM protocol event', 'packages/agent-runtime/src/market/protocol.ts'],
-  ['Coral parser/feed', 'examples/marketplace/feed/src/server.ts'],
+  ['Coral parser/feed', 'examples/txodds/feed/src/server.ts'],
   ['TxODDS launcher', 'examples/txodds/coral/round.ts'],
 ]
 
@@ -389,7 +389,7 @@ function EdgeCard({ edge }) {
 }
 
 // the explainer - what the app actually does, end to end, threaded with the selected fixture's numbers
-function Pipeline({ edge, source, settleRes, procurementRes }) {
+function Pipeline({ edge, source, settleRes }) {
   const fav = edge?.fair?.favourite
   const steps = [
     { n: 1, title: 'Verified data',
@@ -401,9 +401,6 @@ function Pipeline({ edge, source, settleRes, procurementRes }) {
     { n: 3, title: 'Settled by a neutral arbiter',
       desc: 'The buyer funds a per-order escrow but cannot unilaterally refund - a trusted neutral arbiter program releases to the seller on verified delivery. The escrow reference is bound to the read (sha256), so the on-chain order IS the data bought. Real devnet txs, linked on Explorer.',
       live: settleRes?.ok ? `${settleRes.amountSol} SOL${settleRes.mode === 'arbiter' ? ' - arbiter' : ''}` : `${SETTLE_SOL} SOL` },
-    { n: 4, title: 'Optional upstream spend',
-      desc: 'The seller can buy an upstream API through the Pay.sh rail before delivery. The run ledger stores PAYMENT_REQUIRED, PAYMENT_PROOF, and PAYMENT_CONFIRMED alongside the escrow settlement.',
-      live: procurementRes?.procurement?.paid ? `${procurementRes.procurement.amount} ${procurementRes.procurement.currency}` : 'Pay.sh' },
   ]
   return html`
     <section class="pipeline">
@@ -427,7 +424,7 @@ function statusTone(status) {
   return ''
 }
 
-function TutorialPanel({ selected, edge, source, settling, settleRes, procurementRes, runs }) {
+function TutorialPanel({ selected, edge, source, settling, settleRes, runs }) {
   const fixtureName = selected ? `${selected.Participant1} vs ${selected.Participant2}` : 'No fixture selected'
   const dataStatus = source === 'live' ? 'live TxODDS' : source === 'demo' ? 'sample mode' : 'connecting'
   const readStatus = edge?.analysis ? (/deterministic/i.test(edge.analysis.note || '') ? 'fallback read ready' : 'LLM read ready') : 'waiting for read'
@@ -440,11 +437,6 @@ function TutorialPanel({ selected, edge, source, settling, settleRes, procuremen
         : settleRes
           ? 'needs funded wallet'
           : 'starts after read'
-  const payShStatus = procurementRes?.procurement?.paid
-    ? 'proof recorded'
-    : source === 'live'
-      ? 'optional'
-      : 'requires live fixture'
   const runStatus = Array.isArray(runs) && runs.length ? `${runs.length} run${runs.length === 1 ? '' : 's'} recorded` : 'no runs yet'
 
   const steps = [
@@ -473,10 +465,10 @@ function TutorialPanel({ selected, edge, source, settling, settleRes, procuremen
       status: escrowStatus,
     },
     {
-      title: '5. Optional rails',
-      body: 'The purple wallet path is real Solana Pay. The green Pay.sh path is an upstream procurement proof path and is currently simulated.',
-      endpoint: '/api/pay-intent + /api/pay-sh-edge',
-      status: payShStatus,
+      title: '5. Optional wallet path',
+      body: 'Instead of the automatic escrow, your browser wallet can sign a reference-tagged SOL transfer directly (Solana Pay), which the proxy verifies on-chain.',
+      endpoint: '/api/pay-intent',
+      status: source === 'live' ? 'optional' : 'requires live fixture',
     },
     {
       title: '6. Inspect the ledger',
@@ -517,7 +509,7 @@ function TutorialPanel({ selected, edge, source, settling, settleRes, procuremen
     </section>`
 }
 
-function PaymentGuide({ source, settling, settleRes, procurementRes }) {
+function PaymentGuide({ source, settling, settleRes }) {
   const escrowStatus = source !== 'live'
     ? 'sample only'
     : settling
@@ -527,7 +519,6 @@ function PaymentGuide({ source, settling, settleRes, procurementRes }) {
         : settleRes
           ? 'blocked'
           : 'pending'
-  const payShStatus = procurementRes?.procurement?.paid ? 'receipt written' : source === 'live' ? 'available' : 'live only'
   return html`
     <div class="payment-guide">
       <div class="path-card primary">
@@ -537,10 +528,6 @@ function PaymentGuide({ source, settling, settleRes, procurementRes }) {
       <div class="path-card wallet">
         <div class="path-top"><span>Path B</span><b>Your wallet</b><em>optional</em></div>
         <p>Uses Solana Pay: your browser wallet signs a reference-tagged SOL transfer and the proxy verifies it on-chain.</p>
-      </div>
-      <div class="path-card payrail">
-        <div class="path-top"><span>Path C</span><b>Pay.sh procurement</b><em>${payShStatus}</em></div>
-        <p>Shows an upstream payment proof leg before settlement. This rail is simulated today and marked as such in receipts.</p>
       </div>
     </div>`
 }
@@ -608,22 +595,6 @@ function ProofReceiptChip({ receipt }) {
       · proof <b>${shortAddr(receipt.proof)}</b>
       ${receipt.simulated && html`<span class="sim-badge">simulated rail</span>`}
     </div>`
-}
-
-function ProcurementResult({ r }) {
-  if (!r) return null
-  if (r.ok) return html`
-    <div class="settled ok pay-sh-result">
-      <div class="settled-line"><span class="bind-tag">Pay.sh</span>
-        seller procured upstream context for <b>${r.procurement?.amount} ${r.procurement?.currency}</b>
-        then settled <b>${r.amountSol} SOL</b> to the seller
-      </div>
-      <${ProofReceiptChip} receipt=${r.procurement?.receipt} />
-      <div class="settled-line bind">
-        stored in the run ledger as <b>proof_receipts.json</b> + PAYMENT_PROOF in the transcript
-      </div>
-    </div>`
-  return html`<div class="settled sim">Pay.sh demo unavailable${r.error ? ` (${String(r.error).slice(0, 70)})` : ''}</div>`
 }
 
 function RunsPanel({ runs, selectedRun, onSelect, onGrade, grading }) {
@@ -1072,8 +1043,6 @@ function App() {
   const [loadingOdds, setLoadingOdds] = useState(false)
   const [edge, setEdge] = useState(null)
   const [settleRes, setSettleRes] = useState(null)
-  const [procurementRes, setProcurementRes] = useState(null)
-  const [procuring, setProcuring] = useState(false)
   const [settling, setSettling] = useState(false)
   const [runs, setRuns] = useState(null)
   const [selectedRun, setSelectedRun] = useState(null)
@@ -1108,21 +1077,6 @@ function App() {
     setGrading(true)
     try { await fetch(`${PROXY}/api/grade-runs`); await loadRuns() }
     finally { setGrading(false) }
-  }
-
-  const runPayShDemo = async () => {
-    if (!selected || source !== 'live') return
-    setProcuring(true)
-    setProcurementRes(null)
-    try {
-      const r = await (await fetch(`${PROXY}/api/pay-sh-edge?fixtureId=${selected.FixtureId}&amount=${SETTLE_SOL}&upstreamUsdc=0.03`)).json()
-      setProcurementRes(r)
-      await loadRuns()
-    } catch (e) {
-      setProcurementRes({ ok: false, error: String(e?.message ?? e) })
-    } finally {
-      setProcuring(false)
-    }
   }
 
   const rememberAgenticSession = (id) => {
@@ -1331,8 +1285,8 @@ function App() {
           roundType=${agenticRoundType}
           setRoundType=${setAgenticRoundType} />`}
       ${mode === 'local' && html`
-        <${TutorialPanel} selected=${selected} edge=${edge} source=${source} settling=${settling} settleRes=${settleRes} procurementRes=${procurementRes} runs=${runs} />
-        <${Pipeline} edge=${edge} source=${source} settleRes=${settleRes} procurementRes=${procurementRes} />`}
+        <${TutorialPanel} selected=${selected} edge=${edge} source=${source} settling=${settling} settleRes=${settleRes} runs=${runs} />
+        <${Pipeline} edge=${edge} source=${source} settleRes=${settleRes} />`}
       ${!fixtures && html`<p class="muted" style=${{ textAlign: 'center' }}>loading fixtures...</p>`}
       ${mode === 'local' && selected && html`
         <section class="featured">
@@ -1348,16 +1302,12 @@ function App() {
           <${Board} fixture=${selected} odds=${odds} loading=${loadingOdds} />
           <div class="thesis">
             <${EdgeCard} edge=${edge} />
-            <${PaymentGuide} source=${source} settling=${settling} settleRes=${settleRes} procurementRes=${procurementRes} />
+            <${PaymentGuide} source=${source} settling=${settling} settleRes=${settleRes} />
             <div class="settle-row">
               ${settling && html`<div class="settling-auto">
                 <span class="spin"></span> agent delivered - arbiter settling ${SETTLE_SOL} SOL in escrow on devnet...
               </div>`}
               ${settleRes && html`<${SettleResult} r=${settleRes} />`}
-              <button class="pay-sh-btn" disabled=${source !== 'live' || procuring} onClick=${runPayShDemo}>
-                ${procuring ? html`<span class="spin"></span> procuring + settling...` : 'Run Pay.sh procurement demo'}
-              </button>
-              ${procurementRes && html`<${ProcurementResult} r=${procurementRes} />`}
               ${selected && html`<${PayButton} fixture=${selected} />`}
             </div>
           </div>

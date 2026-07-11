@@ -9,12 +9,17 @@ crate-type = ["cdylib", "lib"]
 name = "escrow"
 
 [features]
-default = []
+default = ["init-if-needed"]
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
-idl-build = ["anchor-lang/idl-build"]
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+# Scoped to the `*_ata` associated-token-account fields in the SPL instructions only — those are
+# deterministic, fixed-authority addresses, not the state-account reinitialization risk this
+# program's SOL side forbids (see the crate doc comment: "init, never init_if_needed").
+init-if-needed = ["anchor-lang/init-if-needed"]
 
 [dependencies]
 anchor-lang = "0.32.1"
+anchor-spl = { version = "0.32.1", features = ["token"] }

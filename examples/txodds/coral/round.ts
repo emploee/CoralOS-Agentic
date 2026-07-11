@@ -159,6 +159,14 @@ export async function createTxOddsRound(options: TxOddsRoundOptions = {}): Promi
     SETTLEMENT_MODE: str('arbiter'),
     TXLINE_API_KEY: str(env.TXLINE_API_KEY),
     ...(env.TXLINE_BASE_URL ? { TXLINE_BASE_URL: str(env.TXLINE_BASE_URL) } : {}),
+    // Optional upstream procurement (PROCURE_RAIL=x402) — the seller pays a real x402 leg for
+    // upstream context before delivering. Needs its own funded spend key, distinct from SELLER_WALLET.
+    ...(env.PROCURE_RAIL ? { PROCURE_RAIL: str(env.PROCURE_RAIL) } : {}),
+    ...(env.PROCURE_X402_URL ? { PROCURE_X402_URL: str(env.PROCURE_X402_URL) } : {}),
+    ...(env.SELLER_KEYPAIR_B58 ? { SELLER_KEYPAIR_B58: str(env.SELLER_KEYPAIR_B58) } : {}),
+    // A skeptical second-opinion loop reviews the proposed bid before it's posted — off by default,
+    // doubles the LLM calls per bid decision (see docs/AGENT_DEPTH_PLAN.md).
+    ...(env.BID_REVIEW_ENABLED ? { BID_REVIEW_ENABLED: str(env.BID_REVIEW_ENABLED) } : {}),
     ...llm,
   })
 
@@ -201,9 +209,8 @@ function logRound(result: TxOddsRoundResult): void {
   console.log(`\nCoralOS round ${result.sessionId} - ${result.agents.join(' + ')}, fixture ${result.fixtureId}.`)
   console.log(`The buyer broadcasts WANT(${result.service} ${result.arg}); sellers bid; the winner delivers; verifier-agent gates release.\n`)
   console.log('Watch it in the browser:')
-  console.log(`  cd ../marketplace/feed && SESSION=${result.sessionId} MARKET_SELLERS=${SELLER_NAMES.join(',')} npm start`)
-  console.log('  npm run marketplace:web   (from the repo root)')
-  console.log(`  then open http://localhost:5173/?session=${result.sessionId}\n`)
+  console.log('  npm run dev   (from the repo root)')
+  console.log(`  then open http://localhost:3020/?agentSession=${result.sessionId}\n`)
   console.log('Or tail the logs:')
   console.log('  docker logs -f $(docker ps -qf ancestor=buyer-agent:0.1.0  | head -1)   # WANT -> AWARD -> DEPOSITED -> VERIFY -> ARBITER_RELEASED')
   console.log('  docker logs -f $(docker ps -qf ancestor=seller-agent:0.1.0 | head -1)   # BID -> ESCROW_REQUIRED -> DELIVERED')

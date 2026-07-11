@@ -11,13 +11,24 @@ describe('generatePaymentUrl', () => {
     expect(p.url.startsWith('solana:')).toBe(true)
     expect(p.url).toContain(recipient)
     expect(p.amountSol).toBe(0.0004)
-    expect(p.reference).toHaveLength(44) // base58 pubkey
+    expect(p.reference).toMatch(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/) // base58 pubkey — length varies with leading zero bytes
   })
 
   it('mints a unique reference per call (single-use binding)', () => {
     const a = generatePaymentUrl({ recipient, amountSol: 0.0001 })
     const b = generatePaymentUrl({ recipient, amountSol: 0.0001 })
     expect(a.reference).not.toBe(b.reference)
+  })
+
+  it('encodes an spl-token parameter when mint is set (SPL token checkout, not native SOL)', () => {
+    const mint = Keypair.generate().publicKey.toBase58()
+    const p = generatePaymentUrl({ recipient, amountSol: 5, mint })
+    expect(p.url).toContain(`spl-token=${mint}`)
+  })
+
+  it('omits spl-token when mint is not set (native SOL)', () => {
+    const p = generatePaymentUrl({ recipient, amountSol: 5 })
+    expect(p.url).not.toContain('spl-token')
   })
 })
 

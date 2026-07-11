@@ -38,7 +38,6 @@ export class PaymentRailRouter {
   choose(input: RailSelection): PaymentRail {
     if (input.rail) return this.get(input.rail)
     if (input.requireEscrow) return this.get('escrow')
-    if (input.currency && input.currency !== 'SOL' && this.rails.has('spl-usdc')) return this.get('spl-usdc')
     if (this.rails.has('solana-pay')) return this.get('solana-pay')
     const first = this.rails.values().next().value as PaymentRail | undefined
     if (!first) throw new Error('No payment rails registered')

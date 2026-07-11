@@ -8,7 +8,8 @@
     "deploy": "anchor deploy --provider.cluster devnet"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "^0.32.1"
+    "@coral-xyz/anchor": "^0.32.1",
+    "@solana/spl-token": "^0.4.14"
   },
   "devDependencies": {
     "@types/chai": "^4.3.0",

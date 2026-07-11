@@ -2,8 +2,8 @@
  * Research-market watcher - turns live odds movement into paid WANTs.
  *
  * Polls the oracle proxy's /api/board (run `npm run proxy` first), diffs snapshots with
- * detectEvents, and queues one WANT per event. The buyer (in WANT_FEED_URL event mode, see
- * examples/marketplace/research.ts) pops the queue one job per cycle:
+ * detectEvents, and queues one WANT per event. buyer-agent (in WANT_FEED_URL event mode — see
+ * coral-agents/buyer-agent/src/wantFeed.ts) pops the queue one job per cycle:
  *
  *   GET /next        -> 200 { service, arg, budgetSol?, note }  |  204 when quiet
  *   GET /queue       -> { queue, updatedAt }                    (debug/dashboard)

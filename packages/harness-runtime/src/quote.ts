@@ -19,6 +19,7 @@ import {
 import type { SellerConfig, BidDecision } from './types.js'
 import { clampPriceTool, submitBidDecisionTool, type SubmitBidInput } from './bid-tools.js'
 import { reviewBid } from './bid-review.js'
+import { decideBidGate } from './bid-gate.js'
 
 /** Build a seller's market config from its env (set per persona in coral-agent.toml). */
 export function sellerConfigFromEnv(name: string, env: NodeJS.ProcessEnv = process.env): SellerConfig {
@@ -28,6 +29,7 @@ export function sellerConfigFromEnv(name: string, env: NodeJS.ProcessEnv = proce
     floorSol: Number(env.FLOOR_SOL ?? '0.0003'),
     persona: env.PERSONA ?? 'a TxODDS specialist selling verified fair-line reads',
     reviewEnabled: (env.BID_REVIEW_ENABLED ?? '0') === '1',
+    reputationUrl: env.REPUTATION_URL || undefined,
   }
 }
 
@@ -59,14 +61,26 @@ function quoteLlm(
 
 const errReason = (e: unknown): string => String((e as Error).message ?? e).slice(0, 120)
 
-/** Decide whether/how to bid. `llm` is injectable so tests run without the network. */
-export async function decideBid(want: Want, cfg: SellerConfig, llm: Llm = complete): Promise<BidDecision> {
+/** Decide whether/how to bid. `llm`/`doFetch` are injectable so tests run without the network. */
+export async function decideBid(
+  want: Want, cfg: SellerConfig, llm: Llm = complete, doFetch: typeof fetch = fetch,
+): Promise<BidDecision> {
   // Hard guards first - no LLM call needed to refuse impossible jobs.
   if (!cfg.services.includes(want.service)) {
     return { bid: false, priceSol: 0, note: 'not in inventory', llm: quoteLlm(want, cfg, 'skipped', 'service not in seller inventory') }
   }
   if (cfg.floorSol > want.budgetSol) {
     return { bid: false, priceSol: 0, note: 'budget below floor', llm: quoteLlm(want, cfg, 'skipped', 'budget below seller floor') }
+  }
+
+  // Strategic gate: whether to bid at all, not just whether it's capability-gated. A no-op unless
+  // cfg.reputationUrl is configured — see bid-gate.ts.
+  const gate = await decideBidGate(want, cfg, llm, doFetch)
+  if (!gate.bid) {
+    return {
+      bid: false, priceSol: 0, note: gate.reason.slice(0, 60),
+      llm: quoteLlm(want, cfg, 'used', 'bid-gate declined to bid'),
+    }
   }
 
   const system =

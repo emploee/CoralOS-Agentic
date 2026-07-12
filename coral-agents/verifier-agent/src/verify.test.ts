@@ -8,6 +8,9 @@ const req = (over: Partial<VerifyRequest> = {}): VerifyRequest => ({
 })
 const llmDown = async () => { throw new Error('llm down') }
 const llmSays = (json: string) => async () => json
+/** A tool-loop reply that immediately calls submit_verdict with the given verdict fields. */
+const verdictSays = (input: { pass: boolean; reason?: string }) =>
+  async () => JSON.stringify({ tool: 'submit_verdict', input })
 
 describe('checkDelivery - deterministic checks decide first', () => {
   it('fails a tampered payload on hash mismatch (no LLM say)', async () => {
@@ -44,13 +47,19 @@ describe('checkDelivery - deterministic checks decide first', () => {
   })
 
   it('honours an LLM fail verdict on structurally valid payloads', async () => {
-    const v = await checkDelivery(req(), 'v', llmSays('{"pass":false,"reason":"does not answer the arg"}'))
+    const v = await checkDelivery(req(), 'v', verdictSays({ pass: false, reason: 'does not answer the arg' }))
     expect(v).toMatchObject({ verdict: 'fail', reason: 'does not answer the arg' })
     expect(v.llm).toMatchObject({ status: 'used', provider: expect.any(String), model: expect.any(String) })
   })
 
   it('honours an LLM pass verdict with its reason', async () => {
-    const v = await checkDelivery(req(), 'v', llmSays('{"pass":true,"reason":"fits the order"}'))
+    const v = await checkDelivery(req(), 'v', verdictSays({ pass: true, reason: 'fits the order' }))
     expect(v).toMatchObject({ verdict: 'pass', reason: 'fits the order' })
+  })
+
+  it('falls back to pass when the tool loop exhausts its rounds without deciding', async () => {
+    const v = await checkDelivery(req(), 'v', async () => JSON.stringify({ tool: 'inspect_payload_structure', input: {} }))
+    expect(v).toMatchObject({ verdict: 'pass', reason: 'hash + structure verified' })
+    expect(v.llm).toMatchObject({ status: 'fallback', reason: 'model exhausted rounds without deciding' })
   })
 })

@@ -23,8 +23,6 @@ In arbiter mode, the seller verifies the escrow buyer as the vault PDA from `DEP
 | `src/index.ts` | Coral market loop and funding verification. |
 | `src/escrow.ts` | Read-only escrow funding check. |
 | `src/service.ts` | Service delivery for `txline`, `risk-policy`, `fan-card`, and `freelance`. |
-| `src/payment.ts` | Older direct-payment helper/tests. |
-| `src/replay.ts` | Replay helpers/tests. |
 
 ## Harness Adapter
 
@@ -46,6 +44,12 @@ see its proposed price clamped into `[floor, budget]`, then must call `submit_bi
 terminate. Code re-clamps the final price into `[floor, budget]` regardless of what the loop
 reports — the tool call is an auditable step, not the enforcement itself. If the loop errors or
 exhausts its rounds without deciding, the seller falls back to a floor bid, same as an LLM outage.
+
+Before pricing even runs, `decideBidGate()` (`bid-gate.ts`) decides *whether to bid at all* — not
+just the capability/floor guards `decideBid()` already has, but a strategic pass over the seller's
+own track record via `REPUTATION_URL`. It's a genuine no-op (no LLM/fetch call) until
+`REPUTATION_URL` is configured, and fails open (bids anyway) on any error, same philosophy as the
+adversarial reviewer below. Set `REPUTATION_URL` to enable it.
 
 Set `BID_REVIEW_ENABLED=1` to add a second, independently-prompted adversarial loop
 (`reviewBid()` in `bid-review.ts`) that reviews the proposed bid — with no access to the first
@@ -85,6 +89,7 @@ Variables:
 | `FLOOR_SOL` | Minimum bid. |
 | `PERSONA` | Persona label/config. |
 | `BID_REVIEW_ENABLED` | Set to `1` to run a second, adversarial review loop before posting a bid — see above. |
+| `REPUTATION_URL` | The feed's `/api/reputation` — when set, gates whether this seller bids at all based on its own track record. See Bid Decision Loop above. |
 | `SETTLEMENT_MODE` | `arbiter` or `direct`. |
 | `ESCROW_DEADLINE_SECS` | Escrow deadline. |
 | `SOLANA_RPC_URL` | Devnet by default. |

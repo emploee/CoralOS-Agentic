@@ -230,7 +230,9 @@ Harness processes hold no signing keys. Agents call policy before deposits and r
 | [CORAL.md](CORAL.md) | CoralOS session/agent mechanics. |
 | [LLM.md](LLM.md) | Provider selection, model override, fallback behavior. |
 | [API.md](API.md) | Service-agnostic API usage guide for any integration. |
-| [docs/AGENT_DEPTH_PLAN.md](docs/AGENT_DEPTH_PLAN.md) | Bounded tool-calling loop and adversarial review. |
+| [docs/AGENT_DEPTH_PLAN.md](docs/AGENT_DEPTH_PLAN.md) | Bounded tool-calling loop and adversarial review, plus the longer autonomy roadmap. |
+| [docs/E2E_AGENTIC_DECISIONS.md](docs/E2E_AGENTIC_DECISIONS.md) | Concrete lifecycle decisions behind the roadmap's later phases, and what each one actually weighs. |
+| [docs/BUYER_VERIFIER_LOOPS.md](docs/BUYER_VERIFIER_LOOPS.md) | Scoped, ready-to-build plan: buyer award loop + verifier loop only. |
 | [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) | Readiness status, promotion checklist, open blockers. |
 | [docs/PAYMENT_RAIL_INTEGRATION.md](docs/PAYMENT_RAIL_INTEGRATION.md) | Deployed rails and where each is wired. |
 | [TXODDS.md](TXODDS.md) | TxODDS TxLINE integration details. |

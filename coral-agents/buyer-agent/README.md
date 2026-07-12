@@ -21,13 +21,36 @@ WANT -> BID* -> AWARD
 
 | File | Role |
 |---|---|
-| `src/index.ts` | Market loop and policy-gated deposit/release. |
-| `src/arbiter.ts` | Arbiter client and vault PDA helpers. |
-| `src/escrow.ts` | Direct base escrow client. |
-| `src/wantFeed.ts` | Event-mode polling for external jobs. |
-| `src/reputation.ts` | Reputation lines from feed API. |
-| `src/goal.ts` | Buyer goal defaults. |
-| `src/llm_buyer.ts` | Award reasoning and fallback selection. |
+| `src/index.ts` | Market loop: WANT/BID/AWARD, policy-gated deposit, wait for DELIVERED, optional VERIFY, policy-gated release. |
+| `src/award.ts` | `pickWinner()` — award selection via a bounded tool loop, deterministic cheapest-bid fallback. See Award Loop below. |
+| `src/award-tools.ts` | Tools for the award loop: `fetch_seller_reputation`, `compute_value_score`, `submit_award`. |
+| `src/escrow.ts` | Direct base escrow client (`SETTLEMENT_MODE=direct`). |
+| `src/arbiter.ts` | Arbiter client and vault PDA helpers (`SETTLEMENT_MODE=arbiter`, the default). |
+| `src/wantFeed.ts` | Event-mode polling for external jobs (`WANT_FEED_URL`), instead of rotating `BUYER_ARGS`. |
+| `src/reputation.ts` | Fetches per-seller reputation (structured and formatted) from the feed API (`REPUTATION_URL`). |
+| `src/verify-gate.ts` | `decideVerifyEscalation()` — per-round judgment on whether to actually escalate to the verifier. See Verify Gate below. |
+
+## Award Loop
+
+`pickWinner()` (`src/award.ts`) runs a bounded tool-calling loop (`runToolLoop`, capped at 5 rounds)
+instead of a single LLM call: the model calls `fetch_seller_reputation` and `compute_value_score`
+(a deterministic price × reputation formula) before it must call `submit_award` to terminate. If the
+loop errors, exhausts its rounds, or picks a seller outside the collected bid pool, the buyer falls
+back to the cheapest bid — same failure-mode shape as the seller's bid decision loop
+(`coral-agents/seller-agent/README.md`'s Bid Decision Loop).
+
+## Verify Gate
+
+`decideVerifyEscalation()` (`src/verify-gate.ts`) decides per round whether to actually send
+`VERIFY`, instead of the static `VERIFIER_AGENT` on/off used every round when `VERIFY_GATE_ENABLED`
+is unset. It only skips escalation for a seller with an established (3+ delivery), clean
+(`verifiedFail === 0`) record — otherwise it always escalates.
+
+**Important**: skipping escalation does not safely bypass release policy — `policy.ts`'s
+`requireVerifier` is hardcoded to `!!VERIFIER_AGENT`, so a skipped round without a `VERIFIED pass`
+has its release denied exactly like a verifier timeout: funds stay in escrow, refundable after the
+deadline. This is an opt-in efficiency/scrutiny tradeoff, not a free win — see `docs/E2E_AGENTIC_DECISIONS.md`'s
+D4 for the full reasoning. Off by default.
 
 ## Environment
 
@@ -43,8 +66,9 @@ WANT -> BID* -> AWARD
 | `SETTLEMENT_MODE` | `arbiter` or `direct`. |
 | `VERIFIER_AGENT` | Enables verifier gate when set. |
 | `VERIFY_WINDOW_MS` | Verifier response window. |
+| `VERIFY_GATE_ENABLED` | Set to `1` to skip escalation for sellers with a clean, established record — see Verify Gate above. Default `0` (verify every delivery). |
 | `WANT_FEED_URL` | Event-mode job source. |
-| `REPUTATION_URL` | Feed reputation endpoint. |
+| `REPUTATION_URL` | Feed reputation endpoint — folded into award selection and, when `VERIFY_GATE_ENABLED=1`, the verify-gate decision. |
 | `POLICY_MAX_SOL_PER_ROUND` | Policy spend cap per round. |
 | `POLICY_MAX_SOL_PER_SESSION` | Policy spend cap per session. |
 | `POLICY_SERVICES` | Allowed services. |

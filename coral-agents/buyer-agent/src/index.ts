@@ -16,11 +16,11 @@
  * devnet wallet + live RPC, so they run in a live market session rather than in `npm test`/CI.
  */
 import {
-  startCoralAgent, complete, parseJsonReply, loadKeypairB58,
+  startCoralAgent, loadKeypairB58,
   formatWant, parseBid, parseEscrowRequired, formatAward, formatDeposited,
-  formatVerify, parseVerified, formatLlmUsed, sha256Hex, enforce, policyFromEnv, llmRuntimeInfo,
-  selectBids, pickCheapest, verb, messageRound,
-  type Bid, type EscrowTerms, type CoralAgentContext, type LlmUse,
+  formatVerify, parseVerified, formatLlmUsed, sha256Hex, enforce, policyFromEnv,
+  selectBids, verb, messageRound,
+  type Bid, type EscrowTerms, type CoralAgentContext,
 } from '@pay/agent-runtime'
 import { PublicKey } from '@solana/web3.js'
 import { makeProgram, deposit, release, escrowPda } from './escrow.js'
@@ -29,7 +29,8 @@ import {
   openArbitrated, arbitrateRelease, arbitratedEscrowPda,
 } from './arbiter.js'
 import { fetchNextWant } from './wantFeed.js'
-import { fetchReputationLines } from './reputation.js'
+import { pickWinner } from './award.js'
+import { decideVerifyEscalation } from './verify-gate.js'
 
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
 const NAME = process.env.AGENT_NAME ?? 'buyer-agent'
@@ -52,6 +53,10 @@ const SETTLEMENT_MODE = (process.env.SETTLEMENT_MODE ?? 'arbiter').toLowerCase()
 // escrow, refundable after the deadline.
 const VERIFIER = process.env.VERIFIER_AGENT ?? ''
 const VERIFY_WINDOW_MS = Number(process.env.VERIFY_WINDOW_MS ?? '20000')
+// Per-round judgment on whether to actually escalate to the verifier, instead of the static
+// VERIFIER on/off above. Off by default: skipping escalation forfeits that round's settlement if
+// the guess is wrong (see verify-gate.ts), so this is opt-in, not a free efficiency win.
+const VERIFY_GATE_ENABLED = (process.env.VERIFY_GATE_ENABLED ?? '0') === '1'
 // Event mode (the research market): poll this feed for the next job instead of rotating BUYER_ARGS.
 const WANT_FEED = process.env.WANT_FEED_URL ?? ''
 // Track record from the run ledger (the feed's /api/reputation): history shapes who wins awards.
@@ -68,65 +73,6 @@ const policy = policyFromEnv(process.env, {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const expl = (kind: 'tx' | 'address', id: string) => `https://explorer.solana.com/${kind}/${id}?cluster=devnet`
-const selectionGuardrail = 'winner must match collected BID set; fallback is cheapest available bid'
-
-function buyerLlm(
-  round: number,
-  status: LlmUse['status'],
-  reason: string,
-  audit: Pick<LlmUse, 'inputHash' | 'outputHash'> = {},
-): LlmUse {
-  const info = status === 'skipped' ? undefined : llmRuntimeInfo({ maxTokens: 100 })
-  return {
-    round,
-    agent: NAME,
-    purpose: 'buyer_award',
-    status,
-    ...(info ? { provider: info.provider, model: info.model } : {}),
-    usedFor: 'buyer_award',
-    affectedFunds: false,
-    ...audit,
-    reason,
-    guardrail: selectionGuardrail,
-    createdAt: new Date().toISOString(),
-  }
-}
-
-const errReason = (e: unknown): string => String((e as Error).message ?? e).slice(0, 120)
-
-/** Best-value selection via LLM; deterministic cheapest fallback. Returns the winner + its reasoning. */
-async function pickWinner(
-  round: number,
-  service: string,
-  arg: string,
-  budget: number,
-  pool: Bid[],
-  repLines?: string,
-): Promise<{ winner: Bid; reason?: string; llm: LlmUse }> {
-  if (pool.length === 1) return { winner: pool[0], llm: buyerLlm(round, 'skipped', 'single bid; no model selection needed') }
-  try {
-    const system =
-      'You are a buyer choosing the best-value bid for a Solana data service. Weigh price against ' +
-      'each seller\'s track record when one is given - a cheap seller that fails verification or ' +
-      'no-shows is not a bargain. Reply ONLY with JSON {"by": "<seller name>", "reason": "<short>"}.'
-    const user =
-      `service=${service} arg=${arg} budget=${budget}\nbids:\n` +
-      pool.map((b) => `- ${b.by}: ${b.priceSol} SOL${b.note ? ` (${b.note})` : ''}`).join('\n') +
-      (repLines ? `\ntrack record (derived from the run ledger):\n${repLines}` : '')
-    const inputHash = sha256Hex(`${system}\n${user}`)
-    const text = await complete({ system, user, maxTokens: 100 })
-    const outputHash = sha256Hex(text)
-    const parsed = parseJsonReply<{ by?: string; reason?: string }>(text)
-    const chosen = pool.find((b) => b.by === parsed?.by)
-    if (chosen) {
-      console.error(`[buyer] picked ${chosen.by} (${chosen.priceSol} SOL): ${parsed?.reason ?? ''}`)
-      return { winner: chosen, reason: parsed?.reason, llm: buyerLlm(round, 'used', parsed?.reason ?? 'model selected winner', { inputHash, outputHash }) }
-    }
-    return { winner: pickCheapest(pool)!, reason: 'cheapest available', llm: buyerLlm(round, 'fallback', 'model returned a seller outside the bid pool', { inputHash, outputHash }) }
-  } catch (e) {
-    return { winner: pickCheapest(pool)!, reason: 'cheapest available', llm: buyerLlm(round, 'fallback', `LLM unavailable: ${errReason(e)}`) }
-  }
-}
 
 /** Wait (bounded) for a message matching `round` that `parse` accepts. */
 async function waitFor<T>(
@@ -199,8 +145,9 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
       if (pool.length === 0) { console.error(`[buyer] round ${round}: NO_SELLERS`); await sleep(CYCLE_MS); continue }
 
       // -- award the best value (price × track record) -------------------------
-      const repLines = REPUTATION_URL ? await fetchReputationLines(REPUTATION_URL) : undefined
-      const { winner, reason, llm } = await pickWinner(round, service, arg, budget, pool, repLines)
+      const { winner, reason, llm } = await pickWinner(
+        { round, service, arg, budgetSol: budget }, pool, NAME, REPUTATION_URL || undefined,
+      )
       await ctx.send(formatLlmUsed(llm), thread)
       await ctx.send(formatAward(round, winner.by, reason), thread, [winner.by])
 
@@ -264,7 +211,9 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
 
       if (delivered) {
         let verified: 'pass' | 'fail' | undefined
-        if (VERIFIER) {
+        const gate = await decideVerifyEscalation(!!VERIFIER, VERIFY_GATE_ENABLED, winner.by, REPUTATION_URL || undefined)
+        if (trace) console.error(`[buyer] round ${round}: verify-gate ${gate.escalate ? 'escalating' : 'skipping'} - ${gate.reason}`)
+        if (gate.escalate) {
           // Hand the exact artifact (content-hashed) to the independent verifier.
           const sha = sha256Hex(delivered.payload)
           await ctx.send(formatVerify({ round, service, arg, sha, payload: delivered.payload }), thread, [VERIFIER])

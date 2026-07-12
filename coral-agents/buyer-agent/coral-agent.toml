@@ -31,6 +31,7 @@ SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL 
 SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter (default) | direct legacy base escrow" }
 VERIFIER_AGENT = { type = "string", default = "", description = "Name of the independent verifier agent; when set, release is gated on its VERIFIED pass" }
 VERIFY_WINDOW_MS = { type = "f64", default = 20000, description = "How long to wait for the verifier's verdict before leaving funds in escrow" }
+VERIFY_GATE_ENABLED = { type = "string", default = "0", description = "Set to 1 to skip escalation for sellers with a clean, established record. WARNING: a wrong skip forfeits that round's settlement, not just verification - see verify-gate.ts" }
 WANT_FEED_URL = { type = "string", default = "", description = "Event mode: poll this URL for the next job (research market watcher) instead of rotating BUYER_ARGS" }
 POLICY_MAX_SOL_PER_ROUND = { type = "f64", default = 0, description = "Spend cap per deposit in SOL (0/unset = the round budget)" }
 POLICY_MAX_SOL_PER_SESSION = { type = "f64", default = 0, description = "Cumulative session spend cap in SOL (unset = uncapped)" }

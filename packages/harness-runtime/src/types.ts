@@ -13,6 +13,8 @@ export interface SellerConfig {
   persona: string
   /** Run a second, independently-prompted adversarial review before posting a proposed bid. */
   reviewEnabled?: boolean
+  /** The feed's /api/reputation - when set, gates whether to bid at all (see bid-gate.ts). */
+  reputationUrl?: string
 }
 
 export interface BidDecision {

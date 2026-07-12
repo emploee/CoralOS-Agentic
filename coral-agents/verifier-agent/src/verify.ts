@@ -8,9 +8,10 @@
  * deterministic checks stand. Mirrors the decideBid pattern: the model proposes, code enforces.
  */
 import {
-  sha256Hex, complete, llmRuntimeInfo, parseJsonReply,
+  sha256Hex, complete, llmRuntimeInfo, runToolLoop, BudgetGuard, StepCounter,
   type LlmUse, type VerifyRequest, type Verdict, type CompleteOpts,
 } from '@pay/agent-runtime'
+import { inspectPayloadStructureTool, submitVerdictTool, assessScrutiny, type SubmitVerdictInput } from './verify-tools.js'
 
 type Llm = (opts: CompleteOpts) => Promise<string>
 export type VerdictWithLlm = Verdict & { llm: LlmUse }
@@ -83,29 +84,46 @@ export async function checkDelivery(req: VerifyRequest, name: string, llm: Llm =
     )
   }
 
+  const scrutiny = assessScrutiny(req)
+  const maxRounds = scrutiny === 'high' ? 4 : 2
+
   try {
     const system =
       'You are an impartial delivery verifier for a paid agent marketplace. Given an order and the ' +
-      'delivered payload, judge whether the payload plausibly fulfils the order. Reply ONLY with ' +
-      'JSON: {"pass": boolean, "reason": string}. Keep reason under 10 words.'
-    const user = `order: service=${req.service} arg=${req.arg}\ndelivered payload: ${req.payload.slice(0, 1500)}`
-    const inputHash = sha256Hex(`${system}\n${user}`)
-    const text = await llm({
-      system,
-      user,
-      maxTokens: 120,
-    })
-    const outputHash = sha256Hex(text)
-    const parsed = parseJsonReply<{ pass?: boolean; reason?: string }>(text)
-    if (parsed?.pass === false) {
+      'delivered payload, judge whether the payload plausibly fulfils the order. Call ' +
+      'inspect_payload_structure to confirm your own read of the payload' +
+      (scrutiny === 'high' ? " - this payload doesn't match a known delivery shape, so inspect it before deciding" : '') +
+      ', then call submit_verdict with {"pass": boolean, "reason": string}. Keep reason under 10 words.'
+    const initialPrompt = `order: service=${req.service} arg=${req.arg}\ndelivered payload: ${req.payload.slice(0, 1500)}`
+    const inputHash = sha256Hex(`${system}\n${initialPrompt}`)
+
+    const outcome = await runToolLoop(
+      {
+        agentId: name,
+        system,
+        initialPrompt,
+        tools: [inspectPayloadStructureTool(req.payload), submitVerdictTool],
+        finalToolName: 'submit_verdict',
+        maxRounds,
+        // No lamports move during a verdict — see the matching note in quote.ts's decideBid.
+        budget: new BudgetGuard({ maxToolCalls: maxRounds * 2, maxSpendLamports: Number.MAX_SAFE_INTEGER, maxDurationSecs: 30 }),
+        steps: new StepCounter(maxRounds),
+        maxTokens: 150,
+      },
+      llm,
+    )
+    const finalInput = outcome.finalInput as SubmitVerdictInput | undefined
+    const outputHash = finalInput ? sha256Hex(JSON.stringify(finalInput)) : undefined
+
+    if (finalInput?.pass === false) {
       return withLlm(
-        { ...base, verdict: 'fail', reason: (parsed.reason ?? 'judged unacceptable').slice(0, 60) },
+        { ...base, verdict: 'fail', reason: (finalInput.reason ?? 'judged unacceptable').slice(0, 60) },
         verifierLlm(req, name, 'used', 'model rejected structurally valid payload', true, { inputHash, outputHash }),
       )
     }
-    if (parsed?.pass === true) {
+    if (finalInput?.pass === true) {
       return withLlm(
-        { ...base, verdict: 'pass', reason: (parsed.reason ?? 'checks passed').slice(0, 60) },
+        { ...base, verdict: 'pass', reason: (finalInput.reason ?? 'checks passed').slice(0, 60) },
         verifierLlm(req, name, 'used', 'model accepted structurally valid payload', true, { inputHash, outputHash }),
       )
     }
@@ -118,6 +136,6 @@ export async function checkDelivery(req: VerifyRequest, name: string, llm: Llm =
   }
   return withLlm(
     { ...base, verdict: 'pass', reason: 'hash + structure verified' },
-    verifierLlm(req, name, 'fallback', 'model returned unparseable JSON'),
+    verifierLlm(req, name, 'fallback', 'model exhausted rounds without deciding'),
   )
 }

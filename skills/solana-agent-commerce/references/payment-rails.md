@@ -55,3 +55,8 @@ const { response: body, settlement } = await payViaX402(
 
 `x402ClientRail`/`buildPaymentPayload` are the lower-level primitives `fetchWithX402` is built on, for
 callers that need to inspect or hold a signed-but-unsubmitted payload before deciding to retry.
+
+## See also
+
+- `references/escrow-idl.md` — the on-chain program `escrowRail` wraps, and the `direct`/`arbiter` settlement-mode split.
+- `references/market-protocol.md` — the `PAYMENT_REQUIRED`/`PAYMENT_PROOF`/`PAYMENT_CONFIRMED` messages `procureUpstream()` posts for the x402 leg, and how they differ from the core round's `ESCROW_REQUIRED`/`DEPOSITED`.

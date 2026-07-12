@@ -187,6 +187,22 @@ bash build-agents.sh
 npm run demo:coral
 ```
 
+## Claude Code Plugin: `coral-skills`
+
+`.claude/settings.json` pre-registers and enables the official
+[`Coral-Protocol/coral-skill-set`](https://github.com/Coral-Protocol/coral-skill-set) plugin
+marketplace, via `extraKnownMarketplaces` + `enabledPlugins`. It ships one skill, `coral-skills`,
+that routes CoralOS *infrastructure* questions — starting/inspecting `coral-server`, the live
+runtime/OpenAPI schema, connecting an arbitrary agent via Coralizer, session create/poll/watch/close,
+Coral Cloud API keys and custom-tool callbacks, coordination-topology vocabulary — to the current
+upstream reference doc.
+
+That's a different layer from `skills/solana-agent-commerce/` in this repo: `coral-skills` answers
+"how do I run/operate CoralOS itself," this repo's own skill answers "how does *this repo's* market
+protocol, escrow, verifier gate, and payment rails work." Don't vendor `coral-skill-set`'s reference
+docs into this repo's `skills/` — it's upstream-maintained and would go stale immediately; keep
+referencing it as an external plugin instead.
+
 ## See Also
 
 - [PAY.md](PAY.md) — payment rails and settlement.

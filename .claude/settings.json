@@ -4,6 +4,14 @@
       "WebFetch(domain:www.coralos.ai)"
     ]
   },
+  "extraKnownMarketplaces": {
+    "coral-skill-set": {
+      "source": {
+        "source": "github",
+        "repo": "Coral-Protocol/coral-skill-set"
+      }
+    }
+  },
   "enabledPlugins": {
     "coral-skills@coral-skill-set": true
   }

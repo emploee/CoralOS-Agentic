@@ -21,9 +21,9 @@ The browser does not store the guest JWT or `X-Api-Token`.
 
 | Capability | Endpoint | Returned data | Current use |
 |---|---|---|---|
-| Fixtures | `GET /api/fixtures/snapshot` | Fixture id, competition, participants, home/away flag, start time. | Proxy `/api/fixtures`, UI board. |
-| Odds | `GET /api/odds/snapshot/{fixtureId}` | Markets, bookmaker, `SuperOddsType`, price names, de-margined `Pct`. | Proxy `/api/odds`, `/api/board`, `/api/edge`. |
-| Scores | `GET /api/scores/snapshot/{fixtureId}` | Score events. | Client support and run grading paths. |
+| Fixtures | `GET /api/fixtures/snapshot` | Fixture id, competition, participants, home/away flag, start time. | Called internally by the proxy's `/api/board` and `/api/edge-x402`; not exposed as its own proxy route. |
+| Odds | `GET /api/odds/snapshot/{fixtureId}` | Markets, bookmaker, `SuperOddsType`, price names, de-margined `Pct`. | Called internally by the proxy's `/api/board` and `/api/edge-x402`; not exposed as its own proxy route. |
+| Scores | `GET /api/scores/snapshot/{fixtureId}` | Score events. | Client support exists (`agent/txline.ts`) but nothing in the proxy currently calls it. |
 
 Properties:
 
@@ -36,10 +36,8 @@ Properties:
 | Derivation | Source | Implementation |
 |---|---|---|
 | Board | Fixtures plus odds snapshots. | `server/proxy.ts` exposes `/api/board`. |
-| Edge analysis | One fixture's verified odds snapshot. | `agent/edge.ts` and `/api/edge`. |
-| Settlement reference | Order/delivery data. | Proxy and agent settlement clients. |
-| Event queue | Repeated board snapshots. | `research/watcher.ts` and `research/detect.ts`. |
-| Run grading | Persisted run plus score data when available. | `/api/grade-runs`. |
+| Edge analysis | One fixture's verified odds snapshot. | `agent/edge.ts`, exposed via `/api/edge-x402`. |
+| Settlement reference | Order/delivery data. | CoralOS buyer-agent/arbiter settlement clients (`coral-agents/buyer-agent`), not the proxy. |
 
 ## Candidate Technical Extensions
 
@@ -59,7 +57,7 @@ These extensions remain inside the TxLINE API surface:
 - Do not add unverified odds from unrelated providers to the TxLINE example.
 - Keep TxLINE credentials server-side.
 - Keep settlement on devnet unless the repository policy changes through a separate review.
-- Treat API responses as untrusted input and validate before using them in paid delivery or grading.
+- Treat API responses as untrusted input and validate before using them in paid delivery.
 - Free-tier guest access is scoped to the World Cup 2026 period; do not assume it remains available afterward (see the disclaimer in `README.md`).
 
 ## Related Files
@@ -69,6 +67,4 @@ These extensions remain inside the TxLINE API surface:
 | `agent/txline.ts` | TxLINE API client. |
 | `agent/edge.ts` | Fair-line transform and LLM/fallback analysis. |
 | `agent/service.ts` | Paid service wrapper. |
-| `server/proxy.ts` | Local proxy, settlement, run persistence, grading. |
-| `research/detect.ts` | Pure event detector. |
-| `research/watcher.ts` | Polling event queue. |
+| `server/proxy.ts` | Local proxy: board data, x402 edge reference merchant, CoralOS round launch/forwarding. |

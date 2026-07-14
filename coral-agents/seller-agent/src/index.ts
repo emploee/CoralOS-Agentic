@@ -12,7 +12,7 @@ import type { Program } from '@coral-xyz/anchor'
 import { PublicKey } from '@solana/web3.js'
 import {
   startCoralAgent, verb, parseWant, formatBid, parseAward, formatEscrowRequired, parseDeposited,
-  formatLlmUsed, envSigner, type WalletSigner,
+  formatLlmUsed, envSigner, logLlmStartup, type WalletSigner,
 } from '@pay/agent-runtime'
 import { adapterFromEnv, sellerConfigFromEnv } from '@pay/harness-runtime'
 import { procureUpstream } from '@pay/payment-runtime'
@@ -52,6 +52,8 @@ function boundReference(order: Quote & { round: number }): string {
   const preimage = `txodds-coral:${order.round}:${order.service}:${order.arg}:${SELLER_WALLET}:${order.priceSol}`
   return new PublicKey(createHash('sha256').update(preimage).digest()).toBase58()
 }
+
+logLlmStartup(NAME)
 
 await startCoralAgent({ agentName: NAME }, async (ctx) => {
   console.error(`[${NAME}] ready: services=[${cfg.services.join(',')}] floor=${cfg.floorSol} settlement=${SETTLEMENT_MODE} harness=${adapter.name} wallet=${SELLER_WALLET}`)

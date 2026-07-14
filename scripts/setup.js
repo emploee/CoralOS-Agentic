@@ -67,9 +67,9 @@ writeFileSync(walletsPath, block)
 console.log('\n' + block)
 console.log('(saved to WALLETS.txt - keys written to .env)')
 console.log(`
-Next: add your LLM key to .env — the kit uses Venice AI (LLM_PROVIDER=venice + VENICE_API_KEY=..., free
-credits with code IMPERIAL50 at venice.ai/settings/api; OpenAI/Anthropic also work — see LLM.md),
-fund the BUYER wallet above, then run the demo:
+Next: add your LLM key to .env — recommended is Groq (LLM_PROVIDER=groq + GROQ_API_KEY=..., free with
+a renewing rate limit, no card, get one at console.groq.com/keys; Venice/OpenAI/Anthropic also work —
+see LLM.md), fund the BUYER wallet above, then run the demo:
 
   npm run dev          # starts the proxy (live data + escrow) + the Oracle UI, opens the browser
 

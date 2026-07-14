@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { mkdtempSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { runDir, sha256Hex } from '@pay/agent-runtime'
+import { runDir, sha256Hex, readRun, writeRun, type ScoreOutcome } from '@pay/agent-runtime'
 import { foldRounds, type RawMessage } from './foldRounds.js'
-import { persistRounds, replaySession, replayThreads, toRunRecord, roundTranscript } from './persist.js'
+import { persistRounds, replaySession, replayThreads, toRunRecord, roundTranscript, mergeOutcomes } from './persist.js'
 
 const sellers = ['seller-cheap', 'seller-premium', 'seller-lazy']
 const session = 'e2e-session'
@@ -125,5 +125,30 @@ describe('persist', () => {
     expect(JSON.parse(readFileSync(join(dir, 'llm.json'), 'utf8'))[0])
       .toMatchObject({ agent: 'seller-premium', purpose: 'seller_quote', status: 'used' })
     expect(replaySession(base, session, sellers)).toEqual([r])
+  })
+
+  it('mergeOutcomes attaches a persisted grade onto the in-memory rounds', () => {
+    const rounds = foldRounds(messages, sellers)
+    persistRounds(base, session, rounds, messages)
+    const outcome: ScoreOutcome = { status: 'graded', checkedAt: '2026-07-12T00:00:00.000Z', actual: { home: 2, away: 1, winner: 'part1' }, prediction: 'part1', correct: true }
+    // Simulate what proxy.ts's gradeRuns() does: write the grade directly onto the ledger record.
+    const loaded = readRun(base, session, 1)!
+    writeRun(base, { ...loaded.run, outcome }, loaded.transcript)
+
+    const merged = mergeOutcomes(base, session, rounds)
+    expect(merged.find((r) => r.round === 1)?.outcome).toEqual(outcome)
+    expect(merged.find((r) => r.round === 2)?.outcome).toBeUndefined()
+  })
+
+  it('persistRounds preserves a previously-graded outcome across a subsequent live re-fold', () => {
+    const rounds = foldRounds(messages, sellers)
+    persistRounds(base, session, rounds, messages)
+    const outcome: ScoreOutcome = { status: 'graded', checkedAt: '2026-07-12T00:00:00.000Z', actual: { home: 0, away: 0, winner: 'x' }, prediction: 'x', correct: true }
+    const loaded = readRun(base, session, 1)!
+    writeRun(base, { ...loaded.run, outcome }, loaded.transcript)
+
+    // A fresh live poll re-folds the SAME messages and re-persists — this must not wipe the grade.
+    persistRounds(base, session, foldRounds(messages, sellers), messages)
+    expect(readRun(base, session, 1)!.run.outcome).toEqual(outcome)
   })
 })

@@ -9,11 +9,24 @@ import type { LlmUse, Want } from '@pay/agent-runtime'
 export interface SellerConfig {
   name: string
   services: string[]
+  /** Base business floor - a legitimate per-persona choice for a deterministic (cache-hit) service.
+   *  For a service in `llmDeliveryTokens`, the real cost of that LLM call is derived and added on
+   *  top of this (see harness-runtime's cost.ts) rather than typed into one flat number. */
   floorSol: number
   persona: string
+  /** Pricing posture once clearing-price data is available (reputationUrl set): undercut to win
+   *  volume, premium to bank on quality, or balanced (default) to track the recent median. A no-op
+   *  without reputationUrl - there is no clearing data to act on. */
+  strategy?: 'undercut' | 'premium' | 'balanced'
+  /** Services this seller's delivery code actually calls an LLM for, and the max_tokens budget that
+   *  call uses - lets the floor for that service be derived from the call's real cost instead of
+   *  typed in per persona (see cost.ts's deriveFloorSol). Absent/unlisted services keep floorSol as-is. */
+  llmDeliveryTokens?: Record<string, number>
   /** Run a second, independently-prompted adversarial review before posting a proposed bid. */
   reviewEnabled?: boolean
-  /** The feed's /api/reputation - when set, gates whether to bid at all (see bid-gate.ts). */
+  /** The feed's /api/reputation - when set, decideBid's tool loop (quote.ts) gains fetch_own_reputation
+   *  (whether this round is worth bidding at all) and fetch_clearing_prices (what to bid), so pricing
+   *  and the go/no-go decision are one reasoning pass instead of two. */
   reputationUrl?: string
 }
 

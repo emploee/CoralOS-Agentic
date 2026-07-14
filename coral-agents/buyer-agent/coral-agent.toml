@@ -24,7 +24,7 @@ BUYER_MAX_SOL = { type = "f64", default = 0.001, description = "Budget cap per r
 BUYER_SERVICE = { type = "string", default = "txline", description = "Service to shop for (sellers self-select on it)" }
 BUYER_ARG = { type = "string", default = "edge 18175397", description = "Argument passed to the winning seller's deliverService" }
 BUYER_ARGS = { type = "string", default = "", description = "Comma-separated args to rotate through, one per round (overrides BUYER_ARG)" }
-MARKET_SELLERS = { type = "string", default = "seller-worldcup,seller-fast,seller-premium", description = "Comma-separated seller names in the market thread" }
+MARKET_SELLERS = { type = "string", default = "seller-agent", description = "Comma-separated seller names in the market thread" }
 BID_WINDOW_MS = { type = "f64", default = 5000, description = "How long to collect competing bids each round" }
 CYCLE_INTERVAL_MS = { type = "f64", default = 30000, description = "Delay between market rounds" }
 SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }
@@ -32,7 +32,7 @@ SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter
 VERIFIER_AGENT = { type = "string", default = "", description = "Name of the independent verifier agent; when set, release is gated on its VERIFIED pass" }
 VERIFY_WINDOW_MS = { type = "f64", default = 20000, description = "How long to wait for the verifier's verdict before leaving funds in escrow" }
 VERIFY_GATE_ENABLED = { type = "string", default = "0", description = "Set to 1 to skip escalation for sellers with a clean, established record. WARNING: a wrong skip forfeits that round's settlement, not just verification - see verify-gate.ts" }
-WANT_FEED_URL = { type = "string", default = "", description = "Event mode: poll this URL for the next job (research market watcher) instead of rotating BUYER_ARGS" }
+WANT_FEED_URL = { type = "string", default = "", description = "Event mode: poll this URL for the next job instead of rotating BUYER_ARGS" }
 POLICY_MAX_SOL_PER_ROUND = { type = "f64", default = 0, description = "Spend cap per deposit in SOL (0/unset = the round budget)" }
 POLICY_MAX_SOL_PER_SESSION = { type = "f64", default = 0, description = "Cumulative session spend cap in SOL (unset = uncapped)" }
 POLICY_SERVICES = { type = "string", default = "", description = "Service allowlist for deposits, csv (unset = the BUYER_SERVICE)" }
@@ -41,7 +41,8 @@ REPUTATION_URL = { type = "string", default = "", description = "The feed's /api
 ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key (default brain for best-value selection)" }
 OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key - set with LLM_PROVIDER=openai to flip the brain" }
 VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits) - set with LLM_PROVIDER=venice to flip the brain" }
-LLM_PROVIDER = { type = "string", default = "", description = "anthropic (default) | openai | venice" }
+GROQ_API_KEY = { type = "string", default = "", description = "Groq key (OpenAI-compatible, free renewing rate limit - recommended once Venice's credits run out) - set with LLM_PROVIDER=groq to flip the brain" }
+LLM_PROVIDER = { type = "string", default = "", description = "groq (recommended free default) | anthropic (last-resort default) | openai | venice - see LLM.md" }
 LLM_MODEL = { type = "string", default = "", description = "Override the LLM model id" }
 TRACE = { type = "string", default = "", description = "Set to 1 to log CoralOS calls + on-chain steps (Explorer links)" }
 

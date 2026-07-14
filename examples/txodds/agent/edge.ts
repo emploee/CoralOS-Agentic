@@ -104,6 +104,16 @@ export function deterministicCall(
   }
 }
 
+// A prompt asking nicely for plain language isn't a guarantee with a small model - this is the actual
+// enforcement. Leftover betting jargon or a raw 3+ digit number discards the reply for the
+// deterministic fallback below, same as an outright LLM failure. Mirrors
+// coral-agents/seller-agent/src/service.ts's identical guard on the same failure mode (separate npm
+// workspace, no shared import path - kept as a local copy like this file's other cross-package logic).
+const JARGON_RE = /\b(implied probability|1x2|underlay|overlay|value)\b/i
+const RAW_NUMBER_RE = /\b\d{3,}\b(?!%)/
+const isPlainEnough = (call: unknown): call is string =>
+  typeof call === 'string' && call.length > 0 && !JARGON_RE.test(call) && !RAW_NUMBER_RE.test(call)
+
 /** Turn the verified snapshots into the sellable product. `llm` is injectable for tests. */
 export async function analyzeEdge(input: EdgeInput, llm: Llm = complete): Promise<Edge> {
   const { fixtureId, market, teams } = shape(input)
@@ -115,18 +125,20 @@ export async function analyzeEdge(input: EdgeInput, llm: Llm = complete): Promis
     try {
       const raw = await llm({
         system:
-          'You are a football trading analyst. You are given a VERIFIED de-margined fair line — true-probability ' +
-          'estimates with the bookmaker margin removed, NOT offered prices. Return JSON {call, confidence}: `call` is ' +
-          'ONE plain sentence reading the line (who is favoured, how decisive, the live alternative). Do NOT claim a ' +
-          'betting edge or "value" — you only have the fair line, not what any book is offering. confidence 0–1 is how ' +
+          'You explain football odds to a casual fan, not a trader. You are given a VERIFIED de-margined fair line ' +
+          '— true-probability estimates with the bookmaker margin removed, NOT offered prices. Return JSON {call, ' +
+          'confidence}: `call` is ONE short, plain-English sentence (under 30 words) - who is favoured, how ' +
+          'decisively, and the next-most-likely outcome. No jargon: never say "implied probability", "1X2", ' +
+          '"underlay/overlay", or "value" - say "likely to win", "close match", or "big favourite" instead. Do NOT ' +
+          'claim a betting edge — you only have the fair line, not what any book is offering. confidence 0–1 is how ' +
           'decisive the favourite is.',
         user: `${matchup}. Verified fair line: ${JSON.stringify(fair.outcomes.map((o) => ({ outcome: o.label, prob: `${o.pct.toFixed(1)}%`, fairOdds: o.fairOdds })))}`,
         maxTokens: 160,
       })
       const parsed = parseJsonReply<{ call?: unknown; confidence?: unknown }>(raw)
-      if (parsed && typeof parsed.call === 'string') {
-        const confidence = Number(parsed.confidence)
-        analysis = { call: parsed.call, ...(Number.isFinite(confidence) ? { confidence } : {}) }
+      if (isPlainEnough(parsed?.call)) {
+        const confidence = Number(parsed?.confidence)
+        analysis = { call: parsed!.call as string, ...(Number.isFinite(confidence) ? { confidence } : {}) }
       }
     } catch {
       /* LLM unavailable → deterministic fallback below */

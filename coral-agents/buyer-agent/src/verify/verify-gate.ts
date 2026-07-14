@@ -11,7 +11,7 @@
  * skips for sellers with an established, clean record - gated behind VERIFY_GATE_ENABLED (default
  * off) so nobody hits this tradeoff by accident.
  */
-import { fetchReputation } from './reputation.js'
+import { fetchReputation } from '../reputation/reputation.js'
 
 export interface VerifyGateDecision {
   escalate: boolean

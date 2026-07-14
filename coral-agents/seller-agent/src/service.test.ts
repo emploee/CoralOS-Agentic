@@ -9,6 +9,7 @@ describe('deliverService routing', () => {
     delete process.env.ANTHROPIC_API_KEY
     delete process.env.OPENAI_API_KEY
     delete process.env.VENICE_API_KEY
+    delete process.env.GROQ_API_KEY
     delete process.env.LLM_PROVIDER
   })
 
@@ -22,35 +23,8 @@ describe('deliverService routing', () => {
     expect(out).toEqual({
       error: 'unsupported service',
       service: 'coingecko',
-      supported: ['txline', 'freelance', 'risk-policy', 'fan-card'],
+      supported: ['txline', 'freelance'],
     })
-  })
-
-  it('delivers a deterministic fixture risk policy', async () => {
-    const out = JSON.parse(await deliverService('risk-policy edge 18175397'))
-    expect(out).toMatchObject({
-      service: 'risk-policy',
-      fixtureId: '18175397',
-      policy: {
-        action: 'observe',
-        maxExposureSol: 0,
-      },
-    })
-    expect(out.policy.requires).toContain('verifier pass before escrow release')
-    expect(out.policy.guardrails).toContain('no real-money wagering')
-  })
-
-  it('delivers a deterministic fan explainer card', async () => {
-    const out = JSON.parse(await deliverService('fan-card edge 18175397'))
-    expect(out).toMatchObject({
-      service: 'fan-card',
-      fixtureId: '18175397',
-      card: {
-        audience: 'fan',
-      },
-      limits: ['educational summary', 'not betting advice'],
-    })
-    expect(out.card.explainer).toContain('break-even fair line')
   })
 
   it('freelance without an LLM key returns an honest error payload (verifier fails it, no release)', async () => {
@@ -113,6 +87,26 @@ describe('deliverService routing', () => {
 
     const out = JSON.parse(await deliverService('txline edge 123'))
     expect(out.analysis.call).toContain('A')
+    expect(out.analysis.note).toContain('deterministic fallback')
+  })
+
+  it('discards a jargon-y or raw-price LLM reply and falls back to deterministic', async () => {
+    process.env.LLM_PROVIDER = 'openai'
+    process.env.OPENAI_API_KEY = 'k'
+    global.fetch = vi.fn(async (url: string) => {
+      if (url.endsWith('/auth/guest/start')) return { ok: true, json: async () => ({ token: 'jwt' }) }
+      if (url.includes('/api/odds/snapshot/123')) {
+        return { ok: true, json: async () => ([{ SuperOddsType: '1X2', PriceNames: ['part1', 'x', 'part2'], Pct: ['62', '22', '16'] }]) }
+      }
+      if (url.includes('/api/fixtures/snapshot')) {
+        return { ok: true, json: async () => ([{ FixtureId: 123, Participant1: 'A', Participant2: 'B' }]) }
+      }
+      // the LLM completion call - a weak model slipping in jargon and a raw price tick despite the prompt
+      return { ok: true, json: async () => ({ choices: [{ message: { content: '{"call":"A offers value at odds of 3267","confidence":0.6}' } }] }) }
+    }) as unknown as typeof fetch
+
+    const out = JSON.parse(await deliverService('txline edge 123'))
+    expect(out.analysis.call).toBe('Odds favour A (62%)')
     expect(out.analysis.note).toContain('deterministic fallback')
   })
 

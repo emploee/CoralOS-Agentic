@@ -1,9 +1,9 @@
 /**
- * Event-driven WANTs - the research-market trigger.
+ * Event-driven WANTs.
  *
  * When WANT_FEED_URL is set, the buyer stops rotating static BUYER_ARGS and instead asks the feed
- * for the next job each cycle (the watcher in examples/txodds/research queues odds-move events from
- * the live TxLINE board). A quiet market posts nothing - no event, no WANT, no spend.
+ * for the next job each cycle - any process that serves GET <url> -> 200 {service?, arg, budgetSol?,
+ * note?} | 204 can drive it. A quiet market posts nothing - no event, no WANT, no spend.
  */
 
 export interface NextWant {

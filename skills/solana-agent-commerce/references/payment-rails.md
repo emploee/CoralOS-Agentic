@@ -18,7 +18,7 @@ Three rails, deliberately — they solve different problems, not overlapping one
 - `escrow`: disputed or verifier-gated work — money is locked in a program-owned PDA until release/refund conditions are met. This is the CoralOS round's core lifecycle.
 - `x402`: cheap, instant, per-call HTTP API payments — money moves immediately, no dispute window. Used for `coral-agents/seller-agent`'s real upstream-procurement leg (`PROCURE_RAIL=x402`), not just a standalone demo.
 
-spl-usdc, allowance, embedded-wallet, payout, and pay-sh were removed (see `docs/PAYMENT_RAIL_INTEGRATION.md`) — they either had no production consumer, were redundant with what escrow/x402 already provide, or (pay-sh) were replaced outright with a real x402 implementation rather than kept as a permanent scaffold.
+spl-usdc, allowance, embedded-wallet, payout, and pay-sh were removed — they either had no production consumer, were redundant with what escrow/x402 already provide, or (pay-sh) were replaced outright with a real x402 implementation rather than kept as a permanent scaffold.
 
 New rails should return a normalized `PaymentVerification` with `paid`, `rail`, `proof`, optional `txSignature`, `amount`, and `currency`.
 

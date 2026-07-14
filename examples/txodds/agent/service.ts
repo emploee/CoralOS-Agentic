@@ -18,7 +18,7 @@
  *
  * Pillars in play (all reusable for your own service):
  *   - Data     verified TxLINE fixtures/odds, fetched on devnet (TxLineClient).
- *   - LLM      turns raw data into a sellable insight (Venice AI via `analyzeEdge` → `complete()`).
+ *   - LLM      turns raw data into a sellable insight (Groq by default via `analyzeEdge` → `complete()`).
  *   - Solana   the buyer escrow settles delivery on-chain (see ../server/proxy.ts `/api/settle`).
  */
 import { TxLineClient } from './txline.js'

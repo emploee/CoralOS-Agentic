@@ -6,10 +6,12 @@
  * The buyer gates escrow release on that verdict - the arbiter program's neutral-3rd-signer role,
  * surfaced into the market conversation. Holds no keys, moves no funds.
  */
-import { startCoralAgent, parseVerify, formatVerified, formatLlmUsed } from '@pay/agent-runtime'
+import { startCoralAgent, parseVerify, formatVerified, formatLlmUsed, logLlmStartup } from '@pay/agent-runtime'
 import { checkDelivery } from './verify.js'
 
 const NAME = process.env.AGENT_NAME ?? 'verifier-agent'
+
+logLlmStartup(NAME)
 
 await startCoralAgent({ agentName: NAME }, async (ctx) => {
   console.error(`[${NAME}] independent delivery verifier ready`)

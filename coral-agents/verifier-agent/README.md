@@ -56,3 +56,14 @@ Buyer-side variables:
 | `VERIFY_WINDOW_MS` | Wait time for verifier response. |
 
 No wallet or signing key is required by the verifier.
+
+## Runtime
+
+`coral-agent.toml` declares both `[runtimes.docker]` and `[runtimes.executable]`. The TxODDS round
+(`examples/txodds/coral/round.ts`) requests `runtime: 'executable'` for this agent specifically —
+coral-server execs `node dist/index.js` directly as its own child process, no container. That's safe
+here because the verifier holds no signing key, unlike buyer/seller (real devnet wallets), which stay
+on `runtime: 'docker'` for the process isolation that's actually worth having when a key is involved.
+Requires `docker/coral-server.Dockerfile`'s Node.js layer (the stock coral-server image has none) and
+`dist/index.js` to exist on the host before a round starts — `round.ts`'s `ensureVerifierBuilt()`
+builds it automatically if missing.

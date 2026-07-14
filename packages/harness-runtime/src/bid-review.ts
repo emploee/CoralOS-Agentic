@@ -9,6 +9,7 @@
  */
 import { complete, runToolLoop, BudgetGuard, StepCounter, type Want, type CompleteOpts, type Tool } from '@pay/agent-runtime'
 import type { SellerConfig } from './types.js'
+import { deriveFloorSol } from './cost.js'
 
 type Llm = (opts: CompleteOpts) => Promise<string>
 
@@ -38,13 +39,14 @@ const submitReviewVerdictTool: Tool<SubmitReviewInput, SubmitReviewInput> = {
 
 /** Runs a skeptical second opinion on `proposed`. Fails open if the LLM errors or exhausts rounds. */
 export async function reviewBid(want: Want, proposed: ProposedBid, cfg: SellerConfig, llm: Llm = complete): Promise<ReviewVerdict> {
+  const floorSol = deriveFloorSol(want, cfg)
   const system =
-    `You are a skeptical risk reviewer for ${cfg.name}, a seller whose cost floor is ${cfg.floorSol} SOL. ` +
+    `You are a skeptical risk reviewer for ${cfg.name}, a seller whose cost floor is ${floorSol} SOL. ` +
     `Given the seller's proposed bid, find any reason it's a bad idea - pricing at or below cost, a ` +
     `service mismatch, or a price outside a sane range for the buyer's budget. Call submit_review_verdict ` +
     `with {"approve": boolean, "concern": string}. Keep concern under 10 words; omit it if approving.`
   const initialPrompt =
-    `service=${want.service} arg=${want.arg} budget=${want.budgetSol} floor=${cfg.floorSol}\n` +
+    `service=${want.service} arg=${want.arg} budget=${want.budgetSol} floor=${floorSol}\n` +
     `proposed bid: ${JSON.stringify(proposed)}`
 
   try {

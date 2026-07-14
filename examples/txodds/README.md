@@ -15,10 +15,9 @@ examples/txodds/
     escrow.ts      base escrow client
     arbiter.ts     arbiter wrapper client
   server/
-    proxy.ts       local API proxy, settlement, run persistence
+    proxy.ts       local API proxy (board data, x402 edge reference merchant, CoralOS round launch/forwarding)
     mint.ts        TxLINE token setup helper
   web/             static React UI
-  research/        board watcher and event detector
   coral/           CoralOS round launcher/config
   escrow/          Anchor escrow and arbiter programs
 ```
@@ -29,10 +28,10 @@ examples/txodds/
 
 | Process | Port | Responsibility |
 |---|---|---|
-| Proxy | `8801` | TxLINE access, edge analysis, payment/settlement endpoints, run ledger. |
+| Proxy | `8801` | TxLINE access, board data, x402 edge reference merchant, CoralOS round launch/forwarding. |
 | Coral Console | `5555` | Built-in Coral Server console at `/ui/console`, started/probed when Docker is available. |
 | Feed | `4000` | CoralOS session reader and run ledger replay API. |
-| Web UI | `3020` | Board, analysis, settlement status, runs, proof receipts, grading. |
+| Web UI | `3020` | Fixture board plus the live CoralOS agent feed (WANT/BID/AWARD/escrow/verify/release). |
 
 The browser only calls the local proxy. TxLINE tokens and keypairs stay server-side.
 
@@ -64,7 +63,7 @@ Required for live settlement:
 Optional for live model output:
 
 - `LLM_PROVIDER`;
-- provider key such as `VENICE_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`.
+- provider key such as `GROQ_API_KEY` (recommended — free, renewing rate limit), `VENICE_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`.
 
 Without a provider key, the analysis path can return deterministic fallback output.
 
@@ -73,15 +72,9 @@ Without a provider key, the analysis path can return deterministic fallback outp
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/board` | Fixtures with verified live odds, or labelled sample data if unavailable. |
-| `GET /api/fixtures` | TxLINE fixture passthrough. |
-| `GET /api/odds?fixtureId=<id>` | TxLINE odds passthrough. |
-| `GET /api/edge?fixtureId=<id>` | Edge analysis for one fixture. |
-| `GET /api/settle?fixtureId=<id>&amount=<sol>` | Arbiter/base escrow settlement path. |
-| `GET /api/pay-intent` | Solana Pay intent for wallet checkout. |
-| `GET /api/pay-verify` | Reference-bound Solana Pay verification. |
-| `GET /api/pay-sh-edge` | Simulated Pay.sh procurement plus edge delivery. |
-| `GET /api/runs` / `GET /api/run?runId=<id>` | Run ledger records. |
-| `GET /api/grade-runs` | Outcome grading for persisted runs where score data is available. |
+| `GET /api/edge-x402?fixtureId=<id>` | Edge analysis gated behind a real x402 challenge/pay/settle round trip. Also `coral-agents/seller-agent`'s default `PROCURE_X402_URL` target when `PROCURE_RAIL=x402` — see `PAY.md`. |
+| `POST /api/agentic/start` | Launches a CoralOS round (`coral/round.ts`). |
+| `GET /api/agentic/feed` / `GET /api/agentic/threads` / `GET /api/agentic/runs` | Forwarded to the feed server for the live agent UI. |
 
 ## Settlement
 
@@ -96,7 +89,8 @@ The delivery hash/reference is recorded with transaction signatures in the run l
 
 ## CoralOS Round
 
-The single-agent web flow does not require CoralOS. The multi-agent TxODDS round launches buyer and seller personas through CoralOS:
+The web UI's live agent feed shows a CoralOS round already in progress or lets you start one. The
+underlying multi-agent TxODDS round launches a buyer and a seller through CoralOS:
 
 ```sh
 docker compose up -d coral
@@ -112,25 +106,6 @@ Requirements:
 - funded buyer and arbiter keypairs.
 
 See `coral/README.md`.
-
-## Research Watcher
-
-The watcher polls `/api/board`, diffs snapshots with `research/detect.ts`, and queues jobs when verified odds appear or implied probability moves beyond `MOVE_PCT`.
-
-```sh
-npm run proxy
-npm run watch
-```
-
-Watcher endpoints:
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/health` | Health check. |
-| `GET /queue` | Current queued events. |
-| `GET /next` | Pop the next event for event-mode buyer. |
-
-`buyer-agent`'s event-mode consumes this queue through `WANT_FEED_URL` (see `coral-agents/buyer-agent/src/wantFeed.ts`).
 
 ## TxODDS Notes
 

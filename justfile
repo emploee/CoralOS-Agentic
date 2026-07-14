@@ -30,3 +30,17 @@ dev:
 # Needs: Docker running, funded buyer + arbiter wallets, a fresh TXLINE_API_KEY.
 txodds:
     npm run e2e:devnet
+
+# Full clean restart of the multi-agent CoralOS demo: clears any orphaned agent containers, stops
+# coral-server, rebuilds agent images from current source (editing source alone doesn't touch an
+# already-built Docker image - only a rebuild does), then brings everything back up with a fresh
+# round. Use this whenever agent behavior looks stale or wrong and you want a guaranteed-clean state,
+# not another incremental fix.
+# If `npm run dev` / `npm run dev:agentic` is already running in another terminal, Ctrl+C it first -
+# this recipe reuses whatever's already listening on the proxy/feed/web/watcher ports rather than
+# restarting them, so a stale one left running there would carry stale env into the fresh round too.
+restart:
+    npm run agents:stop
+    docker compose down
+    bash build-agents.sh
+    npm run dev:agentic

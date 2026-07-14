@@ -42,7 +42,7 @@ describe('pickWinner', () => {
       async () => JSON.stringify({ tool: 'fetch_seller_reputation', input: {} }),
     )
     expect(d.winner.by).toBe('seller-a')
-    expect(d.llm).toMatchObject({ status: 'fallback', reason: 'model exhausted rounds without deciding' })
+    expect(d.llm).toMatchObject({ status: 'fallback', reason: 'ran out of tool-loop steps before deciding — fell back to the cheapest bid' })
   })
 
   it('falls back to cheapest when the model picks a seller outside the pool', async () => {

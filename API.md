@@ -367,7 +367,8 @@ app.get('/api/premium-data', async (req, res) => {
 | `SELLER_WALLET` | agent-runtime | Seller's receive-only public key. |
 | `SELLER_KEYPAIR_B58` | payment-runtime | Seller's spend key (for x402 procurement). |
 | `ARBITER_KEYPAIR_B58` | payment-runtime | Arbiter authority for escrow release/refund. |
-| `LLM_PROVIDER` | agent-runtime | `venice`, `openai`, or `anthropic`. |
+| `LLM_PROVIDER` | agent-runtime | `groq`, `venice`, `openai`, or `anthropic`. Groq recommended — free, renewing rate limit. |
+| `GROQ_API_KEY` | agent-runtime | Groq API key. |
 | `VENICE_API_KEY` | agent-runtime | Venice API key. |
 | `OPENAI_API_KEY` | agent-runtime | OpenAI API key. |
 | `ANTHROPIC_API_KEY` | agent-runtime | Anthropic API key. |

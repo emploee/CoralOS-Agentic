@@ -78,11 +78,6 @@ export class TxLineClient {
   odds(fixtureId: number): Promise<unknown> {
     return this.get<unknown>(`/api/odds/snapshot/${fixtureId}`)
   }
-
-  /** Score events snapshot for one fixture. */
-  scores(fixtureId: number): Promise<unknown> {
-    return this.get<unknown>(`/api/scores/snapshot/${fixtureId}`)
-  }
 }
 
 /** International Friendlies — the highest-volume free-tier competition (verified in the catalog). */

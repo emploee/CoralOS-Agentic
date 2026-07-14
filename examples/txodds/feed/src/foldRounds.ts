@@ -7,7 +7,7 @@
 import {
   verb, messageRound, parseWant, parseBid, parseAward, parseEscrowRequired, parseDeposited, parseVerified,
   parsePaymentRequired, parsePaymentProof, parsePaymentConfirmed, parseLlmUsed,
-  type ProofReceipt, type PaymentRailKind, type PaymentCurrency, type LlmUse,
+  type ProofReceipt, type PaymentRailKind, type PaymentCurrency, type LlmUse, type ScoreOutcome,
 } from '@pay/agent-runtime'
 
 export interface RawMessage {
@@ -43,6 +43,12 @@ export interface Round {
   release?: { sig: string }
   refunded?: boolean
   status: RoundStatus
+  /**
+   * Whether the delivered prediction/signal was right — never present here from folding alone (no
+   * Coral message carries it), only merged in from the run ledger after a grading pass. See
+   * persist.ts's `mergeOutcomes`.
+   */
+  outcome?: ScoreOutcome
 }
 
 interface PaymentLeg {

@@ -53,6 +53,17 @@ export interface ProofReceipt {
   reason?: string
 }
 
+/**
+ * Whether a round's delivered prediction/signal turned out right — checked after the fact against a
+ * real match outcome, so it's always absent at settlement time and only ever added later by an
+ * out-of-band grading pass that writes it back via `writeRun()`. Shared here (not caller-local) so any
+ * flow that produces a gradeable prediction can be graded through the one mechanism, and
+ * `foldRounds`/the feed can read it generically.
+ */
+export type ScoreOutcome =
+  | { status: 'pending'; reason: string; checkedAt: string; raw?: unknown }
+  | { status: 'graded'; checkedAt: string; actual: { home: number; away: number; winner: string }; prediction?: string; correct?: boolean; raw?: unknown }
+
 export interface RunRecord {
   /** `<session>/round-<n>` — globally unique across a coral-server's sessions. */
   runId: string
@@ -79,6 +90,8 @@ export interface RunRecord {
   proofReceipts?: ProofReceipt[]
   /** Model-selection metadata emitted by agents; prompts and completions are intentionally absent. */
   llm?: LlmUse[]
+  /** Was the delivered prediction/signal actually right — absent until a grading pass adds it. */
+  outcome?: ScoreOutcome
   txs: TxEntry[]
   updatedAt: string
 }

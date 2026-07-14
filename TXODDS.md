@@ -33,15 +33,9 @@ The odds endpoint is a path segment endpoint, not a query parameter endpoint.
 | Endpoint | Description |
 |---|---|
 | `GET /api/board` | Fixtures with verified live odds, prepared for the UI. |
-| `GET /api/fixtures` | Raw fixture passthrough. |
-| `GET /api/odds?fixtureId=<id>` | Odds passthrough for a fixture. |
-| `GET /api/edge?fixtureId=<id>` | TxLINE odds plus `analyzeEdge()` output. |
-| `GET /api/settle?fixtureId=<id>&amount=<sol>` | Devnet escrow/arbiter settlement path. |
-| `GET /api/pay-intent` | Solana Pay transfer intent. |
-| `GET /api/pay-verify` | Reference-bound transfer verification. |
-| `GET /api/pay-sh-edge` | Simulated Pay.sh procurement plus edge delivery. |
-| `GET /api/runs` / `GET /api/run?runId=<id>` | Persisted run ledger records. |
-| `GET /api/grade-runs` | Grade persisted reads against resolved score data where available. |
+| `GET /api/edge-x402?fixtureId=<id>` | TxLINE odds plus `analyzeEdge()` output, gated behind a real x402 challenge/pay/settle round trip. Also `coral-agents/seller-agent`'s default `PROCURE_X402_URL` target when `PROCURE_RAIL=x402` (see `PAY.md`). |
+| `POST /api/agentic/start` | Launches a CoralOS round (`examples/txodds/coral/round.ts`). |
+| `GET /api/agentic/feed` / `GET /api/agentic/threads` / `GET /api/agentic/runs` | Forwarded to the feed server (`examples/txodds/feed/src/server.ts`) for the live agent UI. |
 
 ## Correctness Notes
 
@@ -62,7 +56,6 @@ The default service is implemented in:
 | `examples/txodds/agent/edge.ts` | Verified odds to fair-line analysis. |
 | `examples/txodds/agent/service.ts` | `deliverService()` wrapper for paid delivery. |
 | `examples/txodds/server/proxy.ts` | API proxy, settlement endpoints, run persistence. |
-| `examples/txodds/research/watcher.ts` | Polls `/api/board` and queues events when odds move. |
 
 ## Settlement Binding
 
@@ -88,13 +81,6 @@ For CoralOS market execution:
 docker compose up -d coral
 bash build-agents.sh
 npm run demo:coral
-```
-
-For the odds-move research watcher:
-
-```sh
-npm run dev
-npm run research:watch
 ```
 
 Use devnet wallets only unless a separate production review changes the policy.

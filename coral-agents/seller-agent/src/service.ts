@@ -2,8 +2,6 @@
  * Seller services.
  *
  * `txline` - verified TxLINE fair-line reads for a fixture.
- * `risk-policy` - deterministic policy guardrails for a fixture/order.
- * `fan-card` - deterministic fan-facing explanation card for a fixture/order.
  * `freelance` - the generic LLM worker (the freelancer market's baseline seller): the brief goes to
  * the LLM, the deliverable comes back as JSON. Without an LLM key it returns an error payload, which
  * the verifier fails and the buyer refuses to pay for - no-capability sellers don't get released.
@@ -11,7 +9,7 @@
 import { complete, llmRuntimeInfo, parseJsonReply, sha256Hex, type LlmUse } from '@pay/agent-runtime'
 
 const TXLINE_BASE = process.env.TXLINE_BASE_URL || 'https://txline-dev.txodds.com'
-const SUPPORTED_SERVICES = ['txline', 'freelance', 'risk-policy', 'fan-card']
+const SUPPORTED_SERVICES = ['txline', 'freelance']
 type DeliveryOrder = { round?: number }
 
 export interface ServiceDelivery {
@@ -53,8 +51,6 @@ export async function deliverServiceResult(request: string, order?: DeliveryOrde
   const [first, ...rest] = request.trim().split(/\s+/).filter(Boolean)
   const service = (first ?? 'txline').toLowerCase()
   if (service === 'freelance') return freelanceService(rest.join(' '), order)
-  if (service === 'risk-policy') return riskPolicyService(rest.join(' '), order)
-  if (service === 'fan-card') return fanCardService(rest.join(' '), order)
   if (service !== 'txline') {
     return {
       payload: JSON.stringify({ error: 'unsupported service', service, supported: SUPPORTED_SERVICES }),
@@ -62,64 +58,6 @@ export async function deliverServiceResult(request: string, order?: DeliveryOrde
     }
   }
   return txlineService(rest.join(' '), order)
-}
-
-function fixtureIdFrom(request: string): string | undefined {
-  return request.trim().split(/\s+/).find((token) => /^\d+$/.test(token))
-}
-
-async function riskPolicyService(request: string, order?: DeliveryOrder): Promise<ServiceDelivery> {
-  const fixtureId = fixtureIdFrom(request)
-  return {
-    payload: JSON.stringify({
-      service: 'risk-policy',
-      ...(fixtureId ? { fixtureId } : {}),
-      request: request || 'unspecified',
-      policy: {
-        action: fixtureId ? 'observe' : 'no-action',
-        maxExposureSol: 0,
-        requires: [
-          'verified TxLINE fair-line payload',
-          'buyer budget policy pass',
-          'verifier pass before escrow release',
-        ],
-        guardrails: [
-          'devnet only',
-          'no real-money wagering',
-          'no automated sportsbook execution',
-        ],
-      },
-      rationale: fixtureId
-        ? `Fixture ${fixtureId} can be analyzed after verified fair-line delivery.`
-        : 'No fixture id supplied.',
-    }),
-    llm: [deliveryLlm(order, 'skipped', 'risk policy payload is deterministic', 'static policy guardrails', { includeModel: false })],
-  }
-}
-
-async function fanCardService(request: string, order?: DeliveryOrder): Promise<ServiceDelivery> {
-  const fixtureId = fixtureIdFrom(request)
-  const target = fixtureId ? `fixture ${fixtureId}` : 'the selected fixture'
-  return {
-    payload: JSON.stringify({
-      service: 'fan-card',
-      ...(fixtureId ? { fixtureId } : {}),
-      request: request || 'unspecified',
-      card: {
-        title: `Fair-line explainer for ${target}`,
-        audience: 'fan',
-        explainer: 'TxODDS provides a break-even fair line. A value claim needs an outside book price above that fair price.',
-        sections: [
-          { label: 'What was bought', value: 'verified fair-line context' },
-          { label: 'What it is not', value: 'not a sportsbook recommendation' },
-          { label: 'Proof path', value: 'hash-bound delivery, verifier verdict, devnet escrow release' },
-        ],
-        shareCopy: `Agent-delivered fair-line context for ${target}; verification and settlement are recorded in the run ledger.`,
-      },
-      limits: ['educational summary', 'not betting advice'],
-    }),
-    llm: [deliveryLlm(order, 'skipped', 'fan card payload is deterministic', 'static educational limits', { includeModel: false })],
-  }
 }
 
 async function freelanceService(brief: string, order?: DeliveryOrder): Promise<ServiceDelivery> {
@@ -215,6 +153,38 @@ async function txlineEdge(fixtureId: string | undefined, order?: DeliveryOrder):
   }
 }
 
+function outcomeLabel(name: string, teams: Record<string, unknown> | undefined): string {
+  if (name === 'part1') return String(teams?.home ?? 'Home')
+  if (name === 'part2') return String(teams?.away ?? 'Away')
+  if (name === 'draw') return 'Draw'
+  return name
+}
+
+/** Clean {label, pct} pairs only - never the raw odds/price ticks the API also carries (e.g.
+ *  Prices: [3284, 2212, 4107]), which a weak model will otherwise quote back verbatim as if they
+ *  were meaningful numbers ("odds of 3267") instead of the internal price format they actually are. */
+function plainOutcomes(
+  market: Record<string, unknown> | undefined,
+  teams: Record<string, unknown> | undefined,
+): Array<{ label: string; pct: number }> {
+  const names = (market?.PriceNames ?? []) as string[]
+  const pcts = (market?.Pct ?? []) as Array<string | number>
+  return names
+    .map((name, i) => ({ label: outcomeLabel(name, teams), pct: Number(pcts[i]) }))
+    .filter((o) => Number.isFinite(o.pct))
+}
+
+// A prompt asking nicely for plain language isn't a guarantee with a small model - this is the actual
+// enforcement. Any leftover betting jargon or a raw 3+ digit number (the telltale sign of a quoted
+// price tick rather than a percentage) discards the reply for the deterministic fallback below, same
+// as an outright LLM failure.
+const JARGON_RE = /\b(implied probability|1x2|underlay|overlay|value)\b/i
+const RAW_NUMBER_RE = /\b\d{3,}\b(?!%)/
+
+function isPlainEnough(call: unknown): call is string {
+  return typeof call === 'string' && call.length > 0 && !JARGON_RE.test(call) && !RAW_NUMBER_RE.test(call)
+}
+
 async function liveReadOrFallback(
   matchup: string,
   odds: unknown,
@@ -223,25 +193,39 @@ async function liveReadOrFallback(
   order?: DeliveryOrder,
 ): Promise<{ value: unknown; llm: LlmUse }> {
   try {
-    const system = 'You are a football trading analyst. Reply only as JSON {"call": string, "confidence": number}.'
+    const system =
+      'You are a lively football pundit reading fair-value odds for a casual fan, not a trader. Reply only as JSON ' +
+      '{"call": string, "confidence": number}. `call` is a colorful, two-sentence take (under 55 words total): set ' +
+      'the scene for the matchup, then say plainly who the fair line favours and how decisively. Have personality - ' +
+      'a punchy opening, a vivid turn of phrase - but stay in plain English. No jargon - never say "implied ' +
+      'probability", "1X2", "underlay/overlay", or "value"; never quote a raw price number, only the percentages ' +
+      'given; say things like "likely to win", "close match", or "big favourite" instead. Do not claim a betting ' +
+      'edge or tell anyone to place a bet - you only have a fair-value read, not what any bookmaker is offering.'
     const user =
-      `For ${matchup}, make a one-line value read from these de-margined World Cup odds. ` +
-      `Odds: ${JSON.stringify(odds).slice(0, 1500)}`
+      `For ${matchup}, give your colorful take on who the fair line favours and how decisively - something a ` +
+      `non-bettor would enjoy reading, not a stats table. Outcome percentages: ${JSON.stringify(plainOutcomes(market, teams))}`
     const inputHash = sha256Hex(`${system}\n${user}`)
     const text = await complete({
       system,
       user,
-      maxTokens: 180,
+      maxTokens: 260,
     })
     const outputHash = sha256Hex(text)
+    const parsed = parseJsonReply<{ call?: unknown; confidence?: unknown }>(text)
+    if (!isPlainEnough(parsed?.call)) {
+      return {
+        value: deterministicRead(market, teams, 'model reply used betting jargon or a raw price - discarded'),
+        llm: deliveryLlm(order, 'fallback', 'model reply used betting jargon or a raw price - discarded for the plain-language fallback', 'plain-language validation plus verifier checks', { maxTokens: 260 }, { inputHash, outputHash }),
+      }
+    }
     return {
-      value: parseJsonReply(text) ?? { call: text },
-      llm: deliveryLlm(order, 'used', 'model produced TxODDS edge analysis', 'TxLINE data fetch plus verifier hash/fixture checks', { maxTokens: 180 }, { inputHash, outputHash }),
+      value: parsed,
+      llm: deliveryLlm(order, 'used', 'model produced TxODDS edge analysis', 'TxLINE data fetch plus verifier hash/fixture checks', { maxTokens: 260 }, { inputHash, outputHash }),
     }
   } catch (e) {
     return {
       value: deterministicRead(market, teams, (e as Error).message),
-      llm: deliveryLlm(order, 'fallback', `LLM unavailable: ${(e as Error).message}`, 'deterministic fair-line fallback plus verifier checks', { maxTokens: 180 }),
+      llm: deliveryLlm(order, 'fallback', `LLM unavailable: ${(e as Error).message}`, 'deterministic fair-line fallback plus verifier checks', { maxTokens: 260 }),
     }
   }
 }
@@ -251,24 +235,10 @@ function deterministicRead(
   teams: Record<string, unknown> | undefined,
   reason: string,
 ): unknown {
-  const names = (market?.PriceNames ?? []) as string[]
-  const pcts = (market?.Pct ?? []) as string[]
-  let bestIndex = -1
-  let bestPct = -1
-  names.forEach((_, i) => {
-    const pct = Number(pcts[i])
-    if (Number.isFinite(pct) && pct > bestPct) {
-      bestPct = pct
-      bestIndex = i
-    }
-  })
+  const outcomes = plainOutcomes(market, teams)
+  const bestIndex = outcomes.reduce((best, o, i) => (best < 0 || o.pct > outcomes[best].pct ? i : best), -1)
   if (bestIndex < 0) return { call: 'odds unavailable', note: `deterministic fallback: ${reason}` }
-  const raw = names[bestIndex]
-  const label = raw === 'part1'
-    ? (teams?.home ?? 'Home')
-    : raw === 'part2'
-      ? (teams?.away ?? 'Away')
-      : 'Draw'
+  const { label, pct: bestPct } = outcomes[bestIndex]
   return {
     call: `Odds favour ${label} (${bestPct.toFixed(0)}%)`,
     confidence: Number((bestPct / 100).toFixed(2)),

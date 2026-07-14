@@ -22,17 +22,17 @@ WANT -> BID* -> AWARD
 | File | Role |
 |---|---|
 | `src/index.ts` | Market loop: WANT/BID/AWARD, policy-gated deposit, wait for DELIVERED, optional VERIFY, policy-gated release. |
-| `src/award.ts` | `pickWinner()` — award selection via a bounded tool loop, deterministic cheapest-bid fallback. See Award Loop below. |
-| `src/award-tools.ts` | Tools for the award loop: `fetch_seller_reputation`, `compute_value_score`, `submit_award`. |
-| `src/escrow.ts` | Direct base escrow client (`SETTLEMENT_MODE=direct`). |
-| `src/arbiter.ts` | Arbiter client and vault PDA helpers (`SETTLEMENT_MODE=arbiter`, the default). |
-| `src/wantFeed.ts` | Event-mode polling for external jobs (`WANT_FEED_URL`), instead of rotating `BUYER_ARGS`. |
-| `src/reputation.ts` | Fetches per-seller reputation (structured and formatted) from the feed API (`REPUTATION_URL`). |
-| `src/verify-gate.ts` | `decideVerifyEscalation()` — per-round judgment on whether to actually escalate to the verifier. See Verify Gate below. |
+| `src/award/award.ts` | `pickWinner()` — award selection via a bounded tool loop, deterministic cheapest-bid fallback. See Award Loop below. |
+| `src/award/award-tools.ts` | Tools for the award loop: `fetch_seller_reputation`, `compute_value_score`, `submit_award`. |
+| `src/settlement/escrow.ts` | Direct base escrow client (`SETTLEMENT_MODE=direct`). |
+| `src/settlement/arbiter.ts` | Arbiter client and vault PDA helpers (`SETTLEMENT_MODE=arbiter`, the default). |
+| `src/feed/wantFeed.ts` | Event-mode polling for external jobs (`WANT_FEED_URL`), instead of rotating `BUYER_ARGS`. |
+| `src/reputation/reputation.ts` | Fetches per-seller reputation (structured and formatted) from the feed API (`REPUTATION_URL`). |
+| `src/verify/verify-gate.ts` | `decideVerifyEscalation()` — per-round judgment on whether to actually escalate to the verifier. See Verify Gate below. |
 
 ## Award Loop
 
-`pickWinner()` (`src/award.ts`) runs a bounded tool-calling loop (`runToolLoop`, capped at 5 rounds)
+`pickWinner()` (`src/award/award.ts`) runs a bounded tool-calling loop (`runToolLoop`, capped at 5 rounds)
 instead of a single LLM call: the model calls `fetch_seller_reputation` and `compute_value_score`
 (a deterministic price × reputation formula) before it must call `submit_award` to terminate. If the
 loop errors, exhausts its rounds, or picks a seller outside the collected bid pool, the buyer falls
@@ -41,7 +41,7 @@ back to the cheapest bid — same failure-mode shape as the seller's bid decisio
 
 ## Verify Gate
 
-`decideVerifyEscalation()` (`src/verify-gate.ts`) decides per round whether to actually send
+`decideVerifyEscalation()` (`src/verify/verify-gate.ts`) decides per round whether to actually send
 `VERIFY`, instead of the static `VERIFIER_AGENT` on/off used every round when `VERIFY_GATE_ENABLED`
 is unset. It only skips escalation for a seller with an established (3+ delivery), clean
 (`verifiedFail === 0`) record — otherwise it always escalates.
@@ -49,8 +49,7 @@ is unset. It only skips escalation for a seller with an established (3+ delivery
 **Important**: skipping escalation does not safely bypass release policy — `policy.ts`'s
 `requireVerifier` is hardcoded to `!!VERIFIER_AGENT`, so a skipped round without a `VERIFIED pass`
 has its release denied exactly like a verifier timeout: funds stay in escrow, refundable after the
-deadline. This is an opt-in efficiency/scrutiny tradeoff, not a free win — see `docs/E2E_AGENTIC_DECISIONS.md`'s
-D4 for the full reasoning. Off by default.
+deadline. This is an opt-in efficiency/scrutiny tradeoff, not a free win. Off by default.
 
 ## Environment
 

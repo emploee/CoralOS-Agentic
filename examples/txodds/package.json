@@ -12,8 +12,7 @@
     "mint": "tsx server/mint.ts",
     "proxy": "tsx server/proxy.ts",
     "web": "npx --yes serve web -l 3020",
-    "coral": "tsx coral/round.ts",
-    "watch": "tsx research/watcher.ts"
+    "coral": "tsx coral/round.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
@@ -27,6 +26,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "esbuild": "^0.21.5",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^1.6.0"

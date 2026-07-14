@@ -62,3 +62,60 @@ export function formatReputation(reps: SellerReputation[]): string {
     .map((r) => `${r.seller}: score ${r.score} (${r.awarded} won, ${r.settled} settled${r.verifiedFail ? `, ${r.verifiedFail} verify-fail` : ''}${r.refunded ? `, ${r.refunded} refunded` : ''})`)
     .join('\n')
 }
+
+/**
+ * What a service has actually cleared for, per WANT.service - the field's real pricing behavior,
+ * derived from awarded bids, not a range a seller has to guess blind in. A seller pricing itself
+ * can weigh this instead of picking a number between its floor and the buyer's budget with no
+ * signal either way.
+ */
+export interface ServiceClearingPrices {
+  service: string
+  /** Rounds this service has been awarded across. */
+  n: number
+  medianPriceSol: number
+  minPriceSol: number
+  maxPriceSol: number
+  /** Most recent awarded price first, capped to a short recent window. */
+  recentPricesSol: number[]
+}
+
+function median(nums: number[]): number {
+  const sorted = [...nums].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+}
+
+export function clearingPrices(runs: RunRecord[]): ServiceClearingPrices[] {
+  const byService = new Map<string, { priceSol: number; updatedAt: string }[]>()
+  for (const run of runs) {
+    const service = run.want?.service
+    const winner = run.award?.to
+    if (!service || !winner) continue
+    const bid = run.bids.find((b) => b.by === winner)
+    if (!bid) continue
+    const list = byService.get(service) ?? []
+    list.push({ priceSol: bid.priceSol, updatedAt: run.updatedAt })
+    byService.set(service, list)
+  }
+
+  return [...byService.entries()].map(([service, entries]) => {
+    const recent = [...entries].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    const prices = recent.map((e) => e.priceSol)
+    return {
+      service,
+      n: prices.length,
+      medianPriceSol: median(prices),
+      minPriceSol: Math.min(...prices),
+      maxPriceSol: Math.max(...prices),
+      recentPricesSol: prices.slice(0, 5),
+    }
+  })
+}
+
+/** One line per service: "txline: median 0.00055 SOL (12 awarded, range 0.00045-0.00085)". */
+export function formatClearingPrices(prices: ServiceClearingPrices[]): string {
+  return prices
+    .map((p) => `${p.service}: median ${p.medianPriceSol} SOL (${p.n} awarded, range ${p.minPriceSol}-${p.maxPriceSol})`)
+    .join('\n')
+}

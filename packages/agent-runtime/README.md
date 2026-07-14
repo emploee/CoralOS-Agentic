@@ -33,15 +33,15 @@ Run folders include `proof.json`, a compact machine-readable E2E proof derived f
 
 ## LLM Provider Notes
 
-`complete()` supports Venice, OpenAI, and Anthropic through environment variables.
+`complete()` supports Groq, Venice, OpenAI, and Anthropic through environment variables. Groq is recommended: free, with a renewing rate limit rather than a one-time credit pool.
 
 ```ini
-LLM_PROVIDER=venice
-VENICE_API_KEY=...
-# LLM_MODEL=llama-3.3-70b
+LLM_PROVIDER=groq
+GROQ_API_KEY=...
+# LLM_MODEL=llama-3.3-70b-versatile
 ```
 
-Venice default model: `llama-3.3-70b`.
+Groq default model: `llama-3.3-70b-versatile`. Venice default model: `llama-3.3-70b`. See `LLM.md` at the repo root for full provider selection and fallback behavior.
 
 `LLM_MODEL=kimi-k2-7-code` is supported. For Venice Kimi models, the runtime raises very small `maxTokens` calls to `1024` because those models may spend part of the budget before emitting `message.content`. Other providers and non-Kimi Venice models keep the caller's requested budget.
 

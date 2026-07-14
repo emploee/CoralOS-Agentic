@@ -13,7 +13,7 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 build_seller() {
   echo "==> Building seller-agent:0.1.0"
   docker build -f "$ROOT/coral-agents/seller-agent/Dockerfile" -t seller-agent:0.1.0 "$ROOT"
-  echo "    seller-agent:0.1.0 done (the seller-worldcup persona reuses this image)"
+  echo "    seller-agent:0.1.0 done"
 }
 
 build_buyer() {

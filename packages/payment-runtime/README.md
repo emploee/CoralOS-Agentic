@@ -2,7 +2,7 @@
 
 Payment rail abstractions for repository examples and agents. The package defines one `PaymentRail` interface, a `PaymentRailRouter`, policy helpers, and proof-receipt normalization.
 
-Three rails, deliberately: **escrow** for dispute-resistant, delayed-delivery settlement, and **x402** for cheap, instant, per-call micropayments — they solve different problems, not overlapping ones. **Solana Pay** is the direct-transfer primitive both `escrow`'s vault funding and `x402`'s settlement leg build on. Everything else that previously lived here (spl-usdc, allowance, embedded-wallet, payout, pay-sh) was removed — see `docs/PAYMENT_RAIL_INTEGRATION.md` for what replaced pay-sh and why the others were cut rather than kept as scaffolds.
+Three rails, deliberately: **escrow** for dispute-resistant, delayed-delivery settlement, and **x402** for cheap, instant, per-call micropayments — they solve different problems, not overlapping ones. **Solana Pay** is the direct-transfer primitive both `escrow`'s vault funding and `x402`'s settlement leg build on. Everything else that previously lived here (spl-usdc, allowance, embedded-wallet, payout, pay-sh) was removed: either redundant with what escrow/x402 already provide, or (pay-sh) replaced outright with a real x402 implementation rather than kept as a permanent scaffold.
 
 ## Interface
 
@@ -69,7 +69,7 @@ npm test -w @pay/payment-runtime
 
 ## Promoting a Scaffold Rail
 
-Keep the `PaymentRail` interface stable. Fill the rail-specific verification seam, add failure-mode tests, and ensure proof receipts preserve enough data for audit/replay. See `docs/PRODUCTION_READINESS.md` for the promotion checklist this package's rails followed, and `docs/PAYMENT_RAIL_INTEGRATION.md` for how the promoted rails got deployed and wired into the live demo and examples e2e.
+Keep the `PaymentRail` interface stable. Fill the rail-specific verification seam, add failure-mode tests, and ensure proof receipts preserve enough data for audit/replay.
 
 Remaining scaffold:
 

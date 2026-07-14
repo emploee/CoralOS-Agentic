@@ -16,7 +16,8 @@ AGENT_NAME = { type = "string", default = "verifier-agent", description = "Marke
 ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key for the acceptance judge" }
 OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key; set LLM_PROVIDER=openai to use it" }
 VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits); set LLM_PROVIDER=venice to use it" }
-LLM_PROVIDER = { type = "string", default = "", description = "anthropic (default) | openai | venice" }
+GROQ_API_KEY = { type = "string", default = "", description = "Groq key (OpenAI-compatible, free renewing rate limit - recommended once Venice's credits run out); set LLM_PROVIDER=groq to use it" }
+LLM_PROVIDER = { type = "string", default = "", description = "groq (recommended free default) | anthropic (last-resort default) | openai | venice - see LLM.md" }
 LLM_MODEL = { type = "string", default = "", description = "Override the LLM model id" }
 TRACE = { type = "string", default = "", description = "Set to 1 for verbose logs" }
 

@@ -11,8 +11,6 @@ Each agent has a `coral-agent.toml` manifest and an implementation in its folder
 | `buyer-agent` | Posts `WANT`, collects bids, awards, deposits through policy, optionally verifies delivery, and releases/refunds. |
 | `seller-agent` | Bids on supported services, verifies funded escrow, runs a harness adapter, and delivers hash-bound payloads. |
 | `verifier-agent` | Checks delivery hash/structure and replies `VERIFIED pass|fail`. No wallet authority. |
-| `echo-agent` | Minimal MCP connectivity check. |
-| `user_proxy` | Idle Python participant driven by the puppet API. No example in this repo currently launches it. |
 
 Seller personas reuse the seller image with different manifest defaults such as `AGENT_NAME`, `PERSONA`, `FLOOR_SOL`, `SERVICES`, and `HARNESS`.
 

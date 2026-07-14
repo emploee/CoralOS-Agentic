@@ -52,9 +52,33 @@ export function roundTranscript(messages: RawMessage[], round: number): Transcri
   return messages.filter((m) => messageRound(m.text) === round)
 }
 
-/** Land every folded round in the ledger. Throws on fs failure — the caller decides how loud. */
+/**
+ * Land every folded round in the ledger. Throws on fs failure — the caller decides how loud.
+ *
+ * Preserves any `outcome` a grading pass already wrote for a round: `toRunRecord` re-derives a
+ * RunRecord from the *live* thread messages every poll, which carry no grade at all, so writing it
+ * unmodified would silently overwrite (delete) a previous grade on the very next live poll.
+ */
 export function persistRounds(baseDir: string, session: string, rounds: Round[], messages: RawMessage[]): void {
-  for (const r of rounds) writeRun(baseDir, toRunRecord(session, r), roundTranscript(messages, r.round))
+  for (const r of rounds) {
+    const record = toRunRecord(session, r)
+    const existingOutcome = readRun(baseDir, session, r.round)?.run.outcome
+    if (existingOutcome) record.outcome = existingOutcome
+    writeRun(baseDir, record, roundTranscript(messages, r.round))
+  }
+}
+
+/**
+ * Merges each round's persisted `outcome` (a post-hoc grade — never present from folding alone,
+ * since no Coral message carries it) back onto the in-memory `Round[]` `foldRounds` produced.
+ * Mutates and returns `rounds` for convenient chaining.
+ */
+export function mergeOutcomes(baseDir: string, session: string, rounds: Round[]): Round[] {
+  for (const r of rounds) {
+    const outcome = readRun(baseDir, session, r.round)?.run.outcome
+    if (outcome) r.outcome = outcome
+  }
+  return rounds
 }
 
 /** Replay a session purely from disk, or null if it was never persisted. */
@@ -62,7 +86,7 @@ export function replaySession(baseDir: string, session: string, sellers: string[
   const runs = listSessionRuns(baseDir, session)
   if (!runs.length) return null
   const messages = runs.flatMap((run) => readRun(baseDir, session, run.round)?.transcript ?? [])
-  return foldRounds(messages, sellers)
+  return mergeOutcomes(baseDir, session, foldRounds(messages, sellers))
 }
 
 /**

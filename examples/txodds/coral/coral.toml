@@ -12,7 +12,7 @@ keys = ["dev"]
 allowAnyHost = true
 
 [registry]
-# Discover the agents (buyer-agent + the seller personas, incl. seller-worldcup) from /agents.
+# Discover the agents (buyer-agent, seller-agent, verifier-agent) from /agents.
 # Docs: https://docs.coralos.ai/api-reference/registry/get-registry-agents
 localAgents = ["/agents/*"]
 includeCoralHomeAgents = true

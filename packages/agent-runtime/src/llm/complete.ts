@@ -2,22 +2,27 @@
  * LLM pillar — one provider-agnostic `complete()` call.
  *
  * SDK-free (`fetch`-based) so the runtime stays dependency-light. Provider is chosen by env, so the
- * whole market flips to Venice AI with `LLM_PROVIDER=venice` (or OpenAI/Anthropic) and no code change.
- * Callers ask for a single JSON-shaped
+ * whole market flips to Venice AI with `LLM_PROVIDER=venice` (or OpenAI/Anthropic/Groq) and no code
+ * change. Callers ask for a single JSON-shaped
  * answer and enforce their own guards on it — the model proposes, code disposes.
  *
  * To add a provider in code: extend `LlmProvider`, add a `DEFAULT_MODEL` entry, teach `pickProvider()`
- * to detect it, and dispatch to a `complete*()` in `complete()`. Venice is OpenAI-compatible, so it just
- * reuses `completeOpenAICompatible()` with a different base URL + key.
+ * to detect it, and dispatch to a `complete*()` in `complete()`. Venice and Groq are both
+ * OpenAI-compatible, so they just reuse `completeOpenAICompatible()` with a different base URL + key.
+ *
+ * Groq is the recommended free-tier fallback when a paid/credit-based provider runs dry (e.g. Venice's
+ * free credits) — unlike a one-time credit grant, Groq's free tier is a renewing per-day/per-minute
+ * rate limit (see LLM.md), so it doesn't run out the same way.
  */
-export type LlmProvider = 'anthropic' | 'openai' | 'venice'
+export type LlmProvider = 'anthropic' | 'openai' | 'venice' | 'groq'
 
 /** Explicit `LLM_PROVIDER` wins; else auto-detect by which key is present; else Anthropic. */
 export function pickProvider(): LlmProvider {
   const p = process.env.LLM_PROVIDER?.toLowerCase()
-  if (p === 'openai' || p === 'anthropic' || p === 'venice') return p
+  if (p === 'openai' || p === 'anthropic' || p === 'venice' || p === 'groq') return p
   if (process.env.OPENAI_API_KEY) return 'openai'
   if (process.env.VENICE_API_KEY) return 'venice'
+  if (process.env.GROQ_API_KEY) return 'groq'
   return 'anthropic'
 }
 
@@ -25,6 +30,7 @@ const DEFAULT_MODEL: Record<LlmProvider, string> = {
   anthropic: 'claude-haiku-4-5-20251001',
   openai: 'gpt-4o-mini',
   venice: 'llama-3.3-70b',
+  groq: 'llama-3.3-70b-versatile',
 }
 
 const KIMI_MIN_COMPLETION_TOKENS = 1024
@@ -47,10 +53,22 @@ export interface CompleteOpts {
   maxTokens?: number
 }
 
+const KEY_ENV_VAR: Record<LlmProvider, string> = {
+  anthropic: 'ANTHROPIC_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  venice: 'VENICE_API_KEY',
+  groq: 'GROQ_API_KEY',
+}
+
 export interface LlmRuntimeInfo {
   provider: LlmProvider
   model: string
   maxTokens: number
+  /** The env var complete() will actually read a key from for this provider. */
+  keyEnvVar: string
+  /** False means any complete() call will throw and the caller's deterministic fallback will run -
+   *  worth surfacing loudly (see logLlmStartup below) rather than only showing up per-call. */
+  keyPresent: boolean
 }
 
 /** The provider/model/max-token selection a call to `complete()` would use, without calling the LLM. */
@@ -59,7 +77,28 @@ export function llmRuntimeInfo(opts: Pick<CompleteOpts, 'model' | 'maxTokens'> =
   // `||` not `??`: Coral manifests default unset options to ""; an empty LLM_MODEL must not win.
   const model = opts.model || process.env.LLM_MODEL || DEFAULT_MODEL[provider]
   const requestedMaxTokens = opts.maxTokens ?? 512
-  return { provider, model, maxTokens: effectiveMaxTokens(provider, model, requestedMaxTokens) }
+  const keyEnvVar = KEY_ENV_VAR[provider]
+  return {
+    provider,
+    model,
+    maxTokens: effectiveMaxTokens(provider, model, requestedMaxTokens),
+    keyEnvVar,
+    keyPresent: Boolean(process.env[keyEnvVar]),
+  }
+}
+
+/**
+ * One line to stdout at agent startup naming the resolved provider/model and, critically, whether its
+ * key actually made it into this process's env - printed once, immediately, in `docker logs`, instead
+ * of only being discoverable per-call after a round has already run into a silent fallback. Call this
+ * from every agent entrypoint (buyer/seller/verifier) right after startup.
+ */
+export function logLlmStartup(agentName: string): void {
+  const info = llmRuntimeInfo()
+  const status = info.keyPresent
+    ? 'key present'
+    : `WARNING: ${info.keyEnvVar} is NOT set in this process - every complete() call will throw and fall back to deterministic behavior`
+  console.error(`[${agentName}] LLM: provider=${info.provider} model=${info.model} (${status})`)
 }
 
 /**
@@ -79,6 +118,8 @@ export async function complete(opts: CompleteOpts): Promise<string> {
     ? await completeOpenAI(opts, model, maxTokens)
     : provider === 'venice'
     ? await completeVenice(opts, model, maxTokens)
+    : provider === 'groq'
+    ? await completeGroq(opts, model, maxTokens)
     : await completeAnthropic(opts, model, maxTokens)
 
   if (trace) console.error(`[llm] ← ${text.slice(0, 300)}`)
@@ -127,7 +168,21 @@ async function completeVenice(opts: CompleteOpts, model: string, maxTokens: numb
   })
 }
 
-/** The OpenAI chat-completions request shape, shared by any OpenAI-compatible provider (OpenAI, Venice). */
+/**
+ * Groq — OpenAI-compatible, and free (renewing rate limits, not a spendable credit pool). Get a key
+ * at https://console.groq.com/keys. Recommended fallback when Venice's free credits run out.
+ */
+async function completeGroq(opts: CompleteOpts, model: string, maxTokens: number): Promise<string> {
+  const key = process.env.GROQ_API_KEY
+  if (!key) throw new Error('GROQ_API_KEY not set (get a free key at https://console.groq.com/keys)')
+  return completeOpenAICompatible(opts, model, maxTokens, {
+    url: 'https://api.groq.com/openai/v1/chat/completions',
+    key,
+    label: 'Groq',
+  })
+}
+
+/** The OpenAI chat-completions request shape, shared by any OpenAI-compatible provider (OpenAI, Venice, Groq). */
 async function completeOpenAICompatible(
   opts: CompleteOpts,
   model: string,

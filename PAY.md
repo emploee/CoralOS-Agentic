@@ -160,6 +160,11 @@ if (violations.length > 0) throw new PolicyError(violations)
 | `rate-limit` | Deposits closer than `POLICY_MIN_INTERVAL_MS`. |
 | `verifier-gate` | Release without `VERIFIED pass` when verifier is required. |
 
+The x402 upstream-procurement leg (`packages/payment-runtime/src/procure.ts`) is gated separately by
+an `AllowancePolicy` (`packages/payment-runtime/src/policy/spend-policy.ts`): per-call and per-day
+caps, allowed providers/services/currencies, and expiry. This is distinct from the escrow-round policy
+above — it governs what the seller is allowed to *spend upstream*, not what the buyer deposits.
+
 ## Configuration
 
 | Variable | Rail | Notes |

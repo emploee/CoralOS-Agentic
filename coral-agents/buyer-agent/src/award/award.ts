@@ -10,7 +10,7 @@ import {
   complete, sha256Hex, llmRuntimeInfo, runToolLoop, BudgetGuard, StepCounter, pickCheapest,
   type Bid, type Want, type LlmUse, type CompleteOpts,
 } from '@pay/agent-runtime'
-import { fetchReputation } from './reputation.js'
+import { fetchReputation } from '../reputation/reputation.js'
 import { fetchSellerReputationTool, computeValueScoreTool, submitAwardTool, type SubmitAwardInput } from './award-tools.js'
 
 type Llm = (opts: CompleteOpts) => Promise<string>
@@ -103,7 +103,7 @@ export async function pickWinner(
     return {
       winner: pickCheapest(pool)!,
       reason: 'cheapest available',
-      llm: buyerLlm(want.round, buyerName, 'fallback', 'model exhausted rounds without deciding', { inputHash }),
+      llm: buyerLlm(want.round, buyerName, 'fallback', 'ran out of tool-loop steps before deciding — fell back to the cheapest bid', { inputHash }),
     }
   }
 

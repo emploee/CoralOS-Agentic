@@ -1,6 +1,6 @@
 # TxODDS CoralOS Round
 
-This folder launches the TxODDS service as a CoralOS multi-agent session. A buyer posts a TxODDS request, seller personas bid, the buyer awards one seller, and the order settles through the arbiter-backed devnet escrow.
+This folder launches the TxODDS service as a CoralOS multi-agent session. A buyer posts a TxODDS request, the seller bids, the buyer awards it, and the order settles through the arbiter-backed devnet escrow.
 
 ## Message Flow
 
@@ -8,11 +8,7 @@ This folder launches the TxODDS service as a CoralOS multi-agent session. A buye
 buyer-agent
   -> WANT service=txline arg=<fixtureId>
 
-seller-worldcup
-seller-fast
-seller-premium
-seller-risk-policy
-seller-fan-card
+seller-agent
   -> BID price=<sol> by=<agent>
 
 buyer-agent
@@ -59,17 +55,13 @@ From `examples/txodds`:
 npm run coral
 ```
 
-`round.ts` reads a live fixture id from the proxy's `/api/board` when available, starts the buyer and seller personas, and injects `SETTLEMENT_MODE=arbiter`.
+`round.ts` reads a live fixture id from the proxy's `/api/board` when available, starts the buyer and seller, and injects `SETTLEMENT_MODE=arbiter`.
 
-Default sellers:
+Default seller:
 
 | Agent | Services |
 |---|---|
-| `seller-worldcup` | `txline` |
-| `seller-fast` | `txline` |
-| `seller-premium` | `txline` |
-| `seller-risk-policy` | `txline`, `risk-policy` |
-| `seller-fan-card` | `txline`, `fan-card` |
+| `seller-agent` | `txline` |
 
 ## Logs
 

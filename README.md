@@ -7,7 +7,7 @@ Not mainnet production software. All value flows are devnet-only unless a separa
 ## System Model
 
 ```text
-WANT -> BID -> AWARD -> ESCROW_REQUIRED -> DEPOSITED -> DELIVERED -> VERIFIED -> RELEASED
+WANT -> BID -> AWARD -> ESCROW_REQUIRED -> DEPOSITED -> DELIVERED -> VERIFIED -> RELEASED | ARBITER_RELEASED
 ```
 
 Rail-based procurement:
@@ -23,18 +23,17 @@ PAYMENT_REQUIRED -> PAYMENT_PROOF -> PAYMENT_CONFIRMED -> SETTLED
 | Harness runtime | Seller execution adapter (`node-llm`, `claude-code`, or arbitrary CLI). |
 | Payment runtime | Rail abstraction, routing, verification records, rail-specific policy. |
 | TxODDS example | Default paid service, proxy, browser UI, live agent feed, research watcher, escrow clients, Anchor programs. |
-| Coral agents | Buyer, seller, verifier, and echo agent processes. |
+| Coral agents | Buyer, seller, and verifier agent processes. |
 
 ## Coral Agents
 
 | Agent | Role | Launched as |
 |---|---|---|
 | `buyer-agent` | Posts `WANT`, collects bids, awards, deposits to escrow, verifies delivery, releases/refunds. | CoralOS container. |
-| `seller-agent` | Bids, verifies funded escrow, runs harness adapter, delivers. Base image for `seller-worldcup`. | CoralOS container. |
+| `seller-agent` | Bids, verifies funded escrow, runs harness adapter, delivers. | CoralOS container. |
 | `verifier-agent` | Checks delivery hash/structure, replies `VERIFIED pass\|fail`. Holds no wallet. | CoralOS container. |
-| `echo-agent` | MCP connectivity smoke test and new-agent template. | CoralOS container. |
 
-**Persona pattern:** `seller-worldcup` has no code — a `coral-agent.toml` pointing at the `seller-agent` Docker image with its own `AGENT_NAME`/`PERSONA`/`FLOOR_SOL`/`SERVICES`. Copy this for a new persona.
+The TxODDS round (`examples/txodds/coral/round.ts`) runs one buyer, one seller, and the verifier — no persona roster to configure. To add a competing seller, copy `coral-agents/seller-agent/coral-agent.toml` into a new `coral-agents/` directory with its own `AGENT_NAME`/`PERSONA`/`FLOOR_SOL`/`SERVICES`, and add it to the round's agent list.
 
 **Agent discovery:** `examples/txodds/coral/coral.toml` uses `[registry] localAgents = ["/agents/*"]` to wildcard-scan `coral-agents/` for any `coral-agent.toml`. No manual registration needed.
 
@@ -44,7 +43,7 @@ PAYMENT_REQUIRED -> PAYMENT_PROOF -> PAYMENT_CONFIRMED -> SETTLED
 2. **Point sellers at it.** Set `SERVICES` in a persona manifest or env var.
 3. **Choose your rails.** Solana Pay works with no setup. Escrow needs deployed programs (see below). x402 needs `PROCURE_RAIL=x402` (see below).
 4. **Devnet-only by default.** `ALLOW_MAINNET=1` must be explicitly set to use mainnet.
-5. **Three payment rails ship.** Solana Pay, escrow, x402. All others were removed by design — see [PAYMENT_RAIL_INTEGRATION.md](docs/PAYMENT_RAIL_INTEGRATION.md).
+5. **Three payment rails ship.** Solana Pay, escrow, x402 — see [PAY.md](PAY.md) for how each is used.
 
 ## Repository Layout
 
@@ -78,11 +77,11 @@ npm run setup
 
 Installs the workspace, writes devnet wallet variables to `.env`, records public addresses in `WALLETS.txt`. Fund the buyer address with devnet SOL before running settlement flows.
 
-Optional LLM configuration:
+Optional LLM configuration — Groq recommended (free, renewing rate limit, no expiring credits):
 
 ```ini
-LLM_PROVIDER=venice
-VENICE_API_KEY=...
+LLM_PROVIDER=groq
+GROQ_API_KEY=...
 ```
 
 See [LLM.md](LLM.md) for provider selection and fallback behavior.
@@ -125,7 +124,6 @@ Requires Docker/CoralOS, funded devnet wallets, `ARBITER_KEYPAIR_B58`, and TxLIN
 | `npm run dev` | Start TxODDS proxy, feed, UI, Coral Console probe. | Funded buyer wallet; Docker optional for console. |
 | `npm run e2e:devnet` | Live devnet CoralOS/escrow smoke. | Docker, CoralOS, TxLINE, funded wallets. |
 | `npm run demo:coral` | Launch TxODDS CoralOS round. | Docker, built images, TxLINE, funded wallets. |
-| `npm run research:watch` | Start odds-move watcher. | TxODDS proxy running. |
 
 ## Single-Agent Flow
 
@@ -229,12 +227,7 @@ Harness processes hold no signing keys. Agents call policy before deposits and r
 | [PAY.md](PAY.md) | Payment rails usage, policy enforcement, code examples. |
 | [CORAL.md](CORAL.md) | CoralOS session/agent mechanics. |
 | [LLM.md](LLM.md) | Provider selection, model override, fallback behavior. |
-| [API.md](API.md) | Service-agnostic API usage guide for any integration. |
-| [docs/AGENT_DEPTH_PLAN.md](docs/AGENT_DEPTH_PLAN.md) | Bounded tool-calling loop and adversarial review, plus the longer autonomy roadmap. |
-| [docs/E2E_AGENTIC_DECISIONS.md](docs/E2E_AGENTIC_DECISIONS.md) | Concrete lifecycle decisions behind the roadmap's later phases, and what each one actually weighs. |
-| [docs/BUYER_VERIFIER_LOOPS.md](docs/BUYER_VERIFIER_LOOPS.md) | Scoped, ready-to-build plan: buyer award loop + verifier loop only. |
-| [docs/PRODUCTION_READINESS.md](docs/PRODUCTION_READINESS.md) | Readiness status, promotion checklist, open blockers. |
-| [docs/PAYMENT_RAIL_INTEGRATION.md](docs/PAYMENT_RAIL_INTEGRATION.md) | Deployed rails and where each is wired. |
+| [API.md](API.md) | Service-agnostic API usage guide for any integration, including bounded tool-calling loops, adversarial review, and payment rail wiring. |
 | [TXODDS.md](TXODDS.md) | TxODDS TxLINE integration details. |
 
 ## Security

@@ -11,7 +11,7 @@ Seller behavior usually starts in one of these places:
 1. Parse the buyer request (`WANT.arg`, or the harness order's `arg`).
 2. Price the result in the seller's `BID` — before any upstream work happens, and bounded by the harness's code-enforced economics (never below cost floor, never above the buyer's stated budget).
 3. Perform upstream procurement only after award **and** the deposit is confirmed funded — never speculatively, and never before policy has cleared the deposit. See `coral-agents/seller-agent/src/index.ts`'s `PROCURE_RAIL=x402` leg for the reference implementation (`packages/payment-runtime`'s `procureUpstream()`).
-4. Return deterministic output where possible — see `risk-policy` and `fan-card` in `service.ts` for services that never touch an LLM at all, just because the domain doesn't need one.
+4. Return deterministic output where possible — see the `odds`/`fixtures` actions in `service.ts`'s `txlineService` for delivery paths that never touch an LLM at all, just because the domain doesn't need one.
 5. Include hashes or source references so a verifier can check the delivery (`references/verifier-gate.md`). The buyer hashes whatever comes back on `DELIVERED`, so the payload itself must be the complete, self-contained artifact — nothing external to fetch later.
 
 Do not let service code hold unrestricted wallet authority. Use `payment-runtime` and policy checks for paid upstream calls — service modules should never import a signing keypair directly.

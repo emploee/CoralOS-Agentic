@@ -33,7 +33,7 @@ REFUNDED          round=<n> rail=<rail> reference=<id> [amount=] [currency=] [si
 
 These aren't hypothetical — the real consumer is `packages/payment-runtime/src/procure.ts`'s `procureUpstream()`, used by `coral-agents/seller-agent` (`PROCURE_RAIL=x402`) to post its own upstream purchase onto the market thread (unmentioned — bus-visible, buyer-loop-invisible) so `examples/txodds/feed` can fold it into the round's proof receipts. That's a side leg (the seller buying something it needs), not the buyer-seller settlement itself.
 
-`rail` is typed as `PaymentRailKind` in this file, which still lists retired kinds — `pay-sh`, `spl-usdc`, `allowance`, `embedded-wallet`, `payout` — that `packages/payment-runtime` no longer implements (see `docs/PAYMENT_RAIL_INTEGRATION.md`). Only `solana-pay` | `escrow` | `x402` have a working rail behind them; don't format a message with one of the retired kinds expecting a rail to exist for it.
+`rail` is typed as `PaymentRailKind` in this file, which still lists retired kinds — `pay-sh`, `spl-usdc`, `allowance`, `embedded-wallet`, `payout` — that `packages/payment-runtime` no longer implements. Only `solana-pay` | `escrow` | `x402` have a working rail behind them; don't format a message with one of the retired kinds expecting a rail to exist for it.
 
 ## 3. Untyped verbs
 

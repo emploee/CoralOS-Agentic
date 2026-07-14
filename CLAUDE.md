@@ -9,7 +9,7 @@ The repository implements a devnet agent-commerce reference system. Agents coord
 Primary lifecycle:
 
 ```text
-WANT -> BID -> AWARD -> ESCROW_REQUIRED -> DEPOSITED -> DELIVERED -> VERIFIED -> RELEASED
+WANT -> BID -> AWARD -> ESCROW_REQUIRED -> DEPOSITED -> DELIVERED -> VERIFIED -> RELEASED | ARBITER_RELEASED
 ```
 
 The Rust surface is limited to `examples/txodds/escrow`, which contains the escrow and arbiter programs. Most repository code is TypeScript.
@@ -22,8 +22,8 @@ The Rust surface is limited to `examples/txodds/escrow`, which contains the escr
 | `packages/harness-runtime/` | Seller execution adapter SDK for `node-llm`, `claude-code`, and arbitrary CLI harnesses. |
 | `packages/payment-runtime/` | Rail interface/router, working devnet Solana Pay and escrow rails, scaffold rails, and proof receipts. |
 | `packages/solana-agent-tools/` | Read-only Solana context tools and optional Solana Agent Kit adapter. |
-| `examples/txodds/` | TxODDS proxy, web UI, service implementation, feed server, research watcher, and escrow workspace. |
-| `coral-agents/` | Buyer, seller, verifier, and echo agent containers. |
+| `examples/txodds/` | TxODDS proxy, web UI, service implementation, feed server, and escrow workspace. |
+| `coral-agents/` | Buyer, seller, and verifier agent containers. |
 | `scripts/` | Setup, wallet provisioning, and example runner scripts. |
 
 ## Common Commands
@@ -57,8 +57,7 @@ Key files:
 | `examples/txodds/agent/txline.ts` | TxLINE client. |
 | `examples/txodds/agent/edge.ts` | Verified odds to fair-line analysis. |
 | `examples/txodds/agent/service.ts` | `deliverService()` for paid delivery. |
-| `examples/txodds/server/proxy.ts` | Proxy, settlement endpoints, run persistence, grading. |
-| `examples/txodds/research/watcher.ts` | Odds-move event queue. |
+| `examples/txodds/server/proxy.ts` | Proxy, settlement endpoints, run persistence. |
 | `examples/txodds/escrow/` | Escrow and arbiter Anchor programs. |
 
 `npm run dev` starts the proxy on `:8801` and the static UI on `:3020`.
@@ -101,8 +100,8 @@ Common variables:
 | `ARBITER_KEYPAIR_B58` | Arbiter release/refund keypair. |
 | `WALLET` / `SELLER_WALLET` | Seller payout addresses. |
 | `SOLANA_RPC_URL` | Defaults to devnet if unset. |
-| `LLM_PROVIDER` | `venice`, `openai`, or `anthropic`. |
-| `VENICE_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Provider keys. |
+| `LLM_PROVIDER` | `groq`, `venice`, `openai`, or `anthropic`. Groq is the recommended free default — see `LLM.md`. |
+| `GROQ_API_KEY` / `VENICE_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Provider keys. |
 | `TXLINE_API_KEY` | TxLINE token for TxODDS examples. |
 
 Never commit `.env`, private keys, provider keys, seed phrases, or generated wallet secrets.

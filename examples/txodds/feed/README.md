@@ -13,7 +13,6 @@ GET  /api/runs
 GET  /api/reputation
 GET  /api/threads?session=<sid>
 GET  /api/session?session=<sid>
-GET  /api/events
 ```
 
 | Endpoint | Response purpose |
@@ -24,7 +23,6 @@ GET  /api/events
 | `/api/reputation` | Seller reputation derived from persisted runs. |
 | `/api/threads` | Thread messages with `threadId`, participants, mentions, sender, text, and timestamp. |
 | `/api/session` | Agent roster and session metadata. |
-| `/api/events` | Proxied research watcher queue from `WATCHER_BASE` (`:4600` by default). |
 
 ## Ledger
 
@@ -67,9 +65,8 @@ Useful environment variables:
 | `CORAL_SERVER_URL` | CoralOS server URL. |
 | `CORAL_TOKEN` | CoralOS bearer token. |
 | `SESSION` | Session id to read. |
-| `MARKET_SELLERS` | Seller names for the declined column (defaults to the txodds World Cup roster). |
+| `MARKET_SELLERS` | Seller names for the declined column (defaults to `seller-agent`). |
 | `RUNS_DIR` | Ledger directory. |
-| `WATCHER_BASE` | Research watcher base URL. |
 | `PORT` | Feed server port, default `4000`. |
 | `FEED_FIXTURE` | Recorded extended-state fixture path. |
 

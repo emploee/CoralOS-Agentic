@@ -1,13 +1,20 @@
 # LLM Provider Configuration
 
-`packages/agent-runtime/src/llm/complete.ts` exposes one SDK-free `complete()` function over `fetch`. Supports Venice, OpenAI, and Anthropic.
+`packages/agent-runtime/src/llm/complete.ts` exposes one SDK-free `complete()` function over `fetch`. Supports Venice, OpenAI, Anthropic, and Groq.
+
+## Which Provider to Use
+
+**Groq is the recommended default for this kit.** It's genuinely free — not a one-time credit grant like Venice's signup bonus, but a renewing per-day/per-minute rate limit, so it doesn't run dry the way Venice credits do. Get a key at [console.groq.com/keys](https://console.groq.com/keys), no card required.
+
+Venice, OpenAI, and Anthropic remain fully supported for anyone with existing keys or who wants a different model — nothing about them changed.
 
 ## Environment Variables
 
 | Variable | Description |
 |---|---|
-| `LLM_PROVIDER` | `venice`, `openai`, or `anthropic`. Set explicitly when more than one key exists. |
-| `VENICE_API_KEY` | Venice API key. |
+| `LLM_PROVIDER` | `groq`, `venice`, `openai`, or `anthropic`. Set explicitly when more than one key exists. |
+| `GROQ_API_KEY` | Groq API key — free, renewing rate limit. |
+| `VENICE_API_KEY` | Venice API key — free signup credits, one-time (can run out). |
 | `OPENAI_API_KEY` | OpenAI API key. |
 | `ANTHROPIC_API_KEY` | Anthropic API key. |
 | `LLM_MODEL` | Optional model override. |
@@ -15,8 +22,8 @@
 
 ```ini
 # .env (gitignored)
-LLM_PROVIDER=venice
-VENICE_API_KEY=...
+LLM_PROVIDER=groq
+GROQ_API_KEY=...
 ```
 
 ## Provider Selection
@@ -26,12 +33,16 @@ VENICE_API_KEY=...
 1. `LLM_PROVIDER` set explicitly → use it.
 2. `OPENAI_API_KEY` exists → OpenAI.
 3. `VENICE_API_KEY` exists → Venice.
-4. Fallback → Anthropic (fails if no key).
+4. `GROQ_API_KEY` exists → Groq.
+5. Fallback → Anthropic (fails if no key).
+
+Auto-detection is a convenience for having exactly one key set; if you have both `VENICE_API_KEY` and `GROQ_API_KEY` in `.env` (e.g. switching over after Venice ran out), set `LLM_PROVIDER=groq` explicitly rather than relying on priority order.
 
 ## Default Models
 
 | Provider | Default Model |
 |---|---|
+| Groq | `llama-3.3-70b-versatile` |
 | Venice | `llama-3.3-70b` |
 | OpenAI | `gpt-4o-mini` |
 | Anthropic | `claude-haiku-4-5-20251001` |
@@ -39,12 +50,12 @@ VENICE_API_KEY=...
 Override with `LLM_MODEL`:
 
 ```ini
-LLM_PROVIDER=venice
-VENICE_API_KEY=...
-LLM_MODEL=kimi-k2-7-code
+LLM_PROVIDER=groq
+GROQ_API_KEY=...
+LLM_MODEL=llama-3.3-70b-versatile
 ```
 
-Venice Kimi models: the runtime raises `maxTokens` requests below `1024` to `1024` (Kimi may consume budget on reasoning before emitting content).
+Venice Kimi models: the runtime raises `maxTokens` requests below `1024` to `1024` (Kimi may consume budget on reasoning before emitting content). Groq has no equivalent quirk.
 
 ## Usage
 
@@ -71,10 +82,10 @@ Every decision follows **propose → enforce**: the model proposes, deterministi
 
 ### Bid Review (Optional)
 
-Set `BID_REVIEW_ENABLED=1` on a seller persona to add a second, independently-prompted loop that can veto a proposed bid. The reviewer has no visibility into the first loop's reasoning.
+Set `BID_REVIEW_ENABLED=1` on the seller to add a second, independently-prompted loop that can veto a proposed bid. The reviewer has no visibility into the first loop's reasoning.
 
 ```toml
-# coral-agents/seller-worldcup/coral-agent.toml
+# coral-agents/seller-agent/coral-agent.toml
 [agent.env]
 BID_REVIEW_ENABLED = "1"
 ```
@@ -95,7 +106,7 @@ Every LLM-backed decision emits an `LlmUse` record into the run ledger:
 ```ts
 {
   round: 1,
-  agent: 'seller-worldcup',
+  agent: 'seller-agent',
   purpose: 'bid-decision',
   status: 'ok',
   provider: 'venice',
@@ -110,9 +121,20 @@ Every LLM-backed decision emits an `LlmUse` record into the run ledger:
 
 When a provider key is absent, invalid, rate-limited, or exhausted, callers either surface the error or use a deterministic fallback. TxODDS UI labels deterministic reads separately from LLM reads.
 
+## Groq Free Tier
+
+No credit card, no expiring credit pool — a renewing rate limit instead. Limits vary by model; roughly, at time of writing:
+
+| Model | Requests/day | Tokens/minute |
+|---|---|---|
+| `llama-3.3-70b-versatile` (default) | 14,400 | 6,000 |
+| `groq/compound` | 250 | 70,000 |
+
+Check [console.groq.com](https://console.groq.com) for current limits per model — Groq adjusts these. If you're hitting the per-minute token cap in a tight bid/verify loop, either switch to a lighter-limit model via `LLM_MODEL`, or fall back to another configured provider for that run.
+
 ## Adding a Provider
 
-All wiring is in `packages/agent-runtime/src/llm/complete.ts`:
+All wiring is in `packages/agent-runtime/src/llm/complete.ts`. `completeGroq()` there is a real, working example of the pattern below — copy it.
 
 1. Add the provider to `LlmProvider`.
 2. Add a default model.

@@ -1,4 +1,5 @@
-// LLM pillar — provider-agnostic completion (Venice AI is the kit's LLM; LLM_PROVIDER also accepts openai/anthropic).
+// LLM pillar — provider-agnostic completion (Groq is the kit's recommended free default; LLM_PROVIDER also accepts venice/openai/anthropic).
 
-export { complete, pickProvider, llmRuntimeInfo, parseJsonReply } from './complete.js'
+export { complete, pickProvider, llmRuntimeInfo, logLlmStartup, parseJsonReply } from './complete.js'
 export type { LlmProvider, CompleteOpts, LlmRuntimeInfo } from './complete.js'
+export { estimateLlmCostSol } from './pricing.js'

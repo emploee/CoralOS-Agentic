@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { reputation, formatReputation } from './reputation.js'
+import { reputation, formatReputation, clearingPrices, formatClearingPrices } from './reputation.js'
 import type { RunRecord } from './run.js'
 
 const run = (over: Partial<RunRecord>): RunRecord => ({
@@ -16,6 +16,14 @@ const settled = (round: number, seller: string): RunRecord => run({
     { kind: 'deposit', sig: 'd', explorer: 'e' },
     { kind: 'release', sig: 'r', explorer: 'e' },
   ],
+})
+
+const awarded = (round: number, seller: string, service: string, priceSol: number, updatedAt: string): RunRecord => run({
+  runId: `s/round-${round}`, round,
+  want: { service, arg: 'x', budgetSol: priceSol * 2 },
+  bids: [{ by: seller, priceSol }],
+  award: { to: seller },
+  updatedAt,
 })
 
 describe('reputation - derived from the run ledger, not asserted', () => {
@@ -57,5 +65,44 @@ describe('reputation - derived from the run ledger, not asserted', () => {
     ]))
     expect(text).toContain('seller-good: score 100 (1 won, 1 settled)')
     expect(text).toContain('refunded')
+  })
+})
+
+describe('clearingPrices - what a service has actually awarded for, not a range to guess in', () => {
+  it('computes per-service median/min/max from awarded bids', () => {
+    const [txline] = clearingPrices([
+      awarded(1, 'seller-a', 'txline', 0.0005, '2026-07-01T00:00:00.000Z'),
+      awarded(2, 'seller-b', 'txline', 0.0007, '2026-07-02T00:00:00.000Z'),
+      awarded(3, 'seller-a', 'txline', 0.0009, '2026-07-03T00:00:00.000Z'),
+    ])
+    expect(txline).toMatchObject({ service: 'txline', n: 3, medianPriceSol: 0.0007, minPriceSol: 0.0005, maxPriceSol: 0.0009 })
+  })
+
+  it('orders recentPricesSol most-recent-first by updatedAt', () => {
+    const [txline] = clearingPrices([
+      awarded(1, 'seller-a', 'txline', 0.0005, '2026-07-01T00:00:00.000Z'),
+      awarded(2, 'seller-b', 'txline', 0.0007, '2026-07-03T00:00:00.000Z'),
+      awarded(3, 'seller-a', 'txline', 0.0009, '2026-07-02T00:00:00.000Z'),
+    ])
+    expect(txline.recentPricesSol).toEqual([0.0007, 0.0009, 0.0005])
+  })
+
+  it('keeps services separate and skips rounds with no award or no matching bid', () => {
+    const prices = clearingPrices([
+      awarded(1, 'seller-a', 'txline', 0.0005, '2026-07-01T00:00:00.000Z'),
+      awarded(2, 'seller-b', 'sharp-movement', 0.0004, '2026-07-02T00:00:00.000Z'),
+      run({ round: 3, runId: 's/round-3', want: { service: 'txline', arg: 'x', budgetSol: 0.001 }, status: 'bidding' }),
+      run({ round: 4, runId: 's/round-4', want: { service: 'txline', arg: 'x', budgetSol: 0.001 }, award: { to: 'seller-c' }, bids: [{ by: 'seller-d', priceSol: 0.0006 }] }),
+    ])
+    expect(prices.map((p) => p.service).sort()).toEqual(['sharp-movement', 'txline'])
+    expect(prices.find((p) => p.service === 'txline')?.n).toBe(1)
+  })
+
+  it('formats a compact line per service', () => {
+    const text = formatClearingPrices(clearingPrices([
+      awarded(1, 'seller-a', 'txline', 0.0005, '2026-07-01T00:00:00.000Z'),
+      awarded(2, 'seller-b', 'txline', 0.0009, '2026-07-02T00:00:00.000Z'),
+    ]))
+    expect(text).toBe('txline: median 0.0007 SOL (2 awarded, range 0.0005-0.0009)')
   })
 })

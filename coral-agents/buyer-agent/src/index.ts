@@ -9,8 +9,8 @@
  * never hangs the round. Settlement is escrow-only - funds are conditional on delivery.
  *
  * Env: BUYER_KEYPAIR_B58 (signs), BUYER_MAX_SOL (budget), BUYER_SERVICE/BUYER_ARG (the WANT),
- *      MARKET_SELLERS (csv of seller names), BID_WINDOW_MS, SOLANA_RPC_URL,
- *      VENICE_API_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY (+ LLM_PROVIDER), TRACE=1.
+ *      MARKET_SELLERS (csv of seller names), BID_WINDOW_MS, CYCLE_INTERVAL_MS, RETRY_INTERVAL_MS,
+ *      SOLANA_RPC_URL, VENICE_API_KEY|GROQ_API_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY (+ LLM_PROVIDER), TRACE=1.
  *
  * The deposit/release calls settle against the escrow program deployed to devnet; they need a funded
  * devnet wallet + live RPC, so they run in a live market session rather than in `npm test`/CI.
@@ -19,18 +19,18 @@ import {
   startCoralAgent, loadKeypairB58,
   formatWant, parseBid, parseEscrowRequired, formatAward, formatDeposited,
   formatVerify, parseVerified, formatLlmUsed, sha256Hex, enforce, policyFromEnv,
-  selectBids, verb, messageRound,
+  selectBids, verb, messageRound, logLlmStartup,
   type Bid, type EscrowTerms, type CoralAgentContext,
 } from '@pay/agent-runtime'
 import { PublicKey } from '@solana/web3.js'
-import { makeProgram, deposit, release, escrowPda } from './escrow.js'
+import { makeProgram, deposit, release, escrowPda } from './settlement/escrow.js'
 import {
   ARBITER_PROGRAM_ID, ensureArbiterConfig, ensureArbiterFunded, makeArbiter,
   openArbitrated, arbitrateRelease, arbitratedEscrowPda,
-} from './arbiter.js'
-import { fetchNextWant } from './wantFeed.js'
-import { pickWinner } from './award.js'
-import { decideVerifyEscalation } from './verify-gate.js'
+} from './settlement/arbiter.js'
+import { fetchNextWant } from './feed/wantFeed.js'
+import { pickWinner } from './award/award.js'
+import { decideVerifyEscalation } from './verify/verify-gate.js'
 
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
 const NAME = process.env.AGENT_NAME ?? 'buyer-agent'
@@ -42,7 +42,13 @@ const ARGS = (process.env.BUYER_ARGS || process.env.BUYER_ARG || 'SOL-USDC').spl
 const ARG = ARGS[0]
 const BID_WINDOW_MS = Number(process.env.BID_WINDOW_MS ?? '5000')
 const CYCLE_MS = Number(process.env.CYCLE_INTERVAL_MS ?? '30000')
-const SELLERS = (process.env.MARKET_SELLERS ?? 'seller-worldcup,seller-fast,seller-premium,seller-risk-policy,seller-fan-card')
+// Distinct from CYCLE_MS: CYCLE_MS is the steady-state cadence between rounds (round.ts sets it as
+// high as 1h for a production-like demo). A round that got no bids or no escrow terms in its window
+// is usually a transient coordination miss (e.g. coral-server still warming up its first sessions),
+// not "nothing to do until next cycle" - so it retries on this much shorter clock instead of
+// inheriting CYCLE_MS and going quiet for the full cycle.
+const RETRY_MS = Number(process.env.RETRY_INTERVAL_MS ?? '15000')
+const SELLERS = (process.env.MARKET_SELLERS ?? 'seller-agent')
   .split(',').map((s) => s.trim()).filter(Boolean)
 // F3: the payout wallet the buyer expects (personas share one in the demo). If set, the buyer refuses
 // to deposit to an ESCROW_REQUIRED whose seller= pubkey differs - binding the award to the payout.
@@ -90,6 +96,8 @@ async function waitFor<T>(
   }
   return null
 }
+
+logLlmStartup(NAME)
 
 await startCoralAgent({ agentName: NAME }, async (ctx) => {
   const buyer = loadKeypairB58('BUYER_KEYPAIR_B58')
@@ -142,7 +150,7 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
         if (b && b.round === round) bids.push(b)
       }
       const pool = selectBids(bids, round)
-      if (pool.length === 0) { console.error(`[buyer] round ${round}: NO_SELLERS`); await sleep(CYCLE_MS); continue }
+      if (pool.length === 0) { console.error(`[buyer] round ${round}: NO_SELLERS`); await sleep(RETRY_MS); continue }
 
       // -- award the best value (price × track record) -------------------------
       const { winner, reason, llm } = await pickWinner(
@@ -153,7 +161,7 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
 
       // -- settle through escrow: deposit -> DEPOSITED -> wait DELIVERED -> release
       const terms = await waitFor<EscrowTerms>(ctx, round, parseEscrowRequired, 15_000)
-      if (!terms) { console.error(`[buyer] round ${round}: no escrow terms from ${winner.by}`); await sleep(CYCLE_MS); continue }
+      if (!terms) { console.error(`[buyer] round ${round}: no escrow terms from ${winner.by}`); await sleep(RETRY_MS); continue }
       // One choke point for everything that must be true before funds move (subsumes payoutMatches).
       const depositDecision = enforce({
         kind: 'deposit', round, service, amountSol: terms.amountSol, payout: terms.seller,

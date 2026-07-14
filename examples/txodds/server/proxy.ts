@@ -13,13 +13,9 @@
  */
 import http from 'node:http'
 import fs from 'node:fs'
-import { createHash } from 'node:crypto'
-import { join } from 'node:path'
 import axios from 'axios'
 import * as anchor from '@coral-xyz/anchor'
-import {
-  PublicKey, SystemProgram, Keypair, Connection, Transaction, sendAndConfirmTransaction, LAMPORTS_PER_SOL,
-} from '@solana/web3.js'
+import { PublicKey, SystemProgram, Keypair, Connection } from '@solana/web3.js'
 import {
   TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID,
   getOrCreateAssociatedTokenAccount, getAssociatedTokenAddressSync,
@@ -27,18 +23,10 @@ import {
 import nacl from 'tweetnacl'
 import bs58 from 'bs58'
 import { fileURLToPath } from 'node:url'
-import {
-  assertDevnet, enforce, explorerTx, listRuns, policyFromEnv, readRun, sha256Hex, verifyPayment, writeRun,
-} from '@pay/agent-runtime'
-import type { RunRecord, TranscriptEntry, TxEntry } from '@pay/agent-runtime'
+import { assertDevnet } from '@pay/agent-runtime'
 import { x402Challenge, settleX402, type X402Accept } from '@pay/payment-runtime'
-import { analyzeEdge, fairLine } from '../agent/edge.js'
+import { analyzeEdge } from '../agent/edge.js'
 import { createTxOddsRound } from '../coral/round.js'
-import {
-  makeArbiter, initConfig, open as arbiterOpen, arbitrateRelease,
-  configPda, vaultPda, arbitratedEscrowPda, ARBITER_PROGRAM_ID,
-} from '../agent/arbiter.js'
-import { makeProgram, deposit, release, escrowPda } from '../agent/escrow.js'
 
 // fileURLToPath (not .pathname) so the repo-root .env resolves on macOS/Linux too, not just Windows.
 const ENV_PATH = process.env.KIT_ENV ?? fileURLToPath(new URL('../../../.env', import.meta.url))
@@ -62,11 +50,7 @@ const MINT = new PublicKey(process.env.TXLINE_MINT ?? '4Zao8ocPhmMgq7PdsYWyxvqyS
 const BASE = process.env.TXLINE_BASE_URL ?? 'https://txline-dev.txodds.com'
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
 const PORT = Number(process.env.PORT ?? 8801)
-const RUNS_DIR = process.env.TXODDS_RUNS_DIR ?? fileURLToPath(new URL('../data/txodds-runs', import.meta.url))
 const AGENTIC_FEED = process.env.TXODDS_FEED_URL ?? 'http://localhost:4000'
-const WEB_SESSION = 'web-oracle'
-
-const expl = (kind: 'tx' | 'address', id: string) => `https://explorer.solana.com/${kind}/${id}?cluster=devnet`
 
 async function forwardFeed(res: http.ServerResponse, path: string): Promise<void> {
   try {
@@ -83,12 +67,6 @@ function buyerKeypair(): Keypair {
   const b58 = process.env.BUYER_KEYPAIR_B58 // loaded from .env above (or the shell)
   if (!b58) throw new Error(`BUYER_KEYPAIR_B58 not set (looked in ${ENV_PATH})`)
   return Keypair.fromSecretKey(bs58.decode(b58.trim()))
-}
-
-/** The neutral arbiter signer (set by setup.js). Present -> the demo settles through the arbiter wrapper. */
-function arbiterKeypair(): Keypair | null {
-  const b58 = process.env.ARBITER_KEYPAIR_B58
-  return b58 ? Keypair.fromSecretKey(bs58.decode(b58.trim())) : null
 }
 
 let jwt = ''
@@ -162,35 +140,35 @@ const has1x2 = (odds: any[]): boolean =>
 let boardCache: { at: number; data: any[] } = { at: 0, data: [] }
 async function board(): Promise<any[]> {
   if (boardCache.data.length && Date.now() - boardCache.at < 30_000) return boardCache.data // fresh + good
-  const fixtures = await txGet('/api/fixtures/snapshot')
-  const list = ((Array.isArray(fixtures) ? fixtures : []) as any[]).slice(0, 80)
-  const results: (any | null)[] = new Array(list.length).fill(null)
-  let next = 0
-  async function worker(): Promise<void> {
-    while (next < list.length) {
-      const idx = next++
-      const f = list[idx]
-      try {
-        const odds = await txGet(`/api/odds/snapshot/${f.FixtureId}`)
-        if (Array.isArray(odds) && (odds as any[]).some(hasFinitePrice)) results[idx] = { ...f, odds }
-      } catch { /* skip this fixture on an upstream error */ }
+  try {
+    const fixtures = await txGet('/api/fixtures/snapshot')
+    const list = ((Array.isArray(fixtures) ? fixtures : []) as any[]).slice(0, 80)
+    const results: (any | null)[] = new Array(list.length).fill(null)
+    let next = 0
+    async function worker(): Promise<void> {
+      while (next < list.length) {
+        const idx = next++
+        const f = list[idx]
+        try {
+          const odds = await txGet(`/api/odds/snapshot/${f.FixtureId}`)
+          if (Array.isArray(odds) && (odds as any[]).some(hasFinitePrice)) results[idx] = { ...f, odds }
+        } catch { /* skip this fixture on an upstream error */ }
+      }
     }
+    await Promise.all(Array.from({ length: 6 }, () => worker()))
+    const data = (results.filter(Boolean) as any[])
+      .sort((a, b) => Number(has1x2(b.odds)) - Number(has1x2(a.odds))) // 1X2 fixtures first
+    if (data.length) { boardCache = { at: Date.now(), data }; return data } // got a live board - cache it
+    if (boardCache.data.length && Date.now() - boardCache.at < 300_000) return boardCache.data // flicker - keep last good
+    return data // genuinely nothing priced right now
+  } catch (e) {
+    // Upstream TxLINE itself is down/erroring (e.g. a 503) - the fixtures/snapshot call throws
+    // before we ever get to the "flicker, keep last good" fallback above. Same fallback, one level
+    // up: never let a transient upstream outage surface as a 500 - degrade to cache, then empty.
+    console.error(`[proxy] board() upstream failure: ${(e as Error).message}`)
+    if (boardCache.data.length && Date.now() - boardCache.at < 300_000) return boardCache.data
+    return []
   }
-  await Promise.all(Array.from({ length: 6 }, () => worker()))
-  const data = (results.filter(Boolean) as any[])
-    .sort((a, b) => Number(has1x2(b.odds)) - Number(has1x2(a.odds))) // 1X2 fixtures first
-  if (data.length) { boardCache = { at: Date.now(), data }; return data } // got a live board - cache it
-  if (boardCache.data.length && Date.now() - boardCache.at < 300_000) return boardCache.data // flicker - keep last good
-  return data // genuinely nothing priced right now
-}
-
-/** The verified fair favourite for a board fixture (deterministic - no LLM), for the order commitment. */
-function favouriteOf(fx: any): { label: string; pct: number; fairOdds: number } | undefined {
-  const odds = (fx?.odds ?? []) as any[]
-  const m = odds.find((x) => String(x?.SuperOddsType ?? '').includes('1X2') && hasFinitePrice(x)) ?? odds.find(hasFinitePrice)
-  if (!m) return undefined
-  const { favourite } = fairLine({ names: m.PriceNames, pct: m.Pct }, { home: fx.Participant1, away: fx.Participant2 })
-  return favourite ? { label: favourite.label, pct: favourite.pct, fairOdds: favourite.fairOdds } : undefined
 }
 
 interface ReadBundle {
@@ -203,8 +181,6 @@ interface ReadBundle {
   }
   delivery: any
 }
-
-const latestRead = new Map<string, ReadBundle>()
 
 async function readEdge(fixtureId: string): Promise<ReadBundle> {
   const request: ReadBundle['request'] = {
@@ -224,278 +200,16 @@ async function readEdge(fixtureId: string): Promise<ReadBundle> {
     if (fromBoard) odds = fromBoard.odds
   }
   const delivery = await analyzeEdge({ fixtureId, odds, fixtures })
-  const bundle = { request, delivery }
-  latestRead.set(fixtureId, bundle)
-  return bundle
-}
-
-function latestRound(): number {
-  return listRuns(RUNS_DIR)
-    .filter((r) => r.session === WEB_SESSION)
-    .reduce((max, r) => Math.max(max, r.round), 0)
-}
-
-function settledSpend(): number {
-  return listRuns(RUNS_DIR)
-    .filter((r) => r.session === WEB_SESSION && ['settled', 'delivered'].includes(r.status))
-    .reduce((sum, r) => sum + (r.escrow?.amountSol ?? 0), 0)
-}
-
-function lastDepositAt(): number | undefined {
-  return listRuns(RUNS_DIR)
-    .filter((r) => r.session === WEB_SESSION && r.escrow?.deposit)
-    .map((r) => Date.parse(r.updatedAt))
-    .filter(Number.isFinite)
-    .sort((a, b) => b - a)[0]
-}
-
-function assertPolicy(kind: 'deposit' | 'release', opts: { round: number; amountSol?: number; seller?: string; delivered?: boolean }): void {
-  const policy = kind === 'release'
-    ? { ...policyFromEnv(process.env, { budgetSol: opts.amountSol ?? 0.001, service: 'txline', expectedPayout: opts.seller }), requireVerifier: true }
-    : policyFromEnv(process.env, { budgetSol: opts.amountSol ?? 0.001, service: 'txline', expectedPayout: opts.seller })
-  const decision = kind === 'deposit'
-    ? enforce({
-        kind: 'deposit', round: opts.round, service: 'txline', amountSol: opts.amountSol ?? 0.001,
-        payout: opts.seller ?? '', awardedPriceSol: opts.amountSol, spentSol: settledSpend(), lastDepositAt: lastDepositAt(),
-      }, policy)
-    : enforce({ kind: 'release', round: opts.round, verified: opts.delivered ? 'pass' : undefined }, policy)
-  if (!decision.ok) throw new Error(`policy denied ${kind}: ${decision.violations.join('; ')}`)
-}
-
-const deliveredOk = (delivery: any): boolean =>
-  !!delivery?.analysis?.call && !/no priced market/i.test(String(delivery.analysis.call))
-
-function persistWebRun(args: {
-  read: ReadBundle
-  settle: any
-  amountSol: number
-  fixtureId: string
-  payVerify?: any
-}): any {
-  const round = latestRound() + 1
-  const now = new Date().toISOString()
-  const txs: TxEntry[] = []
-  if (args.settle?.open?.sig) txs.push({ kind: 'deposit', sig: args.settle.open.sig, explorer: args.settle.open.explorer ?? explorerTx(args.settle.open.sig) })
-  if (args.settle?.deposit?.sig) txs.push({ kind: 'deposit', sig: args.settle.deposit.sig, explorer: args.settle.deposit.explorer ?? explorerTx(args.settle.deposit.sig) })
-  if (args.settle?.release?.sig) txs.push({ kind: 'release', sig: args.settle.release.sig, explorer: args.settle.release.explorer ?? explorerTx(args.settle.release.sig) })
-  if (args.payVerify?.sig) txs.push({ kind: 'wallet-pay', sig: args.payVerify.sig, explorer: args.payVerify.explorer ?? explorerTx(args.payVerify.sig) })
-
-  const rawDelivery = JSON.stringify(args.read.delivery)
-  const run: RunRecord = {
-    runId: `${WEB_SESSION}/round-${round}`,
-    session: WEB_SESSION,
-    round,
-    status: args.settle?.ok || args.payVerify?.ok ? 'settled' : 'failed',
-    want: { service: 'txline', arg: `edge ${args.fixtureId}`, budgetSol: args.amountSol },
-    bids: [{ by: 'web-oracle', priceSol: args.amountSol, note: 'single-agent web read' }],
-    award: { to: 'web-oracle', reason: 'auto-selected by the no-Docker txodds demo' },
-    escrow: args.settle?.reference ? {
-      reference: args.settle.reference,
-      seller: args.settle.seller ?? args.payVerify?.recipient ?? '',
-      amountSol: args.settle.amountSol ?? args.amountSol,
-      deadlineSecs: 600,
-      deposit: { sig: args.settle.open?.sig ?? args.settle.deposit?.sig ?? args.payVerify?.sig ?? '', buyer: args.settle.buyer ?? 'browser-wallet' },
-    } : undefined,
-    delivery: { raw: rawDelivery, data: args.read.delivery, sha256: sha256Hex(rawDelivery) },
-    verification: {
-      verdict: deliveredOk(args.read.delivery) ? 'pass' : 'fail',
-      checked: 'delivery-present',
-    },
-    txs,
-    updatedAt: now,
-  }
-  const transcript: TranscriptEntry[] = [
-    { sender: 'web', text: JSON.stringify(args.read.request) },
-    { sender: 'oracle', text: rawDelivery },
-    { sender: 'settlement', text: JSON.stringify(args.settle ?? args.payVerify) },
-  ]
-  const dir = writeRun(RUNS_DIR, run, transcript)
-  fs.writeFileSync(join(dir, 'read_request.json'), JSON.stringify(args.read.request, null, 2) + '\n', 'utf8')
-  fs.writeFileSync(join(dir, 'delivered_read.json'), JSON.stringify(args.read.delivery, null, 2) + '\n', 'utf8')
-  return { ...args.settle, runId: run.runId, runDir: dir }
-}
-
-type ScoreOutcome =
-  | { status: 'pending'; reason: string; checkedAt: string; raw?: unknown }
-  | { status: 'graded'; checkedAt: string; actual: { home: number; away: number; winner: string }; prediction?: string; correct?: boolean; raw?: unknown }
-
-const finalish = (v: unknown): boolean => /final|finished|ft|complete|ended/i.test(String(v ?? ''))
-const num = (v: unknown): number | undefined => {
-  const n = Number(v)
-  return Number.isFinite(n) ? n : undefined
-}
-
-function scorePair(raw: unknown): { home: number; away: number } | undefined {
-  const seen = new Set<unknown>()
-  const walk = (v: any): { home: number; away: number } | undefined => {
-    if (!v || typeof v !== 'object' || seen.has(v)) return undefined
-    seen.add(v)
-    const keys = Object.keys(v)
-    const isFinal = keys.some((k) => /status|state|period|matchStatus/i.test(k) && finalish(v[k]))
-    const home = num(v.homeScore ?? v.HomeScore ?? v.Participant1Score ?? v.home ?? v.scoreHome ?? v.ScoreHome)
-    const away = num(v.awayScore ?? v.AwayScore ?? v.Participant2Score ?? v.away ?? v.scoreAway ?? v.ScoreAway)
-    if (home != null && away != null && (isFinal || keys.some((k) => /final|finished|ft/i.test(k)))) return { home, away }
-    for (const child of Object.values(v)) {
-      const found = walk(child)
-      if (found) return found
-    }
-    return undefined
-  }
-  return walk(raw)
-}
-
-async function gradeRun(run: RunRecord): Promise<ScoreOutcome> {
-  const fixtureId = String((run.delivery?.data as any)?.fixtureId ?? run.want?.arg?.replace(/^edge\s+/, '') ?? '')
-  if (!fixtureId) return { status: 'pending', reason: 'no fixture id on run', checkedAt: new Date().toISOString() }
-  const scores = await txGet(`/api/scores/snapshot/${fixtureId}`).catch((e) => ({ error: (e as Error).message }))
-  const pair = scorePair(scores)
-  if (!pair) return { status: 'pending', reason: 'no final score in TxLINE scores snapshot', checkedAt: new Date().toISOString(), raw: scores }
-  const teams = (run.delivery?.data as any)?.teams
-  const winner = pair.home === pair.away ? 'Draw' : pair.home > pair.away ? teams?.home : teams?.away
-  const prediction = (run.delivery?.data as any)?.fair?.favourite?.label
-  const correct = prediction && winner ? String(prediction).toLowerCase() === String(winner).toLowerCase() : undefined
-  return { status: 'graded', checkedAt: new Date().toISOString(), actual: { ...pair, winner: winner ?? 'unknown' }, prediction, correct, raw: scores }
-}
-
-async function gradeRuns(): Promise<{ checked: number; graded: number; pending: number }> {
-  let checked = 0, graded = 0, pending = 0
-  for (const run of listRuns(RUNS_DIR).filter((r) => r.session === WEB_SESSION && r.status === 'settled')) {
-    checked += 1
-    const outcome = await gradeRun(run)
-    if (outcome.status === 'graded') graded += 1
-    else pending += 1
-    const loaded = readRun(RUNS_DIR, run.session, run.round)
-    if (!loaded) continue
-    const updated = { ...loaded.run, outcome, updatedAt: outcome.checkedAt } as RunRecord
-    const dir = writeRun(RUNS_DIR, updated, loaded.transcript)
-    fs.writeFileSync(join(dir, 'outcome.json'), JSON.stringify(outcome, null, 2) + '\n', 'utf8')
-  }
-  return { checked, graded, pending }
+  return { request, delivery }
 }
 
 /**
- * The escrow `reference` BOUND to the order: `sha256("txodds:<fixtureId>:<favourite>@<fairOdds>:<nonce>")`.
- * A reference is just a 32-byte PDA seed (need not be on-curve), so the digest is the PublicKey directly.
- * The on-chain PDA then provably corresponds to exactly the read bought - anyone with `order.preimage`
- * can recompute it. The nonce keeps each settle's PDA unique. Shared by the direct + arbiter flows.
- */
-async function boundReference(fixtureId: string): Promise<{ reference: PublicKey; order: any }> {
-  const fx = (await board()).find((f) => String(f.FixtureId) === fixtureId)
-  const fav = fx ? favouriteOf(fx) : undefined
-  const nonce = Date.now()
-  const preimage = fav
-    ? `txodds:${fixtureId}:${fav.label}@${fav.fairOdds}:${nonce}`
-    : `txodds:${fixtureId || 'unknown'}:${nonce}`
-  const reference = new PublicKey(createHash('sha256').update(preimage).digest())
-  return {
-    reference,
-    order: { fixtureId, matchup: fx ? `${fx.Participant1} v ${fx.Participant2}` : undefined, favourite: fav?.label, fairOdds: fav?.fairOdds, nonce, preimage },
-  }
-}
-
-/**
- * Run a real devnet escrow deposit->release so the demo can link the settlement on-chain. The escrow
- * `reference` is BOUND to the order: it's `sha256("txodds:<fixtureId>:<favourite>@<fairOdds>:<nonce>")`,
- * so the on-chain PDA provably corresponds to exactly the read that was bought (anyone with the returned
- * `order.preimage` can recompute it). The nonce keeps each settle's PDA unique. The seller is a distinct
- * party (`SELLER_WALLET`/`WALLET`); if unset it self-pays (`selfPay:true`). Returns {ok:false,error} on
- * any failure so the UI can fall back gracefully.
- */
-async function settle(amountSol: number, fixtureId: string, read: ReadBundle, round: number): Promise<unknown> {
-  try {
-    const buyer = buyerKeypair()
-    const sellerEnv = process.env.SELLER_WALLET || process.env.WALLET
-    const seller = new PublicKey(sellerEnv || buyer.publicKey.toBase58())
-    const selfPay = seller.equals(buyer.publicKey)
-    // floor at the rent-exempt minimum (~0.00089 SOL) so paying a brand-new seller in one release
-    // leaves it rent-exempt; below that the release is rejected ("insufficient funds for rent").
-    const amount = Math.max(0.001, Number.isFinite(amountSol) ? amountSol : 0.001)
-    const { reference, order } = await boundReference(fixtureId)
-    assertPolicy('deposit', { round, amountSol: amount, seller: seller.toBase58() })
-    assertPolicy('release', { round, amountSol: amount, seller: seller.toBase58(), delivered: deliveredOk(read.delivery) })
-
-    const program = await makeProgram(buyer, RPC)
-    const depositSig = await deposit(program, buyer, seller, reference, amount, 600)
-    assertPolicy('release', { round, amountSol: amount, seller: seller.toBase58(), delivered: deliveredOk(read.delivery) })
-    const releaseSig = await release(program, buyer, seller, reference)
-    const pda = escrowPda(buyer.publicKey, reference).toBase58()
-    return {
-      ok: true, mode: 'direct', amountSol: amount, reference: reference.toBase58(),
-      buyer: buyer.publicKey.toBase58(), seller: seller.toBase58(), selfPay, order,
-      deposit: { sig: depositSig, explorer: expl('tx', depositSig) },
-      release: { sig: releaseSig, explorer: expl('tx', releaseSig) },
-      escrow: { pda, explorer: expl('address', pda) },
-    }
-  } catch (e) {
-    return { ok: false, error: (e as Error).message }
-  }
-}
-
-/** Configure the arbiter program once (idempotent): set who the neutral arbiter is. Admin = the payer. */
-async function ensureArbiterConfig(admin: Keypair, arbiter: PublicKey): Promise<void> {
-  const program = makeArbiter(admin, RPC)
-  try {
-    await (program.account as any).config.fetch(configPda())
-    return // already configured
-  } catch { /* not yet - set it below */ }
-  await initConfig(program, admin, arbiter)
-}
-
-/** Keep the arbiter funded for tx fees by topping up from the payer when low - so a fresh checkout
- * (setup.js generates an unfunded arbiter keypair) settles out of the box. */
-async function ensureArbiterFunded(payer: Keypair, arbiter: PublicKey): Promise<void> {
-  const connection = new Connection(RPC, 'confirmed')
-  if ((await connection.getBalance(arbiter)) >= 0.01 * LAMPORTS_PER_SOL) return
-  const tx = new Transaction().add(SystemProgram.transfer({
-    fromPubkey: payer.publicKey, toPubkey: arbiter, lamports: Math.round(0.02 * LAMPORTS_PER_SOL),
-  }))
-  await sendAndConfirmTransaction(connection, tx, [payer])
-}
-
-/**
- * The trusted-neutral 3-party settlement (the arbiter wrapper). The buyer (payer) `open`s an order - funds a
- * vault PDA that becomes the escrow's buyer, so the buyer can NO LONGER unilaterally release/refund.
- * Then the neutral **arbiter** attests delivery and releases to the seller. The seller is protected.
- * Same order-bound `reference` as the direct path. Throws on failure so the route can fall back.
- */
-async function settleViaArbiter(amountSol: number, fixtureId: string, read: ReadBundle, round: number): Promise<unknown> {
-  const buyer = buyerKeypair()
-  const arbiter = arbiterKeypair()
-  if (!arbiter) throw new Error('no ARBITER_KEYPAIR_B58 configured')
-  const sellerEnv = process.env.SELLER_WALLET || process.env.WALLET
-  const seller = new PublicKey(sellerEnv || buyer.publicKey.toBase58())
-  const selfPay = seller.equals(buyer.publicKey)
-  const amount = Math.max(0.001, Number.isFinite(amountSol) ? amountSol : 0.001)
-  const { reference, order } = await boundReference(fixtureId)
-  assertPolicy('deposit', { round, amountSol: amount, seller: seller.toBase58() })
-  assertPolicy('release', { round, amountSol: amount, seller: seller.toBase58(), delivered: deliveredOk(read.delivery) })
-
-  await ensureArbiterConfig(buyer, arbiter.publicKey)
-  await ensureArbiterFunded(buyer, arbiter.publicKey)
-  // 1) buyer opens the arbitrated order (funds the vault -> escrow, vault = buyer)
-  const openSig = await arbiterOpen(makeArbiter(buyer, RPC), buyer, seller, reference, amount, 600)
-  // 2) the neutral arbiter attests delivery -> releases to the seller
-  assertPolicy('release', { round, amountSol: amount, seller: seller.toBase58(), delivered: deliveredOk(read.delivery) })
-  const releaseSig = await arbitrateRelease(makeArbiter(arbiter, RPC), arbiter, seller, reference)
-
-  const vault = vaultPda(reference)
-  const escrow = arbitratedEscrowPda(vault, reference).toBase58()
-  return {
-    ok: true, mode: 'arbiter', amountSol: amount, reference: reference.toBase58(),
-    buyer: buyer.publicKey.toBase58(), seller: seller.toBase58(),
-    arbiter: arbiter.publicKey.toBase58(), vault: vault.toBase58(), selfPay, order,
-    open: { sig: openSig, explorer: expl('tx', openSig) },
-    release: { sig: releaseSig, explorer: expl('tx', releaseSig) },
-    escrow: { pda: escrow, explorer: expl('address', escrow) },
-  }
-}
-
-/**
- * x402 reference merchant — `/api/edge` stays free (the World Cup demo's default path); this is a
- * second, gated door onto the exact same `readEdge()` product, demonstrating the repo's x402 rail
- * (`@pay/payment-runtime`'s `x402Challenge`/`settleX402`) end to end: no `X-PAYMENT` header -> 402
- * with a fresh reference-bound challenge; a valid `X-PAYMENT` -> submit, confirm, verify on-chain,
- * then deliver with `X-PAYMENT-RESPONSE` set. Priced in native SOL — no SPL mint dependency.
+ * x402 reference merchant — a gated door onto the `readEdge()` product, demonstrating the repo's
+ * x402 rail (`@pay/payment-runtime`'s `x402Challenge`/`settleX402`) end to end: no `X-PAYMENT`
+ * header -> 402 with a fresh reference-bound challenge; a valid `X-PAYMENT` -> submit, confirm,
+ * verify on-chain, then deliver with `X-PAYMENT-RESPONSE` set. Priced in native SOL — no SPL mint
+ * dependency. This is also coral-agents/seller-agent's default PROCURE_X402_URL target when
+ * PROCURE_RAIL=x402 (see PAY.md) — not just a browser-demo path.
  *
  * Challenges are held in memory only, keyed by reference, and evicted once too many are open at
  * once — this is a devnet demo endpoint, not a production payment queue.
@@ -557,19 +271,10 @@ http
       if (url.pathname === '/api/board') {
         // only fixtures with verified live 1X2 odds (odds inlined) - what the dashboard renders
         res.end(JSON.stringify(await board()))
-      } else if (url.pathname === '/api/fixtures') {
-        res.end(JSON.stringify(await txGet('/api/fixtures/snapshot')))
-      } else if (url.pathname === '/api/odds') {
-        res.end(JSON.stringify(await txGet(`/api/odds/snapshot/${url.searchParams.get('fixtureId') ?? ''}`)))
-      } else if (url.pathname === '/api/scores') {
-        res.end(JSON.stringify(await txGet(`/api/scores/snapshot/${url.searchParams.get('fixtureId') ?? ''}`)))
-      } else if (url.pathname === '/api/edge') {
-        // verified data (TxLINE) -> LLM call: the on-thesis product, shared with the agent via analyzeEdge.
-        const fixtureId = url.searchParams.get('fixtureId') ?? ''
-        res.end(JSON.stringify((await readEdge(fixtureId)).delivery))
       } else if (url.pathname === '/api/edge-x402') {
-        // The same product as /api/edge, gated behind a real x402 challenge/pay/settle round trip —
-        // see handleEdgeX402 above. /api/edge itself stays free; this is the paid reference path.
+        // The verified-read product (readEdge/analyzeEdge), gated behind a real x402 challenge/pay/
+        // settle round trip - see handleEdgeX402 above. This is coral-agents/seller-agent's default
+        // PROCURE_X402_URL target when PROCURE_RAIL=x402 (see PAY.md), not just a UI demo path.
         await handleEdgeX402(req, res, url.searchParams.get('fixtureId') ?? '')
       } else if (url.pathname === '/api/agentic/start') {
         if (req.method !== 'POST') {
@@ -587,66 +292,8 @@ http
         await forwardFeed(res, `/api/feed?${url.searchParams.toString()}`)
       } else if (url.pathname === '/api/agentic/threads') {
         await forwardFeed(res, `/api/threads?${url.searchParams.toString()}`)
-      } else if (url.pathname === '/api/agentic/session') {
-        await forwardFeed(res, `/api/session?${url.searchParams.toString()}`)
       } else if (url.pathname === '/api/agentic/runs') {
         await forwardFeed(res, '/api/runs')
-      } else if (url.pathname === '/api/agentic/reputation') {
-        await forwardFeed(res, '/api/reputation')
-      } else if (url.pathname === '/api/settle') {
-        // settle on devnet with the reference bound to the order. Prefer the arbiter-gated wrapper
-        // (3 parties, seller-protected); fall back to the direct buyer-released escrow if it errors.
-        const amount = Number(url.searchParams.get('amount') ?? '0.001')
-        const fixtureId = url.searchParams.get('fixtureId') ?? ''
-        const read = latestRead.get(fixtureId) ?? await readEdge(fixtureId)
-        const round = latestRound() + 1
-        let result: any
-        if (arbiterKeypair()) {
-          try { result = await settleViaArbiter(amount, fixtureId, read, round) }
-          catch (e) { result = await settle(amount, fixtureId, read, round); result.arbiterError = (e as Error).message }
-        } else {
-          result = await settle(amount, fixtureId, read, round)
-        }
-        result = persistWebRun({ read, settle: result, amountSol: amount, fixtureId })
-        res.end(JSON.stringify(result))
-      } else if (url.pathname === '/api/runs') {
-        res.end(JSON.stringify(listRuns(RUNS_DIR).filter((r) => r.session === WEB_SESSION).sort((a, b) => b.round - a.round)))
-      } else if (url.pathname === '/api/run') {
-        const runId = url.searchParams.get('runId') ?? ''
-        const match = /^([^/]+)\/round-(\d+)$/.exec(runId)
-        const loaded = match ? readRun(RUNS_DIR, match[1], Number(match[2])) : null
-        res.end(JSON.stringify(loaded ?? { error: 'run not found' }))
-      } else if (url.pathname === '/api/grade-runs') {
-        res.end(JSON.stringify(await gradeRuns()))
-      } else if (url.pathname === '/api/pay-intent') {
-        // Solana Pay intent for a USER wallet (Phantom/Solflare): pay the seller for this read, tagged
-        // with the order-bound reference. The browser builds + signs the transfer; /api/pay-verify confirms.
-        const fixtureId = url.searchParams.get('fixtureId') ?? ''
-        const amountSol = Math.max(0.001, Number(url.searchParams.get('amount') ?? '0.001'))
-        const recipient = process.env.SELLER_WALLET || process.env.WALLET || buyerKeypair().publicKey.toBase58()
-        const { reference, order } = await boundReference(fixtureId)
-        res.end(JSON.stringify({
-          cluster: 'devnet', recipient, amountSol, reference: reference.toBase58(),
-          label: 'World Cup Oracle',
-          message: order.favourite ? `${order.favourite} @ ${order.fairOdds}${order.matchup ? ` (${order.matchup})` : ''}` : 'TxODDS edge',
-          order,
-        }))
-      } else if (url.pathname === '/api/pay-verify') {
-        // confirm the user's Solana Pay transfer landed on devnet: right recipient + amount + reference.
-        const sig = url.searchParams.get('sig') ?? ''
-        const reference = url.searchParams.get('reference') ?? ''
-        const amountSol = Number(url.searchParams.get('amount') ?? '0.001')
-        const recipient = url.searchParams.get('recipient') ?? (process.env.SELLER_WALLET || process.env.WALLET || '')
-        const ok = !!(sig && reference && recipient) && (await verifyPayment(sig, { recipient, amountSol, reference }))
-        const payVerify = { ok, sig: sig || undefined, explorer: sig ? expl('tx', sig) : undefined, recipient, reference }
-        if (ok) {
-          const fixtureId = url.searchParams.get('fixtureId') ?? ''
-          if (fixtureId) {
-            const read = latestRead.get(fixtureId) ?? await readEdge(fixtureId)
-            persistWebRun({ read, settle: { ok, mode: 'wallet', amountSol, reference, seller: recipient }, amountSol, fixtureId, payVerify })
-          }
-        }
-        res.end(JSON.stringify(payVerify))
       } else {
         res.statusCode = 404
         res.end(JSON.stringify({ error: 'not found' }))
@@ -656,4 +303,6 @@ http
       res.end(JSON.stringify({ error: (e as Error).message, detail: (e as any)?.response?.data }))
     }
   })
-  .listen(PORT, () => console.error(`[proxy] http://localhost:${PORT}  (GET /api/board - /api/fixtures - /api/odds?fixtureId= - /api/edge?fixtureId= - /api/edge-x402?fixtureId= - /api/settle?amount=)`))
+  .listen(PORT, () => {
+    console.error(`[proxy] http://localhost:${PORT}  (GET /api/board - /api/edge-x402?fixtureId= - /api/agentic/*)`)
+  })

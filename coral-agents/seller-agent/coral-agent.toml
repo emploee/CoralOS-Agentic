@@ -7,9 +7,9 @@ edition = 4
 [agent]
 name = "seller-agent"
 version = "0.1.0"
-description = "TxODDS marketplace seller. Bids on txline WANTs, verifies arbiter-funded escrow, and delivers a fair-line read. SERVICES=txline,sharp-movement also lets it analyze fixtures the research watcher flags as having moved."
-summary = "TypeScript TxODDS seller that competes in CoralOS and settles through arbiter-gated escrow."
-readme = "Bids in the shared market thread (WANT -> BID), issues ESCROW_REQUIRED with settlement=arbiter, verifies the funded vault escrow on DEPOSITED, then delivers the TxODDS read."
+description = "TxODDS marketplace seller. Bids on txline WANTs, verifies an x402 payment, and delivers a fair-line read. SERVICES=txline,sharp-movement also lets it analyze fixtures the research watcher flags as having moved."
+summary = "TypeScript TxODDS seller that competes in CoralOS and settles directly over x402."
+readme = "Bids in the shared market thread (WANT -> BID), issues PAYMENT_REQUIRED on AWARD, submits + verifies the buyer's signed x402 payment on PAYMENT_PROOF, then delivers the TxODDS read."
 
 [agent.license]
 type = "spdx"
@@ -22,26 +22,16 @@ SERVICES = { type = "string", default = "txline", description = "Inventory - def
 FLOOR_SOL = { type = "f64", default = 0.0005, description = "Minimum bid in SOL" }
 PERSONA = { type = "string", default = "a TxODDS specialist selling verified fair-line reads", description = "Bidding persona" }
 STRATEGY = { type = "string", default = "", description = "Pricing posture once REPUTATION_URL clearing data is available: undercut | premium | balanced (default)" }
-LLM_DELIVERY_TOKENS = { type = "string", default = "", description = "JSON map of service -> max_tokens for services this seller's delivery code calls an LLM for, e.g. {\"txline\":260,\"sharp-movement\":260} - derives that service's floor from real LLM cost instead of FLOOR_SOL alone" }
-BID_REVIEW_ENABLED = { type = "string", default = "0", description = "Set to 1 to run a second, adversarial review loop before posting a bid" }
-REPUTATION_URL = { type = "string", default = "", description = "The feed's /api/reputation - when set, gates whether this seller bids at all and feeds clearing-price awareness into pricing" }
+REPUTATION_URL = { type = "string", default = "", description = "The feed's /api/reputation - when set, prices against the service's real recent clearing data instead of always bidding at the floor" }
 SERVICE = { type = "string", default = "txline", description = "Delivery service; only txline is routed" }
 SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL" }
-SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter (default) | direct legacy base escrow" }
-ESCROW_DEADLINE_SECS = { type = "f64", default = 600, description = "Refund deadline for escrow deposits (seconds)" }
 PROCURE_RAIL = { type = "string", default = "", description = "Set to x402 to buy an upstream resource for real before delivering (see README's Optional Upstream Procurement)" }
 SELLER_KEYPAIR_B58 = { type = "string", default = "", description = "The seller's own spend key for the x402 procurement leg - distinct from SELLER_WALLET, which only receives" }
 PROCURE_X402_URL = { type = "string", default = "", description = "The x402-protected resource to buy when PROCURE_RAIL=x402" }
 TXLINE_API_KEY = { type = "string", default = "", description = "Activated TxLINE API token" }
 TXLINE_BASE_URL = { type = "string", default = "", description = "Override the TxLINE host" }
-ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key for live reads" }
-OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key; set LLM_PROVIDER=openai to use it" }
-VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits); set LLM_PROVIDER=venice to use it" }
-GROQ_API_KEY = { type = "string", default = "", description = "Groq key (OpenAI-compatible, free renewing rate limit - recommended once Venice's credits run out); set LLM_PROVIDER=groq to use it" }
-LLM_PROVIDER = { type = "string", default = "", description = "groq (recommended free default) | anthropic (last-resort default) | openai | venice - see LLM.md" }
-LLM_MODEL = { type = "string", default = "", description = "Override the LLM model id" }
 TRACE = { type = "string", default = "", description = "Set to 1 to log settlement checks" }
-HARNESS = { type = "string", default = "node-llm", description = "Harness adapter doing the work: node-llm | claude-code | cli (see packages/harness-runtime)" }
+HARNESS = { type = "string", default = "in-process", description = "Harness adapter doing the work: in-process | claude-code | cli (see packages/harness-runtime)" }
 HARNESS_CMD = { type = "string", default = "", description = "HARNESS=cli only: the harness argv (JSON array or space-split; {prompt} substitutes the order)" }
 HARNESS_NAME = { type = "string", default = "", description = "HARNESS=cli only: label for the harness in logs/ledger" }
 HARNESS_TIMEOUT_MS = { type = "f64", default = 300000, description = "Kill an external harness order after this long" }

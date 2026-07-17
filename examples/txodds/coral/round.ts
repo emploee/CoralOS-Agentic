@@ -5,7 +5,7 @@
  * Buyer/seller run as Dockerized agents (real signing keys - see the agent() helper below for why);
  * the verifier runs via CoralOS's executable runtime, a coral-server child process, no container.
  * CoralOS injects CORAL_CONNECTION_URL either way, and the agents coordinate over MCP thread messages
- * before devnet escrow release.
+ * before the buyer pays the seller directly via x402.
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -162,8 +162,6 @@ export async function createTxOddsRound(options: TxOddsRoundOptions = {}): Promi
   const proxy = env.TXODDS_PROXY ?? 'http://localhost:8801'
   const wallet = env.WALLET
   const keypair = env.BUYER_KEYPAIR_B58
-  const arbiter = env.ARBITER_KEYPAIR_B58
-  if (!arbiter) throw new Error('ARBITER_KEYPAIR_B58 must be in .env - run `node scripts/setup.js`')
   if (!wallet || !keypair) throw new Error('WALLET + BUYER_KEYPAIR_B58 must be in .env - run `node scripts/setup.js`')
   if (!env.TXLINE_API_KEY) throw new Error('TXLINE_API_KEY missing - run `npm run mint` in examples/txodds')
   const rpc = env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
@@ -171,14 +169,8 @@ export async function createTxOddsRound(options: TxOddsRoundOptions = {}): Promi
   await stopPreviousRound()
   await ensureVerifierBuilt()
 
-  const llm: Record<string, unknown> = {}
-  if (env.VENICE_API_KEY) llm.VENICE_API_KEY = str(env.VENICE_API_KEY)
-  if (env.GROQ_API_KEY) llm.GROQ_API_KEY = str(env.GROQ_API_KEY)
-  if (env.OPENAI_API_KEY) llm.OPENAI_API_KEY = str(env.OPENAI_API_KEY)
-  if (env.ANTHROPIC_API_KEY) llm.ANTHROPIC_API_KEY = str(env.ANTHROPIC_API_KEY)
-  if (env.LLM_PROVIDER) llm.LLM_PROVIDER = str(env.LLM_PROVIDER)
-  if (env.LLM_MODEL) llm.LLM_MODEL = str(env.LLM_MODEL)
-  if (env.TRACE) llm.TRACE = str(env.TRACE)
+  const shared: Record<string, unknown> = {}
+  if (env.TRACE) shared.TRACE = str(env.TRACE)
 
   const fixtureId = await liveFixtureId(proxy, options.fixtureId)
   const service = roundService(options.service)
@@ -202,14 +194,7 @@ export async function createTxOddsRound(options: TxOddsRoundOptions = {}): Promi
     SOLANA_RPC_URL: str(rpc),
     ...(env.FLOOR_SOL ? { FLOOR_SOL: f64(Number(env.FLOOR_SOL)) } : {}),
     ...(sharpMovementEnabled ? { SERVICES: str('txline,sharp-movement') } : {}),
-    // Both txline's numeric-arg 'edge' action and sharp-movement share liveReadOrFallback's LLM call
-    // (maxTokens=260) - lets each service's floor be derived from real LLM cost (see cost.ts's
-    // deriveFloorSol) instead of FLOOR_SOL alone.
-    LLM_DELIVERY_TOKENS: str(JSON.stringify(
-      sharpMovementEnabled ? { txline: 260, 'sharp-movement': 260 } : { txline: 260 },
-    )),
     REPUTATION_URL: str(reputationUrl),
-    SETTLEMENT_MODE: str('arbiter'),
     TXLINE_API_KEY: str(env.TXLINE_API_KEY),
     ...(env.TXLINE_BASE_URL ? { TXLINE_BASE_URL: str(env.TXLINE_BASE_URL) } : {}),
     // Optional upstream procurement (PROCURE_RAIL=x402) — the seller pays a real x402 leg for
@@ -217,17 +202,12 @@ export async function createTxOddsRound(options: TxOddsRoundOptions = {}): Promi
     ...(env.PROCURE_RAIL ? { PROCURE_RAIL: str(env.PROCURE_RAIL) } : {}),
     ...(env.PROCURE_X402_URL ? { PROCURE_X402_URL: str(env.PROCURE_X402_URL) } : {}),
     ...(env.SELLER_KEYPAIR_B58 ? { SELLER_KEYPAIR_B58: str(env.SELLER_KEYPAIR_B58) } : {}),
-    // A skeptical second-opinion loop reviews the proposed bid before it's posted — off by default,
-    // doubles the LLM calls per bid decision (see API.md).
-    ...(env.BID_REVIEW_ENABLED ? { BID_REVIEW_ENABLED: str(env.BID_REVIEW_ENABLED) } : {}),
-    ...llm,
+    ...shared,
   })
   const buyer = agent('buyer-agent', {
     BUYER_KEYPAIR_B58: str(keypair),
     AGENT_NAME: str('buyer-agent'),
     SOLANA_RPC_URL: str(rpc),
-    ARBITER_KEYPAIR_B58: str(arbiter),
-    SETTLEMENT_MODE: str('arbiter'),
     SELLER_WALLET: str(wallet),
     BUYER_MAX_SOL: f64(Number(env.BUYER_MAX_SOL ?? '0.001')),
     BUYER_SERVICE: str(service),
@@ -248,9 +228,9 @@ export async function createTxOddsRound(options: TxOddsRoundOptions = {}): Promi
     ...(env.WANT_FEED_URL
       ? { WANT_FEED_URL: str(env.WANT_FEED_URL) }
       : sharpMovementEnabled ? { WANT_FEED_URL: str('http://host.docker.internal:4600/next') } : {}),
-    ...llm,
+    ...shared,
   })
-  const verifier = agent(VERIFIER, { AGENT_NAME: str(VERIFIER), ...llm }, VERIFIER, 'executable')
+  const verifier = agent(VERIFIER, { AGENT_NAME: str(VERIFIER), ...shared }, VERIFIER, 'executable')
 
   const res = await fetch(`${base}/api/v1/local/session`, {
     method: 'POST',
@@ -271,13 +251,13 @@ export async function createTxOddsRound(options: TxOddsRoundOptions = {}): Promi
 
 function logRound(result: TxOddsRoundResult): void {
   console.log(`\nCoralOS round ${result.sessionId} - ${result.agents.join(' + ')}, fixture ${result.fixtureId}.`)
-  console.log(`The buyer broadcasts WANT(${result.service} ${result.arg}); the seller bids, delivers; verifier-agent gates release.\n`)
+  console.log(`The buyer broadcasts WANT(${result.service} ${result.arg}); the seller bids, delivers; verifier-agent checks it (informational).\n`)
   console.log('Watch it in the browser:')
   console.log('  npm run dev   (from the repo root)')
   console.log(`  then open http://localhost:3020/?agentSession=${result.sessionId}\n`)
   console.log('Or tail the logs:')
-  console.log('  docker logs -f $(docker ps -qf ancestor=buyer-agent:0.1.0  | head -1)   # WANT -> AWARD -> DEPOSITED -> VERIFY -> ARBITER_RELEASED')
-  console.log('  docker logs -f $(docker ps -qf ancestor=seller-agent:0.1.0 | head -1)   # BID -> ESCROW_REQUIRED -> DELIVERED')
+  console.log('  docker logs -f $(docker ps -qf ancestor=buyer-agent:0.1.0  | head -1)   # WANT -> AWARD -> PAYMENT_PROOF -> VERIFY -> SETTLED')
+  console.log('  docker logs -f $(docker ps -qf ancestor=seller-agent:0.1.0 | head -1)   # BID -> PAYMENT_REQUIRED -> PAYMENT_CONFIRMED -> DELIVERED')
   console.log('  docker logs -f $(docker ps -qf ancestor=verifier-agent:0.1.0 | head -1) # VERIFY -> VERIFIED\n')
 }
 

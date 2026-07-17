@@ -37,8 +37,10 @@ export interface CoralMcpConfig {
 
 export class CoralMcpAgent {
   private client: Client | null = null
-  private toolNames: { waitForMention: string; waitForAgent: string; sendMessage: string; createThread: string } | null = null
+  private toolNames: { waitForMention: string; waitForAgent: string; sendMessage: string; createThread: string; closeThread: string } | null = null
   private config: CoralMcpConfig
+  /** Set by createThread() - lets closeThread() default to "whatever this agent last opened" on shutdown. */
+  private lastThreadId: string | null = null
 
   constructor(config: CoralMcpConfig) {
     this.config = config
@@ -78,6 +80,8 @@ export class CoralMcpAgent {
         names.find((n) => n.endsWith("send_message")) ?? "coral_send_message",
       createThread:
         names.find((n) => n.includes("create_thread")) ?? "coral_create_thread",
+      closeThread:
+        names.find((n) => n.includes("close_thread")) ?? "coral_close_thread",
     }
 
     console.error(
@@ -203,9 +207,31 @@ export class CoralMcpAgent {
       const data = JSON.parse(text) as Record<string, unknown>
       // CoralOS wraps: {"thread":{"id":"...","name":"...",...}}
       const thread = data.thread as Record<string, unknown> | undefined
-      return (thread?.id as string) ?? (data.threadId as string) ?? (data.id as string) ?? text
+      const id = (thread?.id as string) ?? (data.threadId as string) ?? (data.id as string) ?? text
+      this.lastThreadId = id
+      return id
     } catch {
+      this.lastThreadId = text
       return text
+    }
+  }
+
+  /**
+   * Close a CoralOS thread — defaults to the last one this agent created, so a graceful shutdown
+   * can call closeThread() with no argument and mark "done trading" rather than leaving the thread
+   * looking abandoned to anything inspecting session state after the process exits. Best-effort:
+   * swallows errors (a failed close should never block shutdown), and is a no-op if this agent never
+   * created a thread (pure responders like seller-agent/verifier-agent - they never call this).
+   * @see https://docs.coralos.ai/concepts/threads — threads group participants + messages.
+   */
+  async closeThread(threadId?: string): Promise<void> {
+    const id = threadId ?? this.lastThreadId
+    if (!id || !this.client || !this.toolNames) return
+    try {
+      await this.client.callTool({ name: this.toolNames.closeThread, arguments: { threadId: id } })
+      if (id === this.lastThreadId) this.lastThreadId = null
+    } catch (e) {
+      console.error(`[coral-mcp] closeThread(${id}) failed (non-fatal): ${e}`)
     }
   }
 

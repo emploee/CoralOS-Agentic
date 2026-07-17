@@ -1,6 +1,8 @@
 # Escrow Programs
 
-This Anchor workspace contains the SOL escrow and arbiter programs used by the devnet examples.
+This Anchor workspace contains the SOL escrow and arbiter programs. Not used by the default
+coral-agents flow, which settles over x402 (see `../../../PAY.md`) — these remain deployed to devnet
+as an available building block for a fork that wants conditional/delayed release instead.
 
 | Program | Devnet ID | Role |
 |---|---|---|
@@ -22,7 +24,7 @@ escrow/
   package.json
 ```
 
-The arbiter TypeScript client used by the TxODDS proxy lives at `../agent/arbiter.ts` and uses the bundled IDL `../agent/arbiter_idl.json`.
+Not used by the default coral-agents flow, which settles over x402 — see `../../../PAY.md`. There is no live arbiter TypeScript client; the one that used to call the TxODDS proxy (`agent/arbiter.ts`, bundled IDL `agent/arbiter_idl.json`) was removed once nothing in the active codebase called it. Re-adding this path means hand-rolling a client from `programs/arbiter/src/lib.rs`'s instruction shapes, since the arbiter program has no on-chain IDL account to `Program.fetchIdl` from.
 
 ## Base Escrow Interface
 
@@ -91,14 +93,14 @@ solana program deploy --program-id FJtuVXsyXuRKqgJBEPAXmktkd13CqStapgevzGwYktXd 
 
 `~/.config/solana/id.json` (the wallet this workspace's `Anchor.toml` `[provider]` section names) is the confirmed upgrade authority for both programs — check with `solana program show <id> --url https://api.devnet.solana.com` before deploying if unsure.
 
-If a client fetches the escrow program's IDL live from chain (`agent/escrow.ts`'s `Program.fetchIdl`), refresh the on-chain IDL account after an upgrade too — it is a separate account from the program binary:
+If a client fetches the escrow program's IDL live from chain (`client/escrow.ts`'s `Program.fetchIdl`), refresh the on-chain IDL account after an upgrade too — it is a separate account from the program binary:
 
 ```sh
 anchor idl upgrade R5NWNg9eRLWWQU81Xbzz5Du1k7jTDeeT92Ty6qCeXet \
   --filepath target/idl/escrow.json --provider.cluster devnet --provider.wallet ~/.config/solana/id.json
 ```
 
-The arbiter client (`agent/arbiter.ts`) uses a bundled `arbiter_idl.json` instead of fetching on-chain — no on-chain IDL account exists for it, so `anchor idl upgrade` doesn't apply there; just copy the fresh `target/idl/arbiter.json` over `agent/arbiter_idl.json` after a rebuild.
+The arbiter program has no on-chain IDL account, so `anchor idl upgrade` doesn't apply to it. If you re-add an arbiter TS client, bundle it with a copy of the fresh `target/idl/arbiter.json` rather than fetching on-chain.
 
 Integration tests against the deployed programs:
 

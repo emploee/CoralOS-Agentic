@@ -1,8 +1,9 @@
 /**
- * Protocol round e2e - drives a full WANT -> BID -> AWARD -> ESCROW_REQUIRED -> DEPOSITED -> DELIVERED ->
- * RELEASED conversation through the REAL wire format + selection, against an in-memory thread and a
- * fake escrow ledger. No devnet, no network - so CI covers the settlement *sequence* the agents speak
- * (and the `reference` threading + escrow lifecycle), not just the individual parsers in isolation.
+ * Protocol round e2e - drives a full WANT -> BID -> AWARD -> PAYMENT_REQUIRED -> PAYMENT_PROOF ->
+ * PAYMENT_CONFIRMED -> DELIVERED -> SETTLED conversation through the REAL wire format + selection,
+ * against an in-memory thread and a fake x402 settlement ledger. No devnet, no network - so CI
+ * covers the settlement *sequence* the agents speak (and the `reference` threading), not just the
+ * individual parsers in isolation.
  *
  * Here the sellers bid from a fixture so the focus is the end-to-end protocol composition (the wire
  * format + selection + the `reference` threading), not the bidding economics.
@@ -10,29 +11,23 @@
 import { describe, it, expect } from 'vitest'
 import {
   formatWant, parseWant, formatBid, parseBid, formatAward, parseAward,
-  formatEscrowRequired, parseEscrowRequired, formatDeposited, parseDeposited,
+  formatPaymentRequired, parsePaymentRequired, formatPaymentProof, parsePaymentProof,
+  formatPaymentConfirmed, parsePaymentConfirmed, formatSettled,
   selectBids, pickCheapest, verb,
   type Bid,
 } from './protocol.js'
 
-/** A tiny in-memory escrow ledger mirroring the on-chain program's externally-visible behaviour. */
-class FakeEscrow {
-  private accts = new Map<string, { seller: string; amount: number; released: boolean }>()
+/** A tiny in-memory ledger mirroring x402's externally-visible behaviour: a signed-but-unsubmitted
+ *  transfer only lands once the merchant submits it, and only ever pays the reference it was signed
+ *  for - there is no separate release step, payment IS settlement. */
+class FakeX402Ledger {
+  private submitted = new Set<string>() // reference
   private bal = new Map<string, number>()
-  private k = (buyer: string, ref: string) => `${buyer}:${ref}`
-  deposit(buyer: string, seller: string, ref: string, amount: number): void {
-    if (this.accts.has(this.k(buyer, ref))) throw new Error('reuse') // `init`, not `init_if_needed`
-    this.accts.set(this.k(buyer, ref), { seller, amount, released: false })
-  }
-  isFunded(buyer: string, seller: string, ref: string, min: number): boolean {
-    const a = this.accts.get(this.k(buyer, ref))
-    return !!a && a.seller === seller && a.amount >= min && !a.released
-  }
-  release(buyer: string, seller: string, ref: string): void {
-    const a = this.accts.get(this.k(buyer, ref))
-    if (!a || a.seller !== seller) throw new Error('wrong escrow')
-    a.released = true
-    this.bal.set(seller, (this.bal.get(seller) ?? 0) + a.amount)
+  submit(seller: string, reference: string, amount: number): string {
+    if (this.submitted.has(reference)) throw new Error('reuse') // a reference settles once
+    this.submitted.add(reference)
+    this.bal.set(seller, (this.bal.get(seller) ?? 0) + amount)
+    return `SIG${reference}`
   }
   balance = (addr: string): number => this.bal.get(addr) ?? 0
 }
@@ -43,10 +38,10 @@ const SELLERS = {
   'seller-premium': { wallet: 'PREMxWa11et', bid: 0.0005 },
 }
 
-describe('market round e2e - the full settlement sequence over the real protocol', () => {
-  it('runs WANT -> BIDx2 -> AWARD -> ESCROW_REQUIRED -> DEPOSITED -> DELIVERED -> RELEASED', () => {
+describe('market round e2e - the full x402 settlement sequence over the real protocol', () => {
+  it('runs WANT -> BIDx2 -> AWARD -> PAYMENT_REQUIRED -> PAYMENT_PROOF -> PAYMENT_CONFIRMED -> DELIVERED -> SETTLED', () => {
     const thread: string[] = []
-    const escrow = new FakeEscrow()
+    const ledger = new FakeX402Ledger()
     const round = 1
     const budget = 0.001
 
@@ -67,50 +62,44 @@ describe('market round e2e - the full settlement sequence over the real protocol
     expect(winner.by).toBe('seller-cheap') // cheapest wins
     thread.push(formatAward(round, winner.by, 'cheapest for a price lookup'))
 
-    // winning seller mints a single-use reference and demands escrow
+    // winning seller mints a single-use reference and demands payment
     const award = parseAward(thread.at(-1)!)!
     expect(award.to).toBe('seller-cheap')
     const reference = 'REFsingleUse111'
     const sellerWallet = SELLERS[winner.by as keyof typeof SELLERS].wallet
-    thread.push(formatEscrowRequired({ round, reference, seller: sellerWallet, amountSol: winner.priceSol, deadlineSecs: 600 }))
+    thread.push(formatPaymentRequired({ round, rail: 'x402', amount: String(winner.priceSol), currency: 'SOL', reference, seller: sellerWallet }))
 
-    // buyer parses the terms and deposits
-    const terms = parseEscrowRequired(thread.at(-1)!)!
+    // buyer parses the terms, signs (but does not submit), and hands the proof to the seller
+    const terms = parsePaymentRequired(thread.at(-1)!)!
     expect(terms.reference).toBe(reference)
-    expect(terms.amountSol).toBeLessThanOrEqual(budget) // budget respected
-    escrow.deposit(BUYER, terms.seller, terms.reference, terms.amountSol)
-    thread.push(formatDeposited({ round, reference: terms.reference, buyer: BUYER, sig: 'SIGdeposit' }))
+    expect(Number(terms.amount)).toBeLessThanOrEqual(budget) // budget respected
+    thread.push(formatPaymentProof({ round, rail: 'x402', reference: terms.reference, proof: 'SIGNEDtxBase64', buyer: BUYER }))
 
-    // seller verifies the escrow is funded for it, then delivers
-    const dep = parseDeposited(thread.at(-1)!)!
-    expect(dep.reference).toBe(reference) // the reference threads all the way through
-    expect(escrow.isFunded(dep.buyer, sellerWallet, dep.reference, terms.amountSol)).toBe(true)
+    // seller submits + verifies the proof, then confirms and delivers
+    const proof = parsePaymentProof(thread.at(-1)!)!
+    expect(proof.reference).toBe(reference) // the reference threads all the way through
+    const sig = ledger.submit(sellerWallet, proof.reference, Number(terms.amount))
+    thread.push(formatPaymentConfirmed({ round, rail: 'x402', reference: proof.reference, paid: true, txSignature: sig }))
+    const confirmed = parsePaymentConfirmed(thread.at(-1)!)!
+    expect(confirmed.paid).toBe(true)
     thread.push(`DELIVERED round=${round} {"coin":"solana","usd":150}`)
 
-    // buyer sees delivery and releases the escrow to the seller
+    // buyer sees delivery and marks the round settled
     expect(verb(thread.at(-1)!)).toBe('DELIVERED')
-    escrow.release(BUYER, sellerWallet, reference)
-    thread.push(`RELEASED round=${round} sig=SIGrelease`)
+    thread.push(formatSettled({ round, rail: 'x402', reference, amount: terms.amount, txSignature: sig }))
 
     // -- invariants over the whole round --
     expect(thread.map((t) => verb(t))).toEqual([
-      'WANT', 'BID', 'BID', 'AWARD', 'ESCROW_REQUIRED', 'DEPOSITED', 'DELIVERED', 'RELEASED',
+      'WANT', 'BID', 'BID', 'AWARD', 'PAYMENT_REQUIRED', 'PAYMENT_PROOF', 'PAYMENT_CONFIRMED', 'DELIVERED', 'SETTLED',
     ])
-    expect(escrow.balance(sellerWallet)).toBeCloseTo(winner.priceSol, 9) // seller paid exactly its bid
-    expect(escrow.balance(SELLERS['seller-premium'].wallet)).toBe(0)     // the loser is never paid
+    expect(ledger.balance(sellerWallet)).toBeCloseTo(winner.priceSol, 9) // seller paid exactly its bid
+    expect(ledger.balance(SELLERS['seller-premium'].wallet)).toBe(0)    // the loser is never paid
   })
 
-  it('the seller refuses delivery when the escrow names a different seller (isFunded gate)', () => {
-    const escrow = new FakeEscrow()
-    escrow.deposit(BUYER, 'CHEAPxWa11et', 'REF2', 0.0002)
-    expect(escrow.isFunded(BUYER, 'IMPOSTORxWa11et', 'REF2', 0.0002)).toBe(false)
-    expect(escrow.isFunded(BUYER, 'CHEAPxWa11et', 'REF2', 0.0002)).toBe(true)
-  })
-
-  it('a deposit cannot be re-used for the same (buyer, reference) - init, not init_if_needed', () => {
-    const escrow = new FakeEscrow()
-    escrow.deposit(BUYER, 'CHEAPxWa11et', 'REF3', 0.0002)
-    expect(() => escrow.deposit(BUYER, 'CHEAPxWa11et', 'REF3', 0.0002)).toThrow(/reuse/)
+  it('a reference cannot settle twice - x402 payment is final, not reusable', () => {
+    const ledger = new FakeX402Ledger()
+    ledger.submit('CHEAPxWa11et', 'REF3', 0.0002)
+    expect(() => ledger.submit('CHEAPxWa11et', 'REF3', 0.0002)).toThrow(/reuse/)
   })
 
   it('selection ignores bids from other rounds', () => {

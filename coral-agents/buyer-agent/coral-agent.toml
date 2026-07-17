@@ -7,19 +7,18 @@ edition = 4
 [agent]
 name = "buyer-agent"
 version = "0.1.0"
-description = "LLM-driven marketplace buyer. Broadcasts a WANT, collects competing bids, picks best value, and settles via arbiter-gated escrow."
-summary = "Autonomous TypeScript buyer that runs an open TxODDS market and settles through a neutral arbiter."
-readme = "Market loop: WANT -> collect BIDs -> AWARD best value -> open arbiter escrow -> release on verified delivery."
+description = "Marketplace buyer. Broadcasts a WANT, collects competing bids, picks best value, and settles directly via x402."
+summary = "Autonomous TypeScript buyer that runs an open TxODDS market and settles directly with the seller over x402."
+readme = "Market loop: WANT -> collect BIDs -> AWARD best value -> pay via x402 -> wait for verified delivery."
 
 [agent.license]
 type = "spdx"
 expression = "MIT"
 
 [options]
-BUYER_KEYPAIR_B58 = { type = "string", description = "Base58-encoded devnet keypair - signs deposit/release" }
-ARBITER_KEYPAIR_B58 = { type = "string", default = "", description = "Base58-encoded neutral arbiter keypair for arbiter settlement" }
+BUYER_KEYPAIR_B58 = { type = "string", description = "Base58-encoded devnet keypair - signs payments" }
 AGENT_NAME = { type = "string", default = "buyer-agent", description = "Market identity (matches the registry name)" }
-SELLER_WALLET = { type = "string", default = "", description = "Expected seller payout wallet - the buyer binds the escrow seller= to it before depositing (F3)" }
+SELLER_WALLET = { type = "string", default = "", description = "Expected seller payout wallet - the buyer binds the payment seller= to it before paying (F3)" }
 BUYER_MAX_SOL = { type = "f64", default = 0.001, description = "Budget cap per round (the WANT budget)" }
 BUYER_SERVICE = { type = "string", default = "txline", description = "Service to shop for (sellers self-select on it)" }
 BUYER_ARG = { type = "string", default = "edge 18175397", description = "Argument passed to the winning seller's deliverService" }
@@ -28,22 +27,15 @@ MARKET_SELLERS = { type = "string", default = "seller-agent", description = "Com
 BID_WINDOW_MS = { type = "f64", default = 5000, description = "How long to collect competing bids each round" }
 CYCLE_INTERVAL_MS = { type = "f64", default = 30000, description = "Delay between market rounds" }
 SOLANA_RPC_URL = { type = "string", default = "", description = "Solana RPC URL (devnet)" }
-SETTLEMENT_MODE = { type = "string", default = "arbiter", description = "arbiter (default) | direct legacy base escrow" }
-VERIFIER_AGENT = { type = "string", default = "", description = "Name of the independent verifier agent; when set, release is gated on its VERIFIED pass" }
-VERIFY_WINDOW_MS = { type = "f64", default = 20000, description = "How long to wait for the verifier's verdict before leaving funds in escrow" }
-VERIFY_GATE_ENABLED = { type = "string", default = "0", description = "Set to 1 to skip escalation for sellers with a clean, established record. WARNING: a wrong skip forfeits that round's settlement, not just verification - see verify-gate.ts" }
+VERIFIER_AGENT = { type = "string", default = "", description = "Name of the independent verifier agent; when set, its VERIFIED verdict is recorded (informational - the x402 payment already settled, so it feeds reputation, not release)" }
+VERIFY_WINDOW_MS = { type = "f64", default = 20000, description = "How long to wait for the verifier's verdict" }
+VERIFY_GATE_ENABLED = { type = "string", default = "0", description = "Set to 1 to skip escalation for sellers with a clean, established record" }
 WANT_FEED_URL = { type = "string", default = "", description = "Event mode: poll this URL for the next job instead of rotating BUYER_ARGS" }
-POLICY_MAX_SOL_PER_ROUND = { type = "f64", default = 0, description = "Spend cap per deposit in SOL (0/unset = the round budget)" }
+POLICY_MAX_SOL_PER_ROUND = { type = "f64", default = 0, description = "Spend cap per payment in SOL (0/unset = the round budget)" }
 POLICY_MAX_SOL_PER_SESSION = { type = "f64", default = 0, description = "Cumulative session spend cap in SOL (unset = uncapped)" }
-POLICY_SERVICES = { type = "string", default = "", description = "Service allowlist for deposits, csv (unset = the BUYER_SERVICE)" }
-POLICY_MIN_INTERVAL_MS = { type = "f64", default = 0, description = "Minimum ms between deposits (unset = no rate limit)" }
+POLICY_SERVICES = { type = "string", default = "", description = "Service allowlist for payments, csv (unset = the BUYER_SERVICE)" }
+POLICY_MIN_INTERVAL_MS = { type = "f64", default = 0, description = "Minimum ms between payments (unset = no rate limit)" }
 REPUTATION_URL = { type = "string", default = "", description = "The feed's /api/reputation - per-seller track record from the run ledger, weighed at award time" }
-ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key (default brain for best-value selection)" }
-OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key - set with LLM_PROVIDER=openai to flip the brain" }
-VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits) - set with LLM_PROVIDER=venice to flip the brain" }
-GROQ_API_KEY = { type = "string", default = "", description = "Groq key (OpenAI-compatible, free renewing rate limit - recommended once Venice's credits run out) - set with LLM_PROVIDER=groq to flip the brain" }
-LLM_PROVIDER = { type = "string", default = "", description = "groq (recommended free default) | anthropic (last-resort default) | openai | venice - see LLM.md" }
-LLM_MODEL = { type = "string", default = "", description = "Override the LLM model id" }
 TRACE = { type = "string", default = "", description = "Set to 1 to log CoralOS calls + on-chain steps (Explorer links)" }
 
 [runtimes.docker]

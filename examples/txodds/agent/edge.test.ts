@@ -26,16 +26,11 @@ describe('deterministicCall — read of the fair line', () => {
 })
 
 describe('analyzeEdge — verified snapshots → product', () => {
-  it('resolves teams, the fair line and falls back to deterministic when the LLM throws', async () => {
-    const edge = await analyzeEdge({ fixtureId: 9001, odds, fixtures }, async () => { throw new Error('no key') })
+  it('resolves teams and the fair line', async () => {
+    const edge = await analyzeEdge({ fixtureId: 9001, odds, fixtures })
     expect(edge.teams?.home).toBe('Brazil')
     expect(edge.market?.pct).toEqual([62.4, 22.1, 15.5])
     expect(edge.fair?.favourite?.fairOdds).toBeCloseTo(1.60, 2)
     expect(edge.analysis.call).toMatch(/Brazil/)
-  })
-  it('uses the LLM read when one is returned', async () => {
-    const edge = await analyzeEdge({ fixtureId: 9001, odds, fixtures }, async () => JSON.stringify({ call: 'Brazil a heavy favourite', confidence: 0.7 }))
-    expect(edge.analysis.call).toBe('Brazil a heavy favourite')
-    expect(edge.analysis.confidence).toBe(0.7)
   })
 })

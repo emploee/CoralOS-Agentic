@@ -2,7 +2,7 @@
 /**
  * Live devnet smoke path.
  *
- * Uses real devnet wallets, CoralOS/Docker, TxODDS credentials, and the escrow/arbiter clients.
+ * Uses real devnet wallets, CoralOS/Docker, and TxODDS credentials. Settlement is direct x402.
  */
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -39,7 +39,7 @@ function canRun(cmd, args) {
 }
 
 const env = loadEnv()
-const required = ['WALLET', 'BUYER_KEYPAIR_B58', 'ARBITER_KEYPAIR_B58', 'TXLINE_API_KEY']
+const required = ['WALLET', 'BUYER_KEYPAIR_B58', 'TXLINE_API_KEY']
 const missing = required.filter((k) => !env[k])
 if (missing.length) {
   console.error(`[devnet-e2e] missing ${missing.join(', ')}. Run npm run setup, fund the devnet wallets, and mint TxLINE access first.`)

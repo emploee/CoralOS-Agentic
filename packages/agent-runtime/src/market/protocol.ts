@@ -1,19 +1,20 @@
 /**
  * Market protocol - the wire format for the open marketplace, as pure (network-free) functions so it
  * can be fully unit-tested. Agents format/parse these strings and route them over CoralOS threads
- * (https://docs.coralos.ai/concepts/threads); settlement happens through the escrow contract. Every
- * message carries a `round` to correlate the many messages flowing through one shared thread — Coral
- * moves opaque strings, so this `round` tag (not Coral) is what pairs a reply to its request.
+ * (https://docs.coralos.ai/concepts/threads); settlement happens via x402 - the buyer pays the seller
+ * directly and finally, before delivery. Every message carries a `round` to correlate the many
+ * messages flowing through one shared thread — Coral moves opaque strings, so this `round` tag (not
+ * Coral) is what pairs a reply to its request.
  *
  *   WANT   round=<n> service=<name> arg=<token> budget=<sol>     buyer  -> market, @sellers
  *   BID    round=<n> price=<sol> by=<seller> [note=<free text>]  seller -> market (self-selects)
  *   AWARD  round=<n> to=<seller>                                 buyer  -> market, @winner
- *   ESCROW_REQUIRED round=<n> reference=<R> seller=<addr> amount=<sol> deadline=<secs>  seller -> buyer
- *   DEPOSITED round=<n> reference=<R> buyer=<addr> sig=<sig>     buyer  -> seller
- *   LLM_USED round=<n> agent=<name> purpose=<name> status=used|fallback|skipped|error [provider=<p>] [model=<m>] [usedFor=<name>] [inputHash=<sha256>] [outputHash=<sha256>] affectedFunds=false [reason="..."] [guardrail="..."]
+ *   PAYMENT_REQUIRED round=<n> rail=x402 amount=<sol> currency=SOL reference=<R> seller=<addr>  seller -> buyer
+ *   PAYMENT_PROOF     round=<n> rail=x402 reference=<R> proof=<base64-signed-tx> buyer=<addr>     buyer  -> seller
+ *   PAYMENT_CONFIRMED round=<n> rail=x402 reference=<R> paid=true [sig=<sig>]                     seller -> buyer
  *   VERIFY   round=<n> sha=<hash> service=<name> arg=<token> payload=<raw>  buyer -> verifier
  *   VERIFIED round=<n> verdict=pass|fail by=<verifier> [sha=<hash>] [reason="..."]  verifier -> buyer
- *   (then DELIVERED / RELEASED / REFUNDED reuse the round tag)
+ *   (then DELIVERED / SETTLED reuse the round tag)
  */
 
 export interface Want {
@@ -28,29 +29,6 @@ export interface Bid {
   priceSol: number
   by: string
   note?: string
-}
-
-export interface EscrowTerms {
-  round: number
-  reference: string
-  /** The seller's receive wallet (base58) - the buyer deposits to escrow naming this seller. */
-  seller: string
-  amountSol: number
-  deadlineSecs: number
-  /** Settlement rail requested by the seller. `arbiter` is the CoralOS default; `direct` is legacy. */
-  settlement?: 'direct' | 'arbiter'
-}
-
-export interface Deposited {
-  round: number
-  reference: string
-  /** The buyer's wallet (base58) - the seller derives the escrow PDA from (buyer, reference). */
-  buyer: string
-  sig: string
-  /** Arbiter vault PDA, present when settlement='arbiter'. This is the escrow account's buyer. */
-  vault?: string
-  settlement?: 'direct' | 'arbiter'
-  arbiter?: string
 }
 
 export type PaymentRailKind =
@@ -105,36 +83,12 @@ export interface SettlementMessage {
   reason?: string
 }
 
-export type LlmUseStatus = 'used' | 'fallback' | 'skipped' | 'error'
-
-export interface LlmUse {
-  round: number
-  agent: string
-  purpose: string
-  status: LlmUseStatus
-  provider?: string
-  model?: string
-  /** Human-stable label for the decision/explanation the model was used for. Defaults to `purpose`. */
-  usedFor?: string
-  /** Hashes let auditors bind traces to local inputs/outputs without storing prompt or completion text. */
-  inputHash?: string
-  outputHash?: string
-  /** Models may explain/propose; deterministic policy and verifier code controls funds. */
-  affectedFunds?: boolean
-  reason?: string
-  guardrail?: string
-  createdAt?: string
-}
-
 const num = (text: string, key: string): number | undefined => {
   const m = text.match(new RegExp(`${key}=([\\d.]+)`))
   return m ? Number(m[1]) : undefined
 }
 const tok = (text: string, key: string): string | undefined =>
   text.match(new RegExp(`${key}=(\\S+)`))?.[1]
-const quoted = (text: string, key: string): string | undefined =>
-  text.match(new RegExp(`${key}="([^"]*)"`))?.[1]
-const cleanQuote = (value: string): string => value.replace(/"/g, "'").slice(0, 180)
 
 const paymentRail = (value: string | undefined): PaymentRailKind | undefined =>
   value === 'solana-pay' ||
@@ -204,52 +158,6 @@ export function parseAward(text: string): { round: number; to: string; reason?: 
   if (round == null || !to) return null
   const reason = text.match(/reason="([^"]*)"/)?.[1] // the quoted justification formatAward emits
   return { round, to, ...(reason ? { reason } : {}) }
-}
-
-// -- ESCROW_REQUIRED -------------------------------------------------------------
-export function formatEscrowRequired(t: EscrowTerms): string {
-  const base = `ESCROW_REQUIRED round=${t.round} reference=${t.reference} seller=${t.seller} amount=${t.amountSol} deadline=${t.deadlineSecs}`
-  return t.settlement ? `${base} settlement=${t.settlement}` : base
-}
-export function parseEscrowRequired(text: string): EscrowTerms | null {
-  if (verb(text) !== 'ESCROW_REQUIRED') return null
-  const round = num(text, 'round')
-  const reference = tok(text, 'reference')
-  const seller = tok(text, 'seller')
-  const amountSol = num(text, 'amount')
-  const deadlineSecs = num(text, 'deadline')
-  if (round == null || !reference || !seller || amountSol == null || deadlineSecs == null) return null
-  const settlement = tok(text, 'settlement')
-  return {
-    round, reference, seller, amountSol, deadlineSecs,
-    ...(settlement === 'direct' || settlement === 'arbiter' ? { settlement } : {}),
-  }
-}
-
-// -- DEPOSITED -------------------------------------------------------------------
-export function formatDeposited(d: Deposited): string {
-  const parts = [`DEPOSITED round=${d.round}`, `reference=${d.reference}`, `buyer=${d.buyer}`, `sig=${d.sig}`]
-  if (d.settlement) parts.push(`settlement=${d.settlement}`)
-  if (d.vault) parts.push(`vault=${d.vault}`)
-  if (d.arbiter) parts.push(`arbiter=${d.arbiter}`)
-  return parts.join(' ')
-}
-export function parseDeposited(text: string): Deposited | null {
-  if (verb(text) !== 'DEPOSITED') return null
-  const round = num(text, 'round')
-  const reference = tok(text, 'reference')
-  const buyer = tok(text, 'buyer')
-  const sig = tok(text, 'sig')
-  if (round == null || !reference || !buyer || !sig) return null
-  const settlement = tok(text, 'settlement')
-  const vault = tok(text, 'vault')
-  const arbiter = tok(text, 'arbiter')
-  return {
-    round, reference, buyer, sig,
-    ...(settlement === 'direct' || settlement === 'arbiter' ? { settlement } : {}),
-    ...(vault ? { vault } : {}),
-    ...(arbiter ? { arbiter } : {}),
-  }
 }
 
 // -- generic payment messages -----------------------------------------------------
@@ -357,59 +265,6 @@ function parseSettlement(kind: 'SETTLED' | 'REFUNDED', text: string): Settlement
   const txSignature = tok(text, 'sig')
   const reason = text.match(/reason="([^"]*)"/)?.[1]
   return { round, rail, reference, ...(amount ? { amount } : {}), ...(currency ? { currency } : {}), ...(txSignature ? { txSignature } : {}), ...(reason ? { reason } : {}) }
-}
-
-// -- LLM_USED -------------------------------------------------------------------
-export function formatLlmUsed(l: LlmUse): string {
-  const parts = [
-    `LLM_USED round=${l.round}`,
-    `agent=${l.agent}`,
-    `purpose=${l.purpose}`,
-    `status=${l.status}`,
-  ]
-  if (l.provider) parts.push(`provider=${l.provider}`)
-  if (l.model) parts.push(`model=${l.model}`)
-  parts.push(`usedFor=${l.usedFor ?? l.purpose}`)
-  if (l.inputHash) parts.push(`inputHash=${l.inputHash}`)
-  if (l.outputHash) parts.push(`outputHash=${l.outputHash}`)
-  parts.push(`affectedFunds=${l.affectedFunds === true ? 'true' : 'false'}`)
-  if (l.createdAt) parts.push(`createdAt=${l.createdAt}`)
-  if (l.reason) parts.push(`reason="${cleanQuote(l.reason)}"`)
-  if (l.guardrail) parts.push(`guardrail="${cleanQuote(l.guardrail)}"`)
-  return parts.join(' ')
-}
-
-export function parseLlmUsed(text: string): LlmUse | null {
-  if (verb(text) !== 'LLM_USED') return null
-  const round = num(text, 'round')
-  const agent = tok(text, 'agent')
-  const purpose = tok(text, 'purpose')
-  const status = tok(text, 'status')
-  if (
-    round == null || !agent || !purpose ||
-    (status !== 'used' && status !== 'fallback' && status !== 'skipped' && status !== 'error')
-  ) return null
-  const provider = tok(text, 'provider')
-  const model = tok(text, 'model')
-  const usedFor = tok(text, 'usedFor')
-  const inputHash = tok(text, 'inputHash')
-  const outputHash = tok(text, 'outputHash')
-  const affectedFunds = tok(text, 'affectedFunds')
-  const createdAt = tok(text, 'createdAt')
-  const reason = quoted(text, 'reason')
-  const guardrail = quoted(text, 'guardrail')
-  return {
-    round, agent, purpose, status,
-    ...(provider ? { provider } : {}),
-    ...(model ? { model } : {}),
-    ...(usedFor ? { usedFor } : {}),
-    ...(inputHash ? { inputHash } : {}),
-    ...(outputHash ? { outputHash } : {}),
-    ...(affectedFunds === 'true' || affectedFunds === 'false' ? { affectedFunds: affectedFunds === 'true' } : {}),
-    ...(createdAt ? { createdAt } : {}),
-    ...(reason ? { reason } : {}),
-    ...(guardrail ? { guardrail } : {}),
-  }
 }
 
 // -- VERIFY / VERIFIED -------------------------------------------------------------

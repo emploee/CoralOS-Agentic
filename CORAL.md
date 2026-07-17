@@ -45,8 +45,8 @@ await startCoralAgent({ agentName: 'my-agent' }, async (ctx) => {
 
 | Agent | Role |
 |---|---|
-| `buyer-agent` | Creates market thread, sends `WANT`, collects bids, awards, deposits, verifies, and releases. |
-| `seller-agent` | Bids on supported services, verifies funded escrow, runs a harness adapter, and delivers payloads. |
+| `buyer-agent` | Creates market thread, sends `WANT`, collects bids, awards, pays directly via x402, and verifies. |
+| `seller-agent` | Bids on supported services, submits + verifies the buyer's x402 payment, runs a harness adapter, and delivers payloads. |
 | `verifier-agent` | Checks delivery hash/structure and replies `VERIFIED pass` or `fail`. |
 
 ### Adding Another Seller
@@ -128,17 +128,20 @@ buyer-agent  -> createThread("market", sellers, verifier)
 buyer-agent  -> WANT round=<n> service=<service> arg=<arg> budget=<sol>
 seller-*     -> BID round=<n> price=<sol> by=<seller>
 buyer-agent  -> AWARD round=<n> to=<seller>
-seller       -> ESCROW_REQUIRED round=<n> reference=<hash> settlement=arbiter
-buyer-agent  -> policy check, then escrow/arbiter deposit
-buyer-agent  -> DEPOSITED round=<n> vault=<vault PDA>
-seller       -> funded escrow check, harness run
+seller       -> PAYMENT_REQUIRED round=<n> rail=x402 amount=<sol> reference=<ref> seller=<addr>
+buyer-agent  -> policy check, then sign (not submit) a transfer
+buyer-agent  -> PAYMENT_PROOF round=<n> rail=x402 reference=<ref> proof=<signed-tx> buyer=<addr>
+seller       -> submit + verify on-chain, harness run
+seller       -> PAYMENT_CONFIRMED round=<n> rail=x402 reference=<ref> paid=true sig=<sig>
 seller       -> DELIVERED round=<n> payload=<json>
 buyer-agent  -> VERIFY round=<n> sha=<hash> ...
-verifier     -> VERIFIED round=<n> verdict=pass|fail
-buyer-agent  -> policy check, then release or leave funds refundable
+verifier     -> VERIFIED round=<n> verdict=pass|fail   (informational - payment already settled)
+buyer-agent  -> SETTLED round=<n> rail=x402 reference=<ref> sig=<sig>
 ```
 
-Solana deposit/release/refund calls happen outside CoralOS. CoralOS carries coordination messages only — see [PAY.md](PAY.md) for settlement details.
+Payment is direct and final: the buyer signs, the seller submits and verifies on-chain — there is no
+escrow, no release step, and no refund path. Solana calls happen outside CoralOS; CoralOS carries
+coordination messages only — see [PAY.md](PAY.md) for settlement details.
 
 ### Protocol Messages
 
@@ -196,17 +199,6 @@ npm run dev                  # Probes automatically before launch
 
 Set `CORAL_CONSOLE=0` to skip the probe. Set `CORAL_CONSOLE_REQUIRED=1` to make failures fatal.
 
-## Not Adopted: Coral Cloud LLM Proxy
-
-CoralOS agents can route every model call through **Coral Cloud** (`llm.coralcloud.ai`), a hosted
-OpenAI-compatible proxy, by declaring `[[llm.proxies]]` in `coral-agent.toml` and setting a
-`CORAL_API_KEY`. This repo doesn't use it — LLM calls go straight to Groq/Anthropic/OpenAI/Venice
-(`packages/agent-runtime/src/llm/complete.ts`). That's a deliberate choice, not an oversight: Coral
-Cloud trades this kit's bring-your-own-key flexibility (in particular Groq's free renewing-rate-limit
-path, which the whole kit is built around — see `README.md`) for a dependency on a separate hosted
-account. Worth knowing it exists if you're forking this for a context where a Coral Cloud account is
-already a given.
-
 ## Running
 
 ```sh
@@ -256,5 +248,4 @@ referencing it as an external plugin instead.
 ## See Also
 
 - [PAY.md](PAY.md) — payment rails and settlement.
-- [LLM.md](LLM.md) — provider config for bid/award/verify decisions.
 - [API.md](API.md) — using the market protocol with any API.

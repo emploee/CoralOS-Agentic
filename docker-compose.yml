@@ -4,7 +4,7 @@
 #   cd examples/txodds && npm run coral     # launch one buyer + one World Cup seller round
 #
 # coral-server is a PURE MCP coordinator (no [wallet]). It launches the buyer + seller as containers per
-# session via the Docker socket; settlement is the Solana escrow (agent-side) — coral never holds a key.
+# session via the Docker socket; settlement is direct x402 (agent-side) — coral never holds a key.
 # Per-agent config is sent by examples/txodds/coral/round.ts in the session request; the env below is a
 # fallback forwarded to the agents coral launches.
 
@@ -34,15 +34,6 @@ services:
       - SOLANA_RPC_URL=${SOLANA_RPC_URL:-https://api.devnet.solana.com}
       - BUYER_KEYPAIR_B58=${BUYER_KEYPAIR_B58}
       - BUYER_MAX_SOL=${BUYER_MAX_SOL:-0.001}
-      # LLM brain — the kit uses Venice AI (LLM_PROVIDER=venice + VENICE_API_KEY); openai/anthropic
-      # also work. Groq (LLM_PROVIDER=groq + GROQ_API_KEY) is the recommended free fallback once
-      # Venice's credits run out — see LLM.md.
-      - VENICE_API_KEY=${VENICE_API_KEY:-}
-      - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - LLM_PROVIDER=${LLM_PROVIDER:-}
-      - LLM_MODEL=${LLM_MODEL:-}
       # The TxLINE token the seller uses to fetch verified World Cup odds (mint with `npm run mint`).
       - TXLINE_API_KEY=${TXLINE_API_KEY}
       - TXLINE_BASE_URL=${TXLINE_BASE_URL:-}

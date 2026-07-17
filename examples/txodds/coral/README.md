@@ -1,6 +1,6 @@
 # TxODDS CoralOS Round
 
-This folder launches the TxODDS service as a CoralOS multi-agent session. A buyer posts a TxODDS request, the seller bids, the buyer awards it, and the order settles through the arbiter-backed devnet escrow.
+This folder launches the TxODDS service as a CoralOS multi-agent session. A buyer posts a TxODDS request, the seller bids, the buyer awards it, and the order settles directly over x402 — payment before delivery, no escrow.
 
 ## Message Flow
 
@@ -14,20 +14,23 @@ seller-agent
 buyer-agent
   -> AWARD to=<seller>
 seller
-  -> ESCROW_REQUIRED reference=<order hash> settlement=arbiter
+  -> PAYMENT_REQUIRED rail=x402 reference=<ref> seller=<addr>
 buyer-agent
-  -> DEPOSITED settlement=arbiter vault=<vault PDA>
+  -> PAYMENT_PROOF proof=<signed tx> (signed, not submitted)
 seller
+  -> submit + verify on-chain
+  -> PAYMENT_CONFIRMED paid=true sig=<devnet tx>
   -> DELIVERED payload=<json>
 buyer-agent
   -> VERIFY sha=<delivery hash>
 verifier-agent
-  -> VERIFIED verdict=pass
+  -> VERIFIED verdict=pass   (informational - payment already settled)
 buyer-agent
-  -> ARBITER_RELEASED sig=<devnet tx>
+  -> SETTLED sig=<devnet tx>
 ```
 
-The escrow buyer is the arbiter vault PDA, and the delivery/order reference is bound into the settlement record.
+The buyer signs the payment; the seller submits and verifies it before delivering. Payment is direct
+and final — there is no refund path.
 
 ## Requirements
 
@@ -35,10 +38,8 @@ The escrow buyer is the arbiter vault PDA, and the delivery/order reference is b
 - Agent images built from the repo root.
 - Repo-root `.env` containing:
   - `BUYER_KEYPAIR_B58`, funded with devnet SOL;
-  - `ARBITER_KEYPAIR_B58`;
   - `WALLET` or `SELLER_WALLET`;
-  - `TXLINE_API_KEY`;
-  - optional LLM provider configuration.
+  - `TXLINE_API_KEY`.
 
 ## Run
 
@@ -55,7 +56,7 @@ From `examples/txodds`:
 npm run coral
 ```
 
-`round.ts` reads a live fixture id from the proxy's `/api/board` when available, starts the buyer and seller, and injects `SETTLEMENT_MODE=arbiter`.
+`round.ts` reads a live fixture id from the proxy's `/api/board` when available and starts the buyer and seller.
 
 Default seller:
 
@@ -81,7 +82,7 @@ npm run coral:sharp-movement   # in another — same launcher as `coral`, adds s
 persona roster, just the one `seller-agent` offering one more service. The seller's `sharp-movement`
 delivery doesn't re-detect the move — the watcher already confirmed one happened before the WANT
 existed — it reports the fixture's *current* market decisiveness (magnitude/confidence from the
-spread between the top two outcomes) plus an LLM read. See
+spread between the top two outcomes) plus a deterministic plain-language read. See
 `coral-agents/seller-agent/README.md`'s Sharp-Movement Analysis section.
 
 Grading (was the flagged move's leading outcome actually right, once the match finished?) runs as a

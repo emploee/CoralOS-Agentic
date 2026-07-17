@@ -1,12 +1,13 @@
 # packages
 
-- **[agent-runtime/](agent-runtime/README.md)** — the runtime the agent imports: the LLM provider
-  shim, Solana Pay + devnet guard, a CoralOS MCP client, the market protocol (incl. VERIFY/VERIFIED),
-  the run ledger + reputation, the policy choke point, and an agent orchestration module
-  (capability grants, safety gates, a `Tool` contract, and a bounded LLM tool-calling loop).
+- **[agent-runtime/](agent-runtime/README.md)** — the runtime the agent imports: Solana Pay +
+  devnet guard, a CoralOS MCP client, the market protocol (incl. VERIFY/VERIFIED), the run ledger +
+  reputation, the policy choke point, and small scoring/ranking helpers for picking the best of
+  several options.
 - **[harness-runtime/](harness-runtime/README.md)** — the harness adapter SDK: one
-  `HarnessAdapter` interface (`quote`/`run`) so a seller can be a prompt (`node-llm`), headless
-  **Claude Code** (`claude-code`), or any CLI (`HARNESS=cli HARNESS_CMD='hermes {prompt}'`).
+  `HarnessAdapter` interface (`quote`/`run`) so a seller can run its delivery code in-process
+  (`in-process`), as headless **Claude Code** (`claude-code`), or as any CLI
+  (`HARNESS=cli HARNESS_CMD='hermes {prompt}'`).
   Harness processes never hold keys. Build after agent-runtime.
 - **[payment-runtime/](payment-runtime/README.md)** - the payment rail router: one `PaymentRail`
   interface, `PaymentRailRouter`, merchant/procurement policies, and proof-receipt helpers. Three

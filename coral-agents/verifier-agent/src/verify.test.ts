@@ -6,60 +6,29 @@ const payload = '{"service":"txline-edge","analysis":{"call":"Home value","confi
 const req = (over: Partial<VerifyRequest> = {}): VerifyRequest => ({
   round: 5, service: 'txline', arg: '12345', sha: sha256Hex(payload), payload, ...over,
 })
-const llmDown = async () => { throw new Error('llm down') }
-const llmSays = (json: string) => async () => json
-/** A tool-loop reply that immediately calls submit_verdict with the given verdict fields. */
-const verdictSays = (input: { pass: boolean; reason?: string }) =>
-  async () => JSON.stringify({ tool: 'submit_verdict', input })
 
-describe('checkDelivery - deterministic checks decide first', () => {
-  it('fails a tampered payload on hash mismatch (no LLM say)', async () => {
-    const v = await checkDelivery(req({ sha: sha256Hex('something else') }), 'v', llmSays('{"pass":true}'))
+describe('checkDelivery - deterministic checks', () => {
+  it('fails a tampered payload on hash mismatch', async () => {
+    const v = await checkDelivery(req({ sha: sha256Hex('something else') }), 'v')
     expect(v).toMatchObject({ verdict: 'fail', reason: 'content hash mismatch' })
-    expect(v.llm).toMatchObject({ status: 'skipped', reason: 'content hash mismatch; model not consulted' })
   })
 
   it('fails a non-JSON payload', async () => {
     const bad = 'sorry, no data today'
-    const v = await checkDelivery(req({ payload: bad, sha: sha256Hex(bad) }), 'v', llmDown)
+    const v = await checkDelivery(req({ payload: bad, sha: sha256Hex(bad) }), 'v')
     expect(v).toMatchObject({ verdict: 'fail', reason: 'payload is not JSON' })
   })
 
   it('fails a payload that reports an error', async () => {
     const err = '{"error":"TXLINE_API_KEY not set"}'
-    const v = await checkDelivery(req({ payload: err, sha: sha256Hex(err) }), 'v', llmDown)
+    const v = await checkDelivery(req({ payload: err, sha: sha256Hex(err) }), 'v')
     expect(v.verdict).toBe('fail')
     expect(v.reason).toContain('payload reports error')
   })
 
-  it('passes deterministically when the LLM judge is down', async () => {
-    const v = await checkDelivery(req(), 'v', llmDown)
+  it('passes a structurally valid, hash-matched payload', async () => {
+    const v = await checkDelivery(req(), 'v')
     expect(v).toMatchObject({ verdict: 'pass', reason: 'hash + structure verified', by: 'v' })
     expect(v.sha).toBe(sha256Hex(payload))
-    expect(v.llm).toMatchObject({ status: 'fallback', reason: 'LLM unavailable: llm down' })
-  })
-
-  it('passes txline edge payloads for the requested fixture before consulting the LLM', async () => {
-    const txline = '{"service":"txline-edge","fixtureId":"12345","analysis":{"call":"Home value","confidence":0.7}}'
-    const v = await checkDelivery(req({ payload: txline, sha: sha256Hex(txline) }), 'v', llmSays('{"pass":false,"reason":"too literal"}'))
-    expect(v).toMatchObject({ verdict: 'pass', reason: 'hash + txline fixture verified', by: 'v' })
-    expect(v.llm).toMatchObject({ status: 'skipped', reason: 'txline fixture matched deterministic verifier' })
-  })
-
-  it('honours an LLM fail verdict on structurally valid payloads', async () => {
-    const v = await checkDelivery(req(), 'v', verdictSays({ pass: false, reason: 'does not answer the arg' }))
-    expect(v).toMatchObject({ verdict: 'fail', reason: 'does not answer the arg' })
-    expect(v.llm).toMatchObject({ status: 'used', provider: expect.any(String), model: expect.any(String) })
-  })
-
-  it('honours an LLM pass verdict with its reason', async () => {
-    const v = await checkDelivery(req(), 'v', verdictSays({ pass: true, reason: 'fits the order' }))
-    expect(v).toMatchObject({ verdict: 'pass', reason: 'fits the order' })
-  })
-
-  it('falls back to pass when the tool loop exhausts its rounds without deciding', async () => {
-    const v = await checkDelivery(req(), 'v', async () => JSON.stringify({ tool: 'inspect_payload_structure', input: {} }))
-    expect(v).toMatchObject({ verdict: 'pass', reason: 'hash + structure verified' })
-    expect(v.llm).toMatchObject({ status: 'fallback', reason: 'model exhausted rounds without deciding' })
   })
 })

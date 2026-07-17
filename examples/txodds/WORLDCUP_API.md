@@ -23,7 +23,7 @@ The browser does not store the guest JWT or `X-Api-Token`.
 |---|---|---|---|
 | Fixtures | `GET /api/fixtures/snapshot` | Fixture id, competition, participants, home/away flag, start time. | Called internally by the proxy's `/api/board` and `/api/edge-x402`; not exposed as its own proxy route. |
 | Odds | `GET /api/odds/snapshot/{fixtureId}` | Markets, bookmaker, `SuperOddsType`, price names, de-margined `Pct`. | Called internally by the proxy's `/api/board` and `/api/edge-x402`; not exposed as its own proxy route. |
-| Scores | `GET /api/scores/snapshot/{fixtureId}` | Score events. | Client support exists (`agent/txline.ts`) but nothing in the proxy currently calls it. |
+| Scores | `GET /api/scores/snapshot/{fixtureId}` | Score events. | Called by `research/grade.ts` after a round settles, to check a sharp-movement delivery's prediction against the real final result (see `research/GRADING.md`). |
 
 Properties:
 
@@ -37,7 +37,7 @@ Properties:
 |---|---|---|
 | Board | Fixtures plus odds snapshots. | `server/proxy.ts` exposes `/api/board`. |
 | Edge analysis | One fixture's verified odds snapshot. | `agent/edge.ts`, exposed via `/api/edge-x402`. |
-| Settlement reference | Order/delivery data. | CoralOS buyer-agent/arbiter settlement clients (`coral-agents/buyer-agent`), not the proxy. |
+| Settlement reference | Order/delivery data. | CoralOS buyer-agent/seller-agent x402 settlement (`coral-agents/`), not the proxy. |
 
 ## Candidate Technical Extensions
 
@@ -65,6 +65,6 @@ These extensions remain inside the TxLINE API surface:
 | File | Role |
 |---|---|
 | `agent/txline.ts` | TxLINE API client. |
-| `agent/edge.ts` | Fair-line transform and LLM/fallback analysis. |
+| `agent/edge.ts` | Fair-line transform and deterministic plain-language analysis. |
 | `agent/service.ts` | Paid service wrapper. |
 | `server/proxy.ts` | Local proxy: board data, x402 edge reference merchant, CoralOS round launch/forwarding. |

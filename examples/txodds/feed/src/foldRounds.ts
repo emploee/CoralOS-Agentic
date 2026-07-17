@@ -5,9 +5,9 @@
  * (`@pay/agent-runtime`) — the market wire protocol has one source of truth.
  */
 import {
-  verb, messageRound, parseWant, parseBid, parseAward, parseEscrowRequired, parseDeposited, parseVerified,
-  parsePaymentRequired, parsePaymentProof, parsePaymentConfirmed, parseLlmUsed,
-  type ProofReceipt, type PaymentRailKind, type PaymentCurrency, type LlmUse, type ScoreOutcome,
+  verb, messageRound, parseWant, parseBid, parseAward, parseVerified,
+  parsePaymentRequired, parsePaymentProof, parsePaymentConfirmed, parseSettled, parseRefunded,
+  type ProofReceipt, type PaymentRailKind, type PaymentCurrency, type ScoreOutcome,
 } from '@pay/agent-runtime'
 
 export interface RawMessage {
@@ -22,7 +22,7 @@ export interface RoundBid {
   note?: string
 }
 
-export type RoundStatus = 'bidding' | 'awarded' | 'deposited' | 'delivered' | 'settled' | 'refunded'
+export type RoundStatus = 'bidding' | 'awarded' | 'paid' | 'delivered' | 'settled' | 'refunded'
 
 export interface Round {
   round: number
@@ -31,16 +31,19 @@ export interface Round {
   /** Sellers that were in the market but didn't bid (self-selected out) — needs the seller roster. */
   declined: string[]
   award?: { to: string; reason?: string }
-  escrow?: { reference: string; seller: string; amountSol: number; deadlineSecs: number }
-  deposit?: { sig: string; buyer: string }
+  /** The x402 payment the buyer owes the seller for this round — the primary settlement leg,
+   *  distinct from any upstream procurement legs the seller makes (see `proofReceipts`). */
+  payment?: { reference: string; seller: string; amountSol: number; buyer?: string }
+  /** The seller's on-chain confirmation of the primary payment above. */
+  paid?: { sig: string }
   delivered?: { raw: string; data?: unknown }
-  /** The independent verifier's verdict (release is gated on it when a verifier is in session). */
+  /** The independent verifier's verdict — informational (feeds reputation); the payment already
+   *  settled by the time this arrives, so a fail verdict can no longer block or reclaim it. */
   verification?: { verdict: 'pass' | 'fail'; by: string; reason?: string }
-  /** Payment-rail receipts for upstream procurement legs inside the round. */
+  /** Payment-rail receipts for upstream procurement legs inside the round (a different reference
+   *  than the primary `payment` above — e.g. the seller buying context before delivering). */
   proofReceipts: ProofReceipt[]
-  /** LLM provider/model/status metadata emitted by agents. */
-  llm: LlmUse[]
-  release?: { sig: string }
+  settled?: { sig?: string }
   refunded?: boolean
   status: RoundStatus
   /**
@@ -79,7 +82,7 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
   const get = (r: number): Round => {
     let round = byRound.get(r)
     if (!round) {
-      round = { round: r, bids: [], declined: [], proofReceipts: [], llm: [], status: 'bidding' }
+      round = { round: r, bids: [], declined: [], proofReceipts: [], status: 'bidding' }
       byRound.set(r, round)
     }
     return round
@@ -131,12 +134,6 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     const award = parseAward(text)
     if (award) { const r = get(award.round); r.award = { to: award.to, reason: awardReason(text) }; if (r.status === 'bidding') r.status = 'awarded'; continue }
 
-    const esc = parseEscrowRequired(text)
-    if (esc) { get(esc.round).escrow = { reference: esc.reference, seller: esc.seller, amountSol: esc.amountSol, deadlineSecs: esc.deadlineSecs }; continue }
-
-    const dep = parseDeposited(text)
-    if (dep) { const r = get(dep.round); r.deposit = { sig: dep.sig, buyer: dep.buyer }; if (r.status !== 'settled') r.status = 'deposited'; continue }
-
     const verified = parseVerified(text)
     if (verified) {
       get(verified.round).verification = {
@@ -145,14 +142,24 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
       continue
     }
 
-    const llmUsed = parseLlmUsed(text)
-    if (llmUsed) {
-      get(llmUsed.round).llm.push(llmUsed)
-      continue
-    }
-
+    // PAYMENT_REQUIRED/PROOF/CONFIRMED carry both the round's PRIMARY settlement (the buyer paying
+    // the seller for the award, one reference per round, requested immediately after AWARD) and any
+    // upstream procurement legs the seller makes with a different reference (e.g. PROCURE_RAIL=x402
+    // buying context before delivering). The first PAYMENT_REQUIRED seen for a round is always the
+    // primary leg; anything else (a different reference) is a procurement leg, folded into proofReceipts.
     const paymentRequired = parsePaymentRequired(text)
     if (paymentRequired) {
+      const round = get(paymentRequired.round)
+      // The primary settlement is always rail=x402 (seller-agent's AWARD reply) - a procurement leg
+      // on another rail (or a second x402 leg, once the primary is already recorded) is never it.
+      if (!round.payment && paymentRequired.rail === 'x402') {
+        round.payment = {
+          reference: paymentRequired.reference,
+          seller: paymentRequired.seller ?? '',
+          amountSol: Number(paymentRequired.amount),
+        }
+        continue
+      }
       const leg = getLeg(paymentRequired.round, paymentRequired.rail, paymentRequired.reference)
       leg.amount = paymentRequired.amount
       leg.currency = paymentRequired.currency
@@ -163,6 +170,10 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     const paymentProof = parsePaymentProof(text)
     if (paymentProof) {
       const round = get(paymentProof.round)
+      if (round.payment?.reference === paymentProof.reference) {
+        if (paymentProof.buyer) round.payment.buyer = paymentProof.buyer
+        continue
+      }
       const leg = getLeg(paymentProof.round, paymentProof.rail, paymentProof.reference)
       leg.proof = paymentProof.proof
       leg.txSignature = paymentProof.txSignature
@@ -173,6 +184,13 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
     const paymentConfirmed = parsePaymentConfirmed(text)
     if (paymentConfirmed) {
       const round = get(paymentConfirmed.round)
+      if (round.payment?.reference === paymentConfirmed.reference) {
+        if (paymentConfirmed.paid && paymentConfirmed.txSignature) {
+          round.paid = { sig: paymentConfirmed.txSignature }
+          if (round.status === 'bidding' || round.status === 'awarded') round.status = 'paid'
+        }
+        continue
+      }
       const leg = getLeg(paymentConfirmed.round, paymentConfirmed.rail, paymentConfirmed.reference)
       leg.paid = paymentConfirmed.paid
       if (paymentConfirmed.amount) leg.amount = paymentConfirmed.amount
@@ -183,6 +201,22 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
       continue
     }
 
+    const settled = parseSettled(text)
+    if (settled) {
+      const round = get(settled.round)
+      round.settled = { ...(settled.txSignature ? { sig: settled.txSignature } : {}) }
+      round.status = 'settled'
+      continue
+    }
+
+    const refunded = parseRefunded(text)
+    if (refunded) {
+      const round = get(refunded.round)
+      round.refunded = true
+      round.status = 'refunded'
+      continue
+    }
+
     const v = verb(text)
     const r = messageRound(text)
     if (v === 'DELIVERED' && r != null) {
@@ -190,16 +224,6 @@ export function foldRounds(messages: RawMessage[], sellers: string[] = []): Roun
       const raw = text.replace(/^DELIVERED\s+round=\d+\s*/i, '').trim()
       round.delivered = { raw, data: tryJson(raw) }
       if (round.status !== 'settled') round.status = 'delivered'
-    } else if ((v === 'RELEASED' || v === 'ARBITER_RELEASED') && r != null) {
-      // the buyer emits ARBITER_RELEASED in arbiter mode (the default) — same settled state
-      const round = get(r)
-      const sig = text.match(/sig=(\S+)/)?.[1]
-      if (sig) round.release = { sig }
-      round.status = 'settled'
-    } else if (v === 'REFUNDED' && r != null) {
-      const round = get(r)
-      round.refunded = true
-      round.status = 'refunded'
     }
   }
 

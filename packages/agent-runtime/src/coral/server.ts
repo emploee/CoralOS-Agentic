@@ -41,6 +41,8 @@ export interface CoralAgentContext {
   send(content: string, threadId: string, mentions?: string[]): Promise<void>
   /** Create a new thread with the given participants. Returns threadId. */
   createThread(name: string, participants: string[]): Promise<string>
+  /** Close a thread - defaults to the last one this agent created. Best-effort; never throws. */
+  closeThread(threadId?: string): Promise<void>
 }
 
 /**
@@ -92,10 +94,15 @@ export async function startCoralAgent(
     createThread: async (name, participants) => {
       return agent.createThread(name, participants)
     },
+
+    closeThread: (threadId) => agent.closeThread(threadId),
   }
 
   const shutdown = async () => {
     console.error(`[${agentName}] shutting down`)
+    // Best-effort - marks any thread this agent opened as done rather than leaving it looking
+    // abandoned. No-op for pure responders (seller-agent/verifier-agent) that never created one.
+    await agent.closeThread()
     await agent.disconnect()
     process.exit(0)
   }

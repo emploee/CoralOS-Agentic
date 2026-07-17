@@ -34,14 +34,14 @@ export async function simulateTransferIntent(
   const lamports = Math.round(input.amountSol * LAMPORTS_PER_SOL)
   const policyDecision = input.policy
     ? enforce({
-        kind: 'deposit',
+        kind: 'payment',
         round: input.round ?? 0,
         service: input.service,
         amountSol: input.amountSol,
         payout: recipient.toBase58(),
         ...(input.awardedPriceSol != null ? { awardedPriceSol: input.awardedPriceSol } : {}),
         ...(input.spentSol != null ? { spentSol: input.spentSol } : {}),
-        ...(input.lastDepositAt != null ? { lastDepositAt: input.lastDepositAt } : {}),
+        ...(input.lastPaymentAt != null ? { lastPaymentAt: input.lastPaymentAt } : {}),
         ...(input.now != null ? { now: input.now } : {}),
       }, input.policy)
     : { ok: true, violations: [] }

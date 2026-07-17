@@ -14,7 +14,7 @@ describe('collectMessages + foldRounds on a REAL coral transcript', () => {
   const messages = collectMessages(state)
 
   it('extracts thread messages from coral’s real extended-state shape', () => {
-    expect(messages.length).toBeGreaterThanOrEqual(8)
+    expect(messages.length).toBeGreaterThanOrEqual(9)
     expect(messages[0]).toMatchObject({ sender: 'buyer-agent' })
     expect(messages[0].text).toContain('WANT round=1')
   })
@@ -26,7 +26,7 @@ describe('collectMessages + foldRounds on a REAL coral transcript', () => {
     expect(r.award?.to).toBe('seller-cheap')
     expect(r.award?.reason).toBeTruthy() // the AWARD reason tweak survives the round-trip
     expect(r.status).toBe('settled')
-    expect(r.release?.sig).toBeTruthy()
+    expect(r.settled?.sig).toBeTruthy()
     expect(r.declined).toContain('seller-lazy') // it sat out coingecko — self-selection
   })
 

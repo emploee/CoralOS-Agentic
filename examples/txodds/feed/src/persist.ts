@@ -2,7 +2,7 @@
  * persist — the feed's bridge into the run ledger (`@pay/agent-runtime` `ledger/`).
  *
  * Every poll of a live session also lands each folded round in `RUNS_DIR` as a durable run folder
- * (want/bids/award/escrow/delivery/txs + transcript.jsonl). The transcript is the source of truth:
+ * (want/bids/award/payment/delivery/txs + transcript.jsonl). The transcript is the source of truth:
  * `replaySession` re-folds the persisted messages through the SAME `foldRounds` the live path uses,
  * so a finished market round renders identically with coral-server down.
  *
@@ -26,7 +26,16 @@ export function toRunRecord(session: string, r: Round): RunRecord {
     bids: r.bids,
     ...(r.declined.length ? { declined: r.declined } : {}),
     ...(r.award ? { award: r.award } : {}),
-    ...(r.escrow ? { escrow: { ...r.escrow, ...(r.deposit ? { deposit: r.deposit } : {}) } } : {}),
+    ...(r.payment
+      ? {
+          payment: {
+            reference: r.payment.reference,
+            seller: r.payment.seller,
+            amountSol: r.payment.amountSol,
+            ...(r.paid ? { confirmed: { sig: r.paid.sig, buyer: r.payment.buyer ?? '' } } : {}),
+          },
+        }
+      : {}),
     ...(r.delivered
       ? {
           delivery: {
@@ -38,10 +47,8 @@ export function toRunRecord(session: string, r: Round): RunRecord {
       : {}),
     ...(r.verification ? { verification: r.verification } : {}),
     ...(r.proofReceipts.length ? { proofReceipts: r.proofReceipts } : {}),
-    ...(r.llm.length ? { llm: r.llm } : {}),
     txs: [
-      ...(r.deposit ? [{ kind: 'deposit', sig: r.deposit.sig, explorer: explorerTx(r.deposit.sig) }] : []),
-      ...(r.release ? [{ kind: 'release', sig: r.release.sig, explorer: explorerTx(r.release.sig) }] : []),
+      ...(r.paid ? [{ kind: 'payment', sig: r.paid.sig, explorer: explorerTx(r.paid.sig) }] : []),
     ],
     updatedAt: new Date().toISOString(),
   }

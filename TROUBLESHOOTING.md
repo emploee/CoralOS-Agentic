@@ -52,40 +52,6 @@ The proxy needs:
 
 Restart `npm run dev` after updating `.env`.
 
-## LLM Output
-
-### The feed shows the wrong provider (e.g. `anthropic` after setting `LLM_PROVIDER=groq`)
-
-Every agent (`buyer-agent`, each seller persona, `verifier-agent`) logs its resolved provider/model
-**once at startup**, before any round runs:
-
-```sh
-docker logs -f $(docker ps -qf ancestor=buyer-agent:0.1.0 | head -1)   # look for a line like:
-# [buyer-agent] LLM: provider=groq model=llama-3.3-70b-versatile (key present)
-```
-
-If that line says `WARNING: GROQ_API_KEY is NOT set in this process`, the key genuinely didn't reach
-that container — check it's really in the repo-root `.env` and that you started a **new** round after
-editing it (agent containers read env once at launch; editing `.env` doesn't affect already-running
-containers). If the line is missing entirely, the container predates this check — rebuild
-(`bash build-agents.sh`) and start a fresh round.
-
-Two things do **not** require a rebuild to take effect on the next round: `.env` changes (`round.ts`
-re-reads `.env` fresh every time a round is created) and CoralOS-level session state. Code changes
-(prompt wording, provider logic, anything in `src/`) **do** require `bash build-agents.sh` before a new
-round will reflect them — editing the source alone doesn't touch the already-built Docker image.
-
-### UI says `deterministic`
-
-The LLM call failed or no provider was configured. Set an explicit provider and key in `.env`, for example:
-
-```ini
-LLM_PROVIDER=groq
-GROQ_API_KEY=...
-```
-
-If this started happening after previously working — most commonly Venice's free signup credits ran out (a one-time pool, unlike Groq's renewing rate limit) — switch providers rather than debug: get a free key at [console.groq.com/keys](https://console.groq.com/keys), set the two lines above, restart. OpenAI and Anthropic are also supported; see [LLM.md](LLM.md). Restart the process after changing `.env`. Use `TRACE=1` to inspect provider/model selection.
-
 ## Settlement
 
 ### Settlement endpoint is unavailable

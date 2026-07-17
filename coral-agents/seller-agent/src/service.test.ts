@@ -1,16 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { deliverService, deliverServiceResult } from './service.js'
+import { deliverService } from './service.js'
 
 describe('deliverService routing', () => {
   const realFetch = global.fetch
 
   beforeEach(() => {
     process.env.TXLINE_API_KEY = 'token'
-    delete process.env.ANTHROPIC_API_KEY
-    delete process.env.OPENAI_API_KEY
-    delete process.env.VENICE_API_KEY
-    delete process.env.GROQ_API_KEY
-    delete process.env.LLM_PROVIDER
   })
 
   afterEach(() => {
@@ -18,36 +13,12 @@ describe('deliverService routing', () => {
     vi.restoreAllMocks()
   })
 
-  it('rejects legacy generic services', async () => {
+  it('rejects unsupported services', async () => {
     const out = JSON.parse(await deliverService('coingecko eth'))
     expect(out).toEqual({
       error: 'unsupported service',
       service: 'coingecko',
-      supported: ['txline', 'freelance', 'sharp-movement'],
-    })
-  })
-
-  it('freelance without an LLM key returns an honest error payload (verifier fails it, no release)', async () => {
-    const out = JSON.parse(await deliverService('freelance landing-page-hero-copy'))
-    expect(out.service).toBe('freelance')
-    expect(out.brief).toBe('landing-page-hero-copy')
-    expect(out.error).toContain('llm unavailable')
-  })
-
-  it('freelance with a (mocked) LLM delivers the deliverable JSON', async () => {
-    process.env.LLM_PROVIDER = 'openai'
-    process.env.OPENAI_API_KEY = 'k'
-    global.fetch = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: '{"deliverable":"Ship faster with agents","notes":"hero copy"}' } }],
-      }),
-    })) as unknown as typeof fetch
-
-    const out = JSON.parse(await deliverService('freelance landing-page-hero-copy'))
-    expect(out).toMatchObject({
-      service: 'freelance',
-      result: { deliverable: 'Ship faster with agents', notes: 'hero copy' },
+      supported: ['txline', 'sharp-movement'],
     })
   })
 
@@ -61,7 +32,7 @@ describe('deliverService routing', () => {
     expect(out).toMatchObject({ service: 'txline-fixtures', count: 2 })
   })
 
-  it('produces a deterministic edge when no live LLM key is configured', async () => {
+  it('produces a deterministic edge read', async () => {
     global.fetch = vi.fn(async (url: string) => {
       if (url.endsWith('/auth/guest/start')) return { ok: true, json: async () => ({ token: 'jwt' }) }
       if (url.includes('/api/odds/snapshot/123')) {
@@ -86,28 +57,7 @@ describe('deliverService routing', () => {
     }) as unknown as typeof fetch
 
     const out = JSON.parse(await deliverService('txline edge 123'))
-    expect(out.analysis.call).toContain('A')
-    expect(out.analysis.note).toContain('deterministic fallback')
-  })
-
-  it('discards a jargon-y or raw-price LLM reply and falls back to deterministic', async () => {
-    process.env.LLM_PROVIDER = 'openai'
-    process.env.OPENAI_API_KEY = 'k'
-    global.fetch = vi.fn(async (url: string) => {
-      if (url.endsWith('/auth/guest/start')) return { ok: true, json: async () => ({ token: 'jwt' }) }
-      if (url.includes('/api/odds/snapshot/123')) {
-        return { ok: true, json: async () => ([{ SuperOddsType: '1X2', PriceNames: ['part1', 'x', 'part2'], Pct: ['62', '22', '16'] }]) }
-      }
-      if (url.includes('/api/fixtures/snapshot')) {
-        return { ok: true, json: async () => ([{ FixtureId: 123, Participant1: 'A', Participant2: 'B' }]) }
-      }
-      // the LLM completion call - a weak model slipping in jargon and a raw price tick despite the prompt
-      return { ok: true, json: async () => ({ choices: [{ message: { content: '{"call":"A offers value at odds of 3267","confidence":0.6}' } }] }) }
-    }) as unknown as typeof fetch
-
-    const out = JSON.parse(await deliverService('txline edge 123'))
-    expect(out.analysis.call).toBe('Odds favour A (62%)')
-    expect(out.analysis.note).toContain('deterministic fallback')
+    expect(out.analysis).toEqual({ call: 'Odds favour A (62%)', confidence: 0.62 })
   })
 
   it('delivers a sharp-movement report with magnitude/confidence/leadingLabel', async () => {
@@ -142,33 +92,5 @@ describe('deliverService routing', () => {
 
     const out = JSON.parse(await deliverService('sharp-movement 999'))
     expect(out).toEqual({ service: 'sharp-movement', fixtureId: '999', error: 'no priced 1X2 market available' })
-  })
-
-  it('reports delivery LLM fallback metadata for txline edge analysis', async () => {
-    global.fetch = vi.fn(async (url: string) => {
-      if (url.endsWith('/auth/guest/start')) return { ok: true, json: async () => ({ token: 'jwt' }) }
-      if (url.includes('/api/odds/snapshot/123')) {
-        return {
-          ok: true,
-          json: async () => ([{
-            SuperOddsType: '1X2',
-            PriceNames: ['part1', 'x', 'part2'],
-            Pct: ['62', '22', '16'],
-          }]),
-        }
-      }
-      return {
-        ok: true,
-        json: async () => ([{ FixtureId: 123, Participant1: 'A', Participant2: 'B' }]),
-      }
-    }) as unknown as typeof fetch
-
-    const out = await deliverServiceResult('txline edge 123', { round: 11 })
-    expect(out.llm).toEqual([expect.objectContaining({
-      round: 11,
-      purpose: 'seller_delivery',
-      status: 'fallback',
-      guardrail: 'deterministic fair-line fallback plus verifier checks',
-    })])
   })
 })

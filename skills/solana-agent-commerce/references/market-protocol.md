@@ -2,7 +2,7 @@
 
 Market messages live in `packages/agent-runtime/src/market/protocol.ts`. Every message carries a `round=<n>` tag — Coral moves opaque strings, so `round` (not Coral) is what correlates a reply to its request.
 
-## 1. Core round messages — the actual settlement path
+## 1. Core round messages
 
 Typed, each with a `format*`/`parse*` pair:
 
@@ -10,18 +10,14 @@ Typed, each with a `format*`/`parse*` pair:
 WANT             round=<n> service=<name> arg=<token> budget=<sol>
 BID              round=<n> price=<sol> by=<seller> [note=<text>]
 AWARD            round=<n> to=<seller> [reason="..."]
-ESCROW_REQUIRED  round=<n> reference=<R> seller=<addr> amount=<sol> deadline=<secs> [settlement=direct|arbiter]
-DEPOSITED        round=<n> reference=<R> buyer=<addr> sig=<sig> [settlement=...] [vault=<pda>] [arbiter=<addr>]
 VERIFY           round=<n> sha=<hash> service=<name> arg=<token> payload=<raw>
 VERIFIED         round=<n> verdict=pass|fail by=<verifier> [sha=<hash>] [reason="..."]
-LLM_USED         round=<n> agent=<name> purpose=<name> status=used|fallback|skipped|error [provider=] [model=] [usedFor=] [inputHash=] [outputHash=] affectedFunds=false [reason="..."] [guardrail="..."]
 ```
 
-`ESCROW_REQUIRED`/`DEPOSITED` are not a legacy path kept for backward compatibility — they are the primary settlement primitive every CoralOS round uses. Treat them as load-bearing.
+## 2. Payment messages — the actual settlement path
 
-## 2. Generic payment messages — for rails outside the escrow round
-
-Also typed, same file:
+Also typed, same file. **These are the primary settlement primitive** every CoralOS round uses — the
+seller's `AWARD` reply always requests `rail=x402`:
 
 ```text
 PAYMENT_REQUIRED  round=<n> rail=<rail> amount=<amount> currency=<asset> reference=<id> [seller=] [url=] [deadline=]
@@ -31,18 +27,42 @@ SETTLED           round=<n> rail=<rail> reference=<id> [amount=] [currency=] [si
 REFUNDED          round=<n> rail=<rail> reference=<id> [amount=] [currency=] [sig=] [reason="..."]
 ```
 
-These aren't hypothetical — the real consumer is `packages/payment-runtime/src/procure.ts`'s `procureUpstream()`, used by `coral-agents/seller-agent` (`PROCURE_RAIL=x402`) to post its own upstream purchase onto the market thread (unmentioned — bus-visible, buyer-loop-invisible) so `examples/txodds/feed` can fold it into the round's proof receipts. That's a side leg (the seller buying something it needs), not the buyer-seller settlement itself.
+There is no escrow message in this list — `ESCROW_REQUIRED`/`DEPOSITED` were removed from
+`protocol.ts`; they no longer exist. Payment is direct and final: the buyer signs a transfer
+(`PAYMENT_PROOF`, not yet submitted), the seller submits + verifies it on-chain, then delivers.
+`REFUNDED` is kept as generic wire-protocol support for rails that *do* have a refund concept (e.g. a
+fork re-enabling the escrow programs), but the default x402 flow never emits it — there is no refund
+path once a payment is confirmed.
 
-`rail` is typed as `PaymentRailKind` in this file, which still lists retired kinds — `pay-sh`, `spl-usdc`, `allowance`, `embedded-wallet`, `payout` — that `packages/payment-runtime` no longer implements. Only `solana-pay` | `escrow` | `x402` have a working rail behind them; don't format a message with one of the retired kinds expecting a rail to exist for it.
+**The same message types carry two different legs**, distinguished by `reference` and order of
+appearance, not by anything in the message shape itself:
+
+1. **Primary settlement** — the buyer paying the seller for the round. Always `rail=x402`. The
+   *first* `PAYMENT_REQUIRED` seen in a round is always this leg (`AWARD` triggers it immediately).
+2. **Upstream procurement** (optional) — the seller, already paid, buying its own upstream resource
+   before delivering (`PROCURE_RAIL=x402`, `packages/payment-runtime/src/procure.ts`'s
+   `procureUpstream()`). A *different* `reference`. Posted on the market thread unmentioned
+   (bus-visible, buyer-loop-invisible) so `examples/txodds/feed` can fold it into the round's proof
+   receipts separately from the primary payment.
+
+If you're folding these messages (like `examples/txodds/feed/src/foldRounds.ts` does), key off
+`rail === 'x402' && !round.payment` to claim the primary leg; anything else with a `PAYMENT_REQUIRED`
+is a procurement leg.
+
+`rail` is typed as `PaymentRailKind` in this file, which still lists retired kinds — `pay-sh`,
+`spl-usdc`, `allowance`, `embedded-wallet`, `payout` — that `packages/payment-runtime` no longer
+implements. Only `x402` | `solana-pay` | `escrow` have a working rail behind them; don't format a
+message with one of the retired kinds expecting a rail to exist for it.
 
 ## 3. Untyped verbs
 
-`DELIVERED` and `RELEASED`/`ARBITER_RELEASED` have **no** formatter/parser in `protocol.ts`. Agents build and match them as plain strings:
+`DELIVERED` has **no** formatter/parser in `protocol.ts`. Agents build and match it as a plain string:
 
-- `` `DELIVERED round=${deposited.round} ${delivery.payload}` `` — built directly in `seller-agent/src/index.ts`. `buyer-agent/src/index.ts` matches with `verb(t) === 'DELIVERED'` and strips the prefix with a regex. `payload` is free text (usually JSON), always the last field on the line, so it may contain spaces.
-- `` `${releaseVerb} round=${round} sig=${releaseSig} settlement=${requestedSettlement}` `` — `buyer-agent` chooses `releaseVerb` as `ARBITER_RELEASED` or `RELEASED` based on which settlement mode was actually used.
+- `` `DELIVERED round=${order.round} ${delivery.payload}` `` — built directly in `seller-agent/src/index.ts`. `buyer-agent/src/index.ts` matches with `verb(t) === 'DELIVERED'` and strips the prefix with a regex. `payload` is free text (usually JSON), always the last field on the line, so it may contain spaces.
 
-If a change needs a new field on `DELIVERED` or `RELEASED`, prefer promoting it to a typed message in `protocol.ts` over extending the ad-hoc string — that's where round-trip parser tests and the run ledger's expectations live.
+If a change needs a new field on `DELIVERED`, prefer promoting it to a typed message in `protocol.ts`
+over extending the ad-hoc string — that's where round-trip parser tests and the run ledger's
+expectations live.
 
 ## When adding fields
 

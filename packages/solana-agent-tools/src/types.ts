@@ -82,7 +82,7 @@ export interface TransferIntentInput {
   policy?: Policy
   awardedPriceSol?: number
   spentSol?: number
-  lastDepositAt?: number
+  lastPaymentAt?: number
   now?: number
 }
 

@@ -1,8 +1,8 @@
 # TxODDS Example
 
-This example runs the default paid service: TxODDS TxLINE data is read by a server-side proxy, transformed into a fair-line analysis, and optionally settled through devnet Solana escrow.
+This example runs the default paid service: TxODDS TxLINE data is read by a server-side proxy, transformed into a fair-line analysis, and settled directly over x402 on devnet.
 
-> **Free-tier disclaimer:** the TxLINE guest/free-tier access this example subscribes to (`npm run mint`, `agent/txline.ts`) is scoped to the **World Cup 2026 tournament window** and International Friendlies — it is a promotional data grant tied to that event, not a permanent free API. Outside that window, guest subscription or the odds/fixtures endpoints may stop returning live data or may be withdrawn entirely. If you fork this kit after the World Cup 2026 period, expect to either (a) obtain your own commercial TxODDS/TxLINE credentials, or (b) swap in a different data source behind `agent/service.ts` — the market protocol, policy, ledger, and escrow paths are service-agnostic and do not depend on TxODDS specifically. See `WORLDCUP_API.md` for the exact endpoints and constraints this assumption applies to.
+> **Free-tier disclaimer:** the TxLINE guest/free-tier access this example subscribes to (`npm run mint`, `agent/txline.ts`) is scoped to the **World Cup 2026 tournament window** and International Friendlies — it is a promotional data grant tied to that event, not a permanent free API. Outside that window, guest subscription or the odds/fixtures endpoints may stop returning live data or may be withdrawn entirely. If you fork this kit after the World Cup 2026 period, expect to either (a) obtain your own commercial TxODDS/TxLINE credentials, or (b) swap in a different data source behind `agent/service.ts` — the market protocol, policy, ledger, and payment paths are service-agnostic and do not depend on TxODDS specifically. See `WORLDCUP_API.md` for the exact endpoints and constraints this assumption applies to.
 
 ## Layout
 
@@ -12,14 +12,12 @@ examples/txodds/
     txline.ts      TxLINE client
     edge.ts        verified odds -> fair-line analysis
     service.ts     deliverService() wrapper
-    escrow.ts      base escrow client
-    arbiter.ts     arbiter wrapper client
   server/
     proxy.ts       local API proxy (board data, x402 edge reference merchant, CoralOS round launch/forwarding)
     mint.ts        TxLINE token setup helper
   web/             static React UI
   coral/           CoralOS round launcher/config
-  escrow/          Anchor escrow and arbiter programs
+  escrow/          Anchor escrow and arbiter programs (deployed, available; not used by the default flow)
 ```
 
 ## Local Flow
@@ -31,7 +29,7 @@ examples/txodds/
 | Proxy | `8801` | TxLINE access, board data, x402 edge reference merchant, CoralOS round launch/forwarding. |
 | Coral Console | `5555` | Built-in Coral Server console at `/ui/console`, started/probed when Docker is available. |
 | Feed | `4000` | CoralOS session reader and run ledger replay API. |
-| Web UI | `3020` | Fixture board plus the live CoralOS agent feed (WANT/BID/AWARD/escrow/verify/release). |
+| Web UI | `3020` | Fixture board plus the live CoralOS agent feed (WANT/BID/AWARD/payment/verify/settle). |
 
 The browser only calls the local proxy. TxLINE tokens and keypairs stay server-side.
 
@@ -60,13 +58,6 @@ Required for live settlement:
 - buyer wallet funded with devnet SOL;
 - devnet `SOLANA_RPC_URL` or the default devnet endpoint.
 
-Optional for live model output:
-
-- `LLM_PROVIDER`;
-- provider key such as `GROQ_API_KEY` (recommended — free, renewing rate limit), `VENICE_API_KEY`, `OPENAI_API_KEY`, or `ANTHROPIC_API_KEY`.
-
-Without a provider key, the analysis path can return deterministic fallback output.
-
 ## Proxy API
 
 | Endpoint | Purpose |
@@ -78,14 +69,13 @@ Without a provider key, the analysis path can return deterministic fallback outp
 
 ## Settlement
 
-The example uses two deployed devnet programs:
+The buyer pays the seller directly over x402 — signed by the buyer, submitted and verified on-chain
+by the seller, before delivery. Direct and final: there is no escrow and no refund path. The
+delivery hash/reference is recorded with the payment transaction signature in the run ledger.
 
-| Program | ID | Role |
-|---|---|---|
-| Escrow | `R5NWNg9eRLWWQU81Xbzz5Du1k7jTDeeT92Ty6qCeXet` | Base SOL escrow PDA. |
-| Arbiter | `FJtuVXsyXuRKqgJBEPAXmktkd13CqStapgevzGwYktXd` | Vault-as-buyer wrapper for neutral release/refund. |
-
-The delivery hash/reference is recorded with transaction signatures in the run ledger.
+Two escrow/arbiter Anchor programs remain deployed to devnet and available as an alternative
+building block (not used by this example's default flow) — see the root `README.md`'s Escrow
+Programs section.
 
 ## CoralOS Round
 
@@ -103,7 +93,7 @@ Requirements:
 - Docker;
 - built agent images;
 - `TXLINE_API_KEY`;
-- funded buyer and arbiter keypairs.
+- a funded buyer keypair.
 
 See `coral/README.md`.
 

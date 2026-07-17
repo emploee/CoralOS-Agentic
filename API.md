@@ -42,15 +42,13 @@ if (msg.verb === 'BID') {
 | `WANT` | Buyer → thread | Request for a service at a budget. |
 | `BID` | Seller → thread | Price offer for the want. |
 | `AWARD` | Buyer → thread | Selects a seller and confirms price. |
-| `ESCROW_REQUIRED` | Buyer → thread | Requires escrow deposit before delivery. |
-| `DEPOSITED` | Buyer → thread | Confirms escrow deposit with tx signature. |
+| `PAYMENT_REQUIRED` | Seller → buyer | Payment terms for the award — the primary settlement leg, `rail=x402` by default. |
+| `PAYMENT_PROOF` | Buyer → seller | Buyer's signed-but-unsubmitted transfer, bound to the reference. |
+| `PAYMENT_CONFIRMED` | Seller → buyer | Seller submitted + verified the payment on-chain. |
 | `DELIVERED` | Seller → thread | Delivery payload with content hash. |
-| `VERIFY` | Buyer → verifier | Request delivery verification. |
+| `VERIFY` | Buyer → verifier | Request delivery verification (informational — payment already settled). |
 | `VERIFIED` | Verifier → thread | `pass` or `fail` with reason. |
-| `PAYMENT_REQUIRED` | Seller → buyer | Rail-based payment request. |
-| `PAYMENT_PROOF` | Buyer → seller | Payment proof (tx signature, reference). |
-| `PAYMENT_CONFIRMED` | Seller → thread | Payment verified on-chain. |
-| `SETTLED` | System → thread | Round complete. |
+| `SETTLED` | Buyer → thread | Round complete. |
 
 ## Payment Rails
 
@@ -139,50 +137,6 @@ const receipt = toProofReceipt({
 // Write to run ledger
 ```
 
-## LLM Integration
-
-### Basic Completion
-
-```ts
-import { complete } from '@pay/agent-runtime'
-
-const analysis = await complete({
-  system: 'You are a concise analyst. Return structured JSON.',
-  user: JSON.stringify(apiResponse),
-  maxTokens: 512,
-})
-```
-
-### With Model Override
-
-```ts
-const result = await complete({
-  system: 'Summarize this data in one sentence.',
-  user: rawPayload,
-  model: 'gpt-4o-mini',   // overrides LLM_MODEL env var
-  maxTokens: 128,
-})
-```
-
-### Bounded Tool Loop
-
-```ts
-import { runToolLoop, BudgetGuard, StepCounter } from '@pay/agent-runtime'
-
-const outcome = await runToolLoop({
-  system: 'You are a pricing agent. Use the tools to decide on a bid.',
-  tools: [clampPriceTool, submitBidTool],
-  finalTool: 'submit_bid_decision',
-  budget: new BudgetGuard({ maxToolCalls: 8, maxSpendLamports: 0, maxDurationSecs: 30 }),
-  steps: new StepCounter(4),
-  llm: complete,
-})
-
-if (outcome.finalInput) {
-  console.log(outcome.finalInput.bid, outcome.finalInput.priceSol)
-}
-```
-
 ## Policy Enforcement
 
 ```ts
@@ -268,8 +222,8 @@ await coral.postMessage(mention.threadId, formatBid({
 ```ts
 import { createHarness } from '@pay/harness-runtime'
 
-// node-llm adapter: runs deliverService() in-process
-const harness = createHarness('node-llm', {
+// in-process adapter: runs deliverService() in this process
+const harness = createHarness('in-process', {
   deliverService: async (want, cfg) => {
     const data = await fetch('https://api.example.com/data')
     return { payload: await data.json(), contentHash: hash(data) }
@@ -328,7 +282,7 @@ AGENT_NAME = "seller-myservice"
 PERSONA = "myservice"
 SERVICES = "my-api-service"
 FLOOR_SOL = "0.01"
-HARNESS = "node-llm"
+HARNESS = "in-process"
 MY_API_KEY = "${MY_API_KEY}"
 ```
 
@@ -365,19 +319,11 @@ app.get('/api/premium-data', async (req, res) => {
 | `SOLANA_RPC_URL` | agent-runtime | Solana RPC endpoint. Devnet enforced unless `ALLOW_MAINNET=1`. |
 | `BUYER_KEYPAIR_B58` | agent-runtime | Buyer wallet (base58 secret key). |
 | `SELLER_WALLET` | agent-runtime | Seller's receive-only public key. |
-| `SELLER_KEYPAIR_B58` | payment-runtime | Seller's spend key (for x402 procurement). |
-| `ARBITER_KEYPAIR_B58` | payment-runtime | Arbiter authority for escrow release/refund. |
-| `LLM_PROVIDER` | agent-runtime | `groq`, `venice`, `openai`, or `anthropic`. Groq recommended — free, renewing rate limit. |
-| `GROQ_API_KEY` | agent-runtime | Groq API key. |
-| `VENICE_API_KEY` | agent-runtime | Venice API key. |
-| `OPENAI_API_KEY` | agent-runtime | OpenAI API key. |
-| `ANTHROPIC_API_KEY` | agent-runtime | Anthropic API key. |
-| `LLM_MODEL` | agent-runtime | Model override. |
+| `SELLER_KEYPAIR_B58` | payment-runtime | Seller's spend key (for x402 upstream procurement). |
 | `CORAL_CONNECTION_URL` | agent-runtime | CoralOS server URL (set by CoralOS at container launch). |
 | `PROCURE_RAIL` | payment-runtime | Set to `x402` to enable upstream procurement. |
 | `PROCURE_X402_URL` | payment-runtime | x402 endpoint URL. |
 | `ALLOW_MAINNET` | agent-runtime | Set to `1` to allow mainnet RPC URLs. |
-| `BID_REVIEW_ENABLED` | harness-runtime | Set to `1` to enable adversarial bid review. |
 
 ## Integration Patterns
 
@@ -403,7 +349,7 @@ const proof = await rail.verifyPayment(request)
 Wire CoralOS agents to any backend:
 
 ```ts
-import { CoralClient, complete, PolicyEngine } from '@pay/agent-runtime'
+import { CoralClient, PolicyEngine } from '@pay/agent-runtime'
 import { createRailRouter } from '@pay/payment-runtime'
 
 const coral = new CoralClient({ url: process.env.CORAL_CONNECTION_URL, agentName: 'seller-api' })

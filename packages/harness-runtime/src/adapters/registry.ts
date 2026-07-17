@@ -1,18 +1,18 @@
 /**
- * Adapter registry — the seller picks its harness with `HARNESS=<name>` (default node-llm, the
+ * Adapter registry — the seller picks its harness with `HARNESS=<name>` (default in-process, the
  * always-works baseline; demos must never depend on an external harness booting).
  *
- *   node-llm      the in-process baseline (wraps the seller's deliverService fork point)
+ *   in-process    wraps the seller's deliverService fork point, in this process
  *   claude-code   headless Claude Code in an isolated workdir (+ optional Coral MCP injection)
  *   cli           any other harness: HARNESS_CMD is the argv, JSON array or whitespace-split
  *                 (e.g. Hermes: HARNESS=cli HARNESS_CMD='hermes {prompt}' HARNESS_NAME=hermes)
  */
 import type { HarnessAdapter } from '../types.js'
-import { nodeLlmAdapter, type DeliverFn } from './node-llm.js'
+import { inProcessAdapter, type DeliverFn } from './in-process.js'
 import { claudeCodeAdapter } from './claude-code.js'
 import { cliHarnessAdapter } from './subprocess.js'
 
-export const KNOWN_HARNESSES = ['node-llm', 'claude-code', 'cli'] as const
+export const KNOWN_HARNESSES = ['in-process', 'claude-code', 'cli'] as const
 
 function parseCommand(raw: string): string[] {
   if (raw.trim().startsWith('[')) return JSON.parse(raw) as string[]
@@ -20,10 +20,10 @@ function parseCommand(raw: string): string[] {
 }
 
 export function adapterFromEnv(deliver: DeliverFn, env: NodeJS.ProcessEnv = process.env): HarnessAdapter {
-  const harness = (env.HARNESS ?? 'node-llm').toLowerCase()
+  const harness = (env.HARNESS ?? 'in-process').toLowerCase()
   switch (harness) {
-    case 'node-llm':
-      return nodeLlmAdapter(deliver)
+    case 'in-process':
+      return inProcessAdapter(deliver)
     case 'claude-code':
       return claudeCodeAdapter(env)
     case 'cli': {

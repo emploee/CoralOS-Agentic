@@ -2,13 +2,12 @@
  * Run ledger types — the durable record of one paid market round.
  *
  * The moment money moves, "what did the agent actually do?" must have a clickable answer. A
- * RunRecord is that answer: the WANT, every bid, the award reasoning, the escrow terms + deposit,
- * the delivered artifact (content-hashed, same sha256 convention the txodds proxy binds into the
- * escrow `reference`), and every Solana signature with an Explorer link. `transcript.jsonl` beside
- * it keeps the raw Coral messages, so a finished round can be replayed with coral-server down.
+ * RunRecord is that answer: the WANT, every bid, the award reasoning, the payment terms + the
+ * confirmed x402 transfer, the delivered artifact (content-hashed, same sha256 convention the
+ * payment `reference` binds), and every Solana signature with an Explorer link. `transcript.jsonl`
+ * beside it keeps the raw Coral messages, so a finished round can be replayed with coral-server down.
  */
 import { createHash } from 'node:crypto'
-import type { LlmUse } from '../market/protocol.js'
 
 export interface TranscriptEntry {
   sender: string
@@ -20,7 +19,7 @@ export interface TranscriptEntry {
 }
 
 export interface TxEntry {
-  /** What the signature settles: 'deposit' | 'release' | 'refund' (open for future kinds). */
+  /** What the signature settles: 'payment' (open for future kinds). */
   kind: string
   sig: string
   explorer: string
@@ -69,27 +68,25 @@ export interface RunRecord {
   runId: string
   session: string
   round: number
-  /** Mirrors the feed's RoundStatus: bidding | awarded | deposited | delivered | settled | refunded. */
+  /** Mirrors the feed's RoundStatus: bidding | awarded | paid | delivered | settled. */
   status: string
   want?: { service: string; arg: string; budgetSol: number }
   bids: { by: string; priceSol: number; note?: string }[]
   /** Sellers in the market that self-selected out of this round. */
   declined?: string[]
   award?: { to: string; reason?: string }
-  escrow?: {
+  /** The x402 payment terms and its on-chain confirmation, once the seller has verified it. */
+  payment?: {
     reference: string
     seller: string
     amountSol: number
-    deadlineSecs: number
-    deposit?: { sig: string; buyer: string }
+    confirmed?: { sig: string; buyer: string }
   }
   delivery?: { raw: string; data?: unknown; sha256: string }
   /** Verifier verdict (Phase 3) — absent until a verifier agent gates the release. */
   verification?: unknown
   /** Payment-rail receipts for this round (e.g. the seller's upstream procurement legs). */
   proofReceipts?: ProofReceipt[]
-  /** Model-selection metadata emitted by agents; prompts and completions are intentionally absent. */
-  llm?: LlmUse[]
   /** Was the delivered prediction/signal actually right — absent until a grading pass adds it. */
   outcome?: ScoreOutcome
   txs: TxEntry[]
@@ -102,12 +99,10 @@ export interface RunProofArtifact {
   want?: string
   bid?: string
   award?: string
-  escrow?: string
-  depositSignature?: string
+  payment?: string
+  paymentSignature?: string
   deliveryHash?: string
   verified: boolean
-  releaseSignature?: string
-  refundSignature?: string
   finalState: string
 }
 
@@ -119,23 +114,20 @@ export function runId(session: string, round: number): string {
 export function proofArtifact(run: RunRecord): RunProofArtifact {
   const awardedBid = run.award ? run.bids.find((b) => b.by === run.award?.to) : undefined
   const verification = run.verification as { verdict?: string } | undefined
-  const tx = (kind: string): string | undefined => run.txs.find((t) => t.kind === kind)?.sig
   return {
     roundId: run.runId,
     ...(run.want ? { want: `${run.want.service} ${run.want.arg} budget=${run.want.budgetSol}` } : {}),
     ...(awardedBid ? { bid: `${awardedBid.by} price=${awardedBid.priceSol}` } : {}),
     ...(run.award ? { award: run.award.to } : {}),
-    ...(run.escrow ? { escrow: `${run.escrow.reference} seller=${run.escrow.seller} amount=${run.escrow.amountSol}` } : {}),
-    ...(run.escrow?.deposit ? { depositSignature: run.escrow.deposit.sig } : {}),
+    ...(run.payment ? { payment: `${run.payment.reference} seller=${run.payment.seller} amount=${run.payment.amountSol}` } : {}),
+    ...(run.payment?.confirmed ? { paymentSignature: run.payment.confirmed.sig } : {}),
     ...(run.delivery ? { deliveryHash: run.delivery.sha256 } : {}),
     verified: verification?.verdict === 'pass',
-    ...(tx('release') ? { releaseSignature: tx('release') } : {}),
-    ...(tx('refund') ? { refundSignature: tx('refund') } : {}),
     finalState: run.status.toUpperCase(),
   }
 }
 
-/** Hex sha256 — the delivery/content hash convention shared with the escrow `reference` binding. */
+/** Hex sha256 — the delivery/content hash convention shared with the payment `reference` binding. */
 export function sha256Hex(text: string): string {
   return createHash('sha256').update(text).digest('hex')
 }

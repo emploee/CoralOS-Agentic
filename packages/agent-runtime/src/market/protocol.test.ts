@@ -1,10 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   formatWant, parseWant, formatBid, parseBid, formatAward, parseAward,
-  formatEscrowRequired, parseEscrowRequired, formatDeposited, parseDeposited,
   formatPaymentRequired, parsePaymentRequired, formatPaymentProof, parsePaymentProof,
   formatPaymentConfirmed, parsePaymentConfirmed, formatSettled, parseSettled,
-  formatRefunded, parseRefunded, formatLlmUsed, parseLlmUsed,
+  formatRefunded, parseRefunded,
   selectBids, pickCheapest, verb, messageRound,
   type Bid,
 } from './protocol.js'
@@ -31,7 +30,7 @@ describe('BID round-trip', () => {
   })
 })
 
-describe('AWARD + ESCROW_REQUIRED round-trip', () => {
+describe('AWARD round-trip', () => {
   it('AWARD', () => {
     expect(parseAward(formatAward(9, 'seller-cheap'))).toEqual({ round: 9, to: 'seller-cheap' })
   })
@@ -39,14 +38,6 @@ describe('AWARD + ESCROW_REQUIRED round-trip', () => {
     const msg = formatAward(9, 'seller-cheap', 'best value')
     expect(msg).toContain('reason="best value"')
     expect(parseAward(msg)).toEqual({ round: 9, to: 'seller-cheap', reason: 'best value' })
-  })
-  it('ESCROW_REQUIRED', () => {
-    const t = { round: 9, reference: 'R3f', seller: 'SeLLeRwa11et', amountSol: 0.0006, deadlineSecs: 600, settlement: 'arbiter' as const }
-    expect(parseEscrowRequired(formatEscrowRequired(t))).toEqual(t)
-  })
-  it('DEPOSITED', () => {
-    const d = { round: 9, reference: 'R3f', buyer: 'BuYeRwa11et', sig: '5h2abc', settlement: 'arbiter' as const, vault: 'VaU1t', arbiter: 'ArB1t3r' }
-    expect(parseDeposited(formatDeposited(d))).toEqual(d)
   })
 })
 
@@ -79,46 +70,6 @@ describe('generic payment messages', () => {
 
     const refunded = { round: 10, rail: 'escrow' as const, reference: 'order-10', reason: 'verifier failed' }
     expect(parseRefunded(formatRefunded(refunded))).toEqual(refunded)
-  })
-})
-
-describe('LLM_USED', () => {
-  it('formats and parses model metadata without prompt or response text', () => {
-    const msg = formatLlmUsed({
-      round: 9,
-      agent: 'buyer-agent',
-      purpose: 'buyer_award',
-      status: 'used',
-      provider: 'openai',
-      model: 'gpt-4o-mini',
-      usedFor: 'seller_delivery_summary',
-      inputHash: 'abc123',
-      outputHash: 'def456',
-      affectedFunds: false,
-      reason: 'selected best value',
-      guardrail: 'winner must match collected BID set',
-      createdAt: '2026-07-06T00:00:00.000Z',
-    })
-    expect(msg).toContain('LLM_USED round=9')
-    expect(parseLlmUsed(msg)).toEqual({
-      round: 9,
-      agent: 'buyer-agent',
-      purpose: 'buyer_award',
-      status: 'used',
-      provider: 'openai',
-      model: 'gpt-4o-mini',
-      usedFor: 'seller_delivery_summary',
-      inputHash: 'abc123',
-      outputHash: 'def456',
-      affectedFunds: false,
-      reason: 'selected best value',
-      guardrail: 'winner must match collected BID set',
-      createdAt: '2026-07-06T00:00:00.000Z',
-    })
-  })
-
-  it('rejects unknown statuses', () => {
-    expect(parseLlmUsed('LLM_USED round=1 agent=a purpose=p status=maybe')).toBeNull()
   })
 })
 

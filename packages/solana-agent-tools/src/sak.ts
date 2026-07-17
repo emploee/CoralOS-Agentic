@@ -42,7 +42,7 @@ const transferIntentSchema = z.object({
   reference: z.string().min(32).optional(),
   awardedPriceSol: z.number().positive().optional(),
   spentSol: z.number().nonnegative().optional(),
-  lastDepositAt: z.number().nonnegative().optional(),
+  lastPaymentAt: z.number().nonnegative().optional(),
   now: z.number().nonnegative().optional(),
   policy: z.object({
     maxSolPerRound: z.number().positive().optional(),
@@ -50,7 +50,6 @@ const transferIntentSchema = z.object({
     allowedServices: z.array(z.string()).optional(),
     expectedPayout: z.string().optional(),
     minIntervalMs: z.number().nonnegative().optional(),
-    requireVerifier: z.boolean().optional(),
   }).optional(),
 })
 

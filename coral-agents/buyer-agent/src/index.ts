@@ -1,67 +1,58 @@
 /**
  * Buyer agent - the marketplace buyer. Broadcasts a WANT into a shared CoralOS thread, collects
- * competing LLM bids, picks the best value, and settles through the escrow contract:
+ * competing bids, picks the best value, and settles directly through x402:
  *
- *   WANT -> (collect BIDs for a window) -> AWARD winner -> wait ESCROW_REQUIRED ->
- *   deposit() into escrow -> DEPOSITED -> wait DELIVERED -> release() to the seller
+ *   WANT -> (collect BIDs for a window) -> AWARD winner -> wait PAYMENT_REQUIRED ->
+ *   sign + send PAYMENT_PROOF -> wait PAYMENT_CONFIRMED -> wait DELIVERED -> SETTLED
  *
- * Selection uses the LLM (best value), with a deterministic cheapest fallback so a slow/missing model
- * never hangs the round. Settlement is escrow-only - funds are conditional on delivery.
+ * Selection is deterministic (price weighed against track record). Settlement is x402: the buyer
+ * signs and hands the seller a transfer that pays it directly and finally, before delivery - there
+ * is no escrow, so a seller that takes payment and never delivers keeps it. Reputation
+ * (ledger/reputation.ts) is the only defense against that, not a refund path. See PAY.md for the
+ * trade-off this accepts against the kit's former escrow-based settlement.
  *
  * Env: BUYER_KEYPAIR_B58 (signs), BUYER_MAX_SOL (budget), BUYER_SERVICE/BUYER_ARG (the WANT),
  *      MARKET_SELLERS (csv of seller names), BID_WINDOW_MS, CYCLE_INTERVAL_MS, RETRY_INTERVAL_MS,
- *      SOLANA_RPC_URL, VENICE_API_KEY|GROQ_API_KEY|ANTHROPIC_API_KEY|OPENAI_API_KEY (+ LLM_PROVIDER), TRACE=1.
+ *      SOLANA_RPC_URL, TRACE=1.
  *
- * The deposit/release calls settle against the escrow program deployed to devnet; they need a funded
- * devnet wallet + live RPC, so they run in a live market session rather than in `npm test`/CI.
+ * The payment calls settle on devnet; they need a funded devnet wallet + live RPC, so they run in a
+ * live market session rather than in `npm test`/CI.
  */
 import {
-  startCoralAgent, loadKeypairB58,
-  formatWant, parseBid, parseEscrowRequired, formatAward, formatDeposited,
-  formatVerify, parseVerified, formatLlmUsed, sha256Hex, enforce, policyFromEnv,
-  selectBids, verb, messageRound, logLlmStartup,
-  type Bid, type EscrowTerms, type CoralAgentContext,
+  startCoralAgent, loadKeypairB58, keypairSigner, signTransferTransaction,
+  formatWant, parseBid, parsePaymentRequired, formatAward,
+  formatPaymentProof, parsePaymentConfirmed, formatSettled,
+  formatVerify, parseVerified, sha256Hex, enforce, policyFromEnv,
+  selectBids, verb, messageRound,
+  type Bid, type PaymentRequired, type CoralAgentContext,
 } from '@pay/agent-runtime'
-import { PublicKey } from '@solana/web3.js'
-import { makeProgram, deposit, release, escrowPda } from './settlement/escrow.js'
-import {
-  ARBITER_PROGRAM_ID, ensureArbiterConfig, ensureArbiterFunded, makeArbiter,
-  openArbitrated, arbitrateRelease, arbitratedEscrowPda,
-} from './settlement/arbiter.js'
 import { fetchNextWant } from './feed/wantFeed.js'
 import { pickWinner } from './award/award.js'
 import { decideVerifyEscalation } from './verify/verify-gate.js'
 
-const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
 const NAME = process.env.AGENT_NAME ?? 'buyer-agent'
 const BUDGET = Number(process.env.BUYER_MAX_SOL ?? '0.001')
 const SERVICE = process.env.BUYER_SERVICE ?? 'txline'
 // Rotate through several args so each round trades a *different* thing (BUYER_ARGS=csv of fixture ids,
 // else the single BUYER_ARG). This is what stops the market looking like the same round on a loop.
 const ARGS = (process.env.BUYER_ARGS || process.env.BUYER_ARG || 'SOL-USDC').split(',').map((s) => s.trim()).filter(Boolean)
-const ARG = ARGS[0]
 const BID_WINDOW_MS = Number(process.env.BID_WINDOW_MS ?? '5000')
 const CYCLE_MS = Number(process.env.CYCLE_INTERVAL_MS ?? '30000')
 // Distinct from CYCLE_MS: CYCLE_MS is the steady-state cadence between rounds (round.ts sets it as
-// high as 1h for a production-like demo). A round that got no bids or no escrow terms in its window
+// high as 1h for a production-like demo). A round that got no bids or no payment terms in its window
 // is usually a transient coordination miss (e.g. coral-server still warming up its first sessions),
 // not "nothing to do until next cycle" - so it retries on this much shorter clock instead of
 // inheriting CYCLE_MS and going quiet for the full cycle.
 const RETRY_MS = Number(process.env.RETRY_INTERVAL_MS ?? '15000')
 const SELLERS = (process.env.MARKET_SELLERS ?? 'seller-agent')
   .split(',').map((s) => s.trim()).filter(Boolean)
-// F3: the payout wallet the buyer expects (personas share one in the demo). If set, the buyer refuses
-// to deposit to an ESCROW_REQUIRED whose seller= pubkey differs - binding the award to the payout.
+// The payout wallet the buyer expects (personas share one in the demo). If set, the buyer refuses
+// to pay a PAYMENT_REQUIRED whose seller= pubkey differs - binding the award to the payout.
 const EXPECTED_SELLER_WALLET = process.env.SELLER_WALLET ?? ''
-const SETTLEMENT_MODE = (process.env.SETTLEMENT_MODE ?? 'arbiter').toLowerCase()
-// Independent delivery verification (coral-agents/verifier-agent): when set, the buyer hands each
-// delivery to this agent and releases ONLY on a VERIFIED pass - no verdict means funds stay in
-// escrow, refundable after the deadline.
+// Independent delivery verification (coral-agents/verifier-agent): informational only now - the
+// payment already settled before delivery, so a fail verdict feeds reputation, it can't reclaim funds.
 const VERIFIER = process.env.VERIFIER_AGENT ?? ''
 const VERIFY_WINDOW_MS = Number(process.env.VERIFY_WINDOW_MS ?? '20000')
-// Per-round judgment on whether to actually escalate to the verifier, instead of the static
-// VERIFIER on/off above. Off by default: skipping escalation forfeits that round's settlement if
-// the guess is wrong (see verify-gate.ts), so this is opt-in, not a free efficiency win.
 const VERIFY_GATE_ENABLED = (process.env.VERIFY_GATE_ENABLED ?? '0') === '1'
 // Event mode (the research market): poll this feed for the next job instead of rotating BUYER_ARGS.
 const WANT_FEED = process.env.WANT_FEED_URL ?? ''
@@ -70,7 +61,7 @@ const REPUTATION_URL = process.env.REPUTATION_URL ?? ''
 const trace = process.env.TRACE === '1'
 
 // The fund-moving choke point (POLICY_* env): spend caps, service allowlist, payout binding,
-// post-award price binding, rate limit, verifier gate. Every deposit/release passes through it.
+// post-award price binding, rate limit. Every payment passes through it BEFORE it's signed.
 const policy = policyFromEnv(process.env, {
   budgetSol: BUDGET,
   service: SERVICE,
@@ -97,11 +88,9 @@ async function waitFor<T>(
   return null
 }
 
-logLlmStartup(NAME)
-
 await startCoralAgent({ agentName: NAME }, async (ctx) => {
   const buyer = loadKeypairB58('BUYER_KEYPAIR_B58')
-  const arbiter = SETTLEMENT_MODE === 'arbiter' ? loadKeypairB58('ARBITER_KEYPAIR_B58') : null
+  const signer = keypairSigner(buyer)
   console.error(`[buyer] market buyer - wallet=${buyer.publicKey.toBase58()} budget=${BUDGET} sellers=[${SELLERS.join(',')}]`)
 
   const participants = [...SELLERS, ...(VERIFIER ? [VERIFIER] : [])]
@@ -109,14 +98,9 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
     try { await ctx.waitForAgent(s, 8000) } catch { /* agent may already be present */ }
   }
   const thread = await ctx.createThread('market', participants)
-  const program = await makeProgram(buyer, RPC)
-  if (arbiter) {
-    await ensureArbiterConfig(buyer, arbiter.publicKey, RPC)
-    await ensureArbiterFunded(buyer, arbiter.publicKey, RPC)
-  }
   let round = 0
   let spentSol = 0
-  let lastDepositAt: number | undefined
+  let lastPaymentAt: number | undefined
 
   while (true) {
     try {
@@ -153,63 +137,46 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
       if (pool.length === 0) { console.error(`[buyer] round ${round}: NO_SELLERS`); await sleep(RETRY_MS); continue }
 
       // -- award the best value (price × track record) -------------------------
-      const { winner, reason, llm } = await pickWinner(
+      const { winner, reason } = await pickWinner(
         { round, service, arg, budgetSol: budget }, pool, NAME, REPUTATION_URL || undefined,
       )
-      await ctx.send(formatLlmUsed(llm), thread)
       await ctx.send(formatAward(round, winner.by, reason), thread, [winner.by])
 
-      // -- settle through escrow: deposit -> DEPOSITED -> wait DELIVERED -> release
-      const terms = await waitFor<EscrowTerms>(ctx, round, parseEscrowRequired, 15_000)
-      if (!terms) { console.error(`[buyer] round ${round}: no escrow terms from ${winner.by}`); await sleep(RETRY_MS); continue }
-      // One choke point for everything that must be true before funds move (subsumes payoutMatches).
-      const depositDecision = enforce({
-        kind: 'deposit', round, service, amountSol: terms.amountSol, payout: terms.seller,
-        awardedPriceSol: winner.priceSol, spentSol, ...(lastDepositAt != null ? { lastDepositAt } : {}), now: Date.now(),
+      // -- pay directly via x402: sign a transfer, hand it to the seller to submit -----------
+      const terms = await waitFor<PaymentRequired>(ctx, round, parsePaymentRequired, 15_000)
+      if (!terms?.seller) { console.error(`[buyer] round ${round}: no payment terms from ${winner.by}`); await sleep(RETRY_MS); continue }
+      const amountSol = Number(terms.amount)
+      // One choke point for everything that must be true before funds move - runs BEFORE signing,
+      // since x402 settles immediately: there's no later release step left to gate.
+      const paymentDecision = enforce({
+        kind: 'payment', round, service, amountSol, payout: terms.seller,
+        awardedPriceSol: winner.priceSol, spentSol, ...(lastPaymentAt != null ? { lastPaymentAt } : {}), now: Date.now(),
       }, policy)
-      if (!depositDecision.ok) {
-        console.error(`[buyer] round ${round}: POLICY refused deposit - ${depositDecision.violations.join('; ')}`)
+      if (!paymentDecision.ok) {
+        console.error(`[buyer] round ${round}: POLICY refused payment - ${paymentDecision.violations.join('; ')}`)
         await sleep(CYCLE_MS); continue
       }
 
-      const reference = new PublicKey(terms.reference)
-      const seller = new PublicKey(terms.seller)
-      const requestedSettlement = terms.settlement ?? (SETTLEMENT_MODE === 'direct' ? 'direct' : 'arbiter')
-      let depositSig: string
-      let vault: PublicKey | undefined
-      if (requestedSettlement === 'arbiter') {
-        if (!arbiter) throw new Error('ARBITER_KEYPAIR_B58 is required for SETTLEMENT_MODE=arbiter')
-        const opened = await openArbitrated(makeArbiter(buyer, RPC), buyer, seller, reference, terms.amountSol, terms.deadlineSecs)
-        depositSig = opened.sig
-        vault = opened.vault
-      } else {
-        depositSig = await deposit(program, buyer, seller, reference, terms.amountSol, terms.deadlineSecs)
-      }
-      spentSol += terms.amountSol
-      lastDepositAt = Date.now()
-      console.error(`[buyer] round ${round}: DEPOSITED ${terms.amountSol} SOL -> ${winner.by} (session spend ${spentSol.toFixed(6)} SOL)`)
-      if (trace) {
-        if (requestedSettlement === 'arbiter' && vault) {
-          console.error(`[buyer]   arbiter: ${expl('address', ARBITER_PROGRAM_ID.toBase58())}`)
-          console.error(`[buyer]   vault PDA: ${expl('address', vault.toBase58())}`)
-          console.error(`[buyer]   escrow PDA: ${expl('address', arbitratedEscrowPda(vault, reference).toBase58())}`)
-          console.error(`[buyer]   open tx: ${expl('tx', depositSig)}`)
-        } else {
-          console.error(`[buyer]   escrow PDA: ${expl('address', escrowPda(buyer.publicKey, reference).toBase58())}`)
-          console.error(`[buyer]   deposit tx: ${expl('tx', depositSig)}`)
-        }
-      }
+      // Signed, not submitted - the seller (merchant) submits it, mirroring the same x402
+      // client/server split examples/txodds/server/proxy.ts's /api/edge-x402 uses.
+      const proof = await signTransferTransaction(signer, terms.seller, amountSol, {
+        reference: terms.reference,
+        memo: `x402:round-${round}`.slice(0, 100),
+      })
+      spentSol += amountSol
+      lastPaymentAt = Date.now()
+      console.error(`[buyer] round ${round}: PAYMENT_PROOF ${amountSol} SOL -> ${winner.by} (session spend ${spentSol.toFixed(6)} SOL)`)
       await ctx.send(
-        formatDeposited({
-          round,
-          reference: terms.reference,
-          buyer: buyer.publicKey.toBase58(),
-          sig: depositSig,
-          settlement: requestedSettlement,
-          ...(vault && arbiter ? { vault: vault.toBase58(), arbiter: arbiter.publicKey.toBase58() } : {}),
-        }),
+        formatPaymentProof({ round, rail: 'x402', reference: terms.reference, proof, buyer: buyer.publicKey.toBase58() }),
         thread, [winner.by],
       )
+
+      const confirmed = await waitFor(ctx, round, parsePaymentConfirmed, 20_000)
+      if (!confirmed?.paid) {
+        console.error(`[buyer] round ${round}: seller never confirmed payment - x402 has no refund path`)
+        await sleep(CYCLE_MS); continue
+      }
+      if (trace && confirmed.txSignature) console.error(`[buyer]   payment tx: ${expl('tx', confirmed.txSignature)}`)
 
       const delivered = await waitFor(ctx, round, (t) => {
         const r = messageRound(t)
@@ -218,35 +185,26 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
       }, 30_000)
 
       if (delivered) {
-        let verified: 'pass' | 'fail' | undefined
+        // Verification is informational now (feeds reputation) - the payment already settled, so
+        // a fail verdict can no longer block or reclaim it.
         const gate = await decideVerifyEscalation(!!VERIFIER, VERIFY_GATE_ENABLED, winner.by, REPUTATION_URL || undefined)
         if (trace) console.error(`[buyer] round ${round}: verify-gate ${gate.escalate ? 'escalating' : 'skipping'} - ${gate.reason}`)
         if (gate.escalate) {
-          // Hand the exact artifact (content-hashed) to the independent verifier.
           const sha = sha256Hex(delivered.payload)
           await ctx.send(formatVerify({ round, service, arg, sha, payload: delivered.payload }), thread, [VERIFIER])
           const verdict = await waitFor(ctx, round, parseVerified, VERIFY_WINDOW_MS)
-          verified = verdict?.verdict
           if (verdict) console.error(`[buyer] round ${round}: verifier ${verdict.by} says ${verdict.verdict}${verdict.reason ? ` (${verdict.reason})` : ''}`)
         }
-        // Same choke point on the way out: release only passes policy (verifier gate when configured).
-        const releaseDecision = enforce({ kind: 'release', round, ...(verified ? { verified } : {}) }, policy)
-        if (!releaseDecision.ok) {
-          console.error(
-            `[buyer] round ${round}: POLICY refused release - ${releaseDecision.violations.join('; ')}` +
-            ' - funds stay in escrow, refundable after the deadline',
-          )
-          await sleep(CYCLE_MS)
-          continue
-        }
-        const releaseSig = requestedSettlement === 'arbiter' && arbiter
-          ? await arbitrateRelease(makeArbiter(arbiter, RPC), arbiter, seller, reference)
-          : await release(program, buyer, seller, reference)
-        const releaseVerb = requestedSettlement === 'arbiter' ? 'ARBITER_RELEASED' : 'RELEASED'
-        console.error(`[buyer] round ${round}: ${releaseVerb} to ${winner.by} - ${expl('tx', releaseSig)}`)
-        await ctx.send(`${releaseVerb} round=${round} sig=${releaseSig} settlement=${requestedSettlement}`, thread, [winner.by])
+        await ctx.send(
+          formatSettled({
+            round, rail: 'x402', reference: terms.reference, amount: terms.amount,
+            ...(confirmed.txSignature ? { txSignature: confirmed.txSignature } : {}),
+          }),
+          thread, [winner.by],
+        )
+        console.error(`[buyer] round ${round}: SETTLED`)
       } else {
-        console.error(`[buyer] round ${round}: no delivery - funds stay in escrow, refundable after the deadline`)
+        console.error(`[buyer] round ${round}: no delivery - payment was already sent, x402 has no refund path`)
       }
     } catch (e) {
       console.error(`[buyer] round error: ${e}`)

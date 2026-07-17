@@ -1,17 +1,14 @@
 /**
  * Edge analysis — the "verified data → the agent's read" transform, shared by the agent
- * (`deliverService`) and the web proxy (`/api/edge`). Pure except for the LLM call, which is injectable
- * so the deterministic fallback is unit-tested without the network.
+ * (`deliverService`) and the web proxy (`/api/edge`). Pure and fully deterministic.
  *
  * What it sells, honestly: TxODDS gives a **de-margined fair line** — true-probability estimates with
  * the bookmaker's margin removed. From that we derive, per outcome, the implied probability AND its
  * **fair (break-even) decimal odds** = 100 / probability — the price a bettor would need a sportsbook to
  * *beat* for the bet to have value. We do NOT claim a betting edge: that needs an offered price to
  * compare against, which the free tier doesn't carry. The product is the verified fair line + the
- * break-even prices + a one-line plain-language read (LLM, with a deterministic fallback).
+ * break-even prices + a one-line plain-language read.
  */
-import { complete, parseJsonReply, type CompleteOpts } from '@pay/agent-runtime'
-
 export interface EdgeInput {
   fixtureId: number | string
   /** `/api/odds/snapshot/{id}` — array of markets. */
@@ -38,10 +35,9 @@ export interface Edge {
   market?: { names: unknown; pct: unknown }
   /** the verified fair line: every priced outcome + its break-even odds, and the favourite. */
   fair?: { outcomes: FairOutcome[]; favourite?: FairOutcome }
-  analysis: { call: string; confidence?: number; note?: string }
+  analysis: { call: string; confidence?: number }
 }
 
-type Llm = (opts: CompleteOpts) => Promise<string>
 type Rec = Record<string, unknown>
 
 const labelFor = (name: string, teams?: { home: unknown; away: unknown }): string => {
@@ -88,62 +84,24 @@ export function fairLine(
   return { outcomes, favourite }
 }
 
-/** Deterministic plain-language read of the fair line — the no-LLM fallback. */
+/** Deterministic plain-language read of the fair line. */
 export function deterministicCall(
   market: { names: unknown; pct: unknown } | undefined,
   teams: { home: unknown; away: unknown } | undefined,
 ): Edge['analysis'] {
   const { outcomes, favourite } = fairLine(market, teams)
-  if (!favourite) return { call: 'no priced market for this fixture', confidence: 0, note: 'deterministic' }
+  if (!favourite) return { call: 'no priced market for this fixture', confidence: 0 }
   const alt = outcomes.filter((o) => o !== favourite).sort((a, b) => b.pct - a.pct)[0]
   const altTxt = alt ? `; ${alt.label} the main alternative at ${alt.pct.toFixed(0)}%` : ''
   return {
     call: `${favourite.label} is the verified favourite at ${favourite.pct.toFixed(0)}% — fair odds ${favourite.fairOdds.toFixed(2)}${altTxt}.`,
     confidence: Number((favourite.pct / 100).toFixed(2)),
-    note: 'deterministic — add an LLM key for a model read',
   }
 }
 
-// A prompt asking nicely for plain language isn't a guarantee with a small model - this is the actual
-// enforcement. Leftover betting jargon or a raw 3+ digit number discards the reply for the
-// deterministic fallback below, same as an outright LLM failure. Mirrors
-// coral-agents/seller-agent/src/service.ts's identical guard on the same failure mode (separate npm
-// workspace, no shared import path - kept as a local copy like this file's other cross-package logic).
-const JARGON_RE = /\b(implied probability|1x2|underlay|overlay|value)\b/i
-const RAW_NUMBER_RE = /\b\d{3,}\b(?!%)/
-const isPlainEnough = (call: unknown): call is string =>
-  typeof call === 'string' && call.length > 0 && !JARGON_RE.test(call) && !RAW_NUMBER_RE.test(call)
-
-/** Turn the verified snapshots into the sellable product. `llm` is injectable for tests. */
-export async function analyzeEdge(input: EdgeInput, llm: Llm = complete): Promise<Edge> {
+/** Turn the verified snapshots into the sellable product. */
+export async function analyzeEdge(input: EdgeInput): Promise<Edge> {
   const { fixtureId, market, teams } = shape(input)
   const fair = fairLine(market, teams)
-  const matchup = teams ? `${teams.home} v ${teams.away}` : `fixture ${fixtureId}`
-
-  let analysis: Edge['analysis'] | undefined
-  if (fair.favourite) {
-    try {
-      const raw = await llm({
-        system:
-          'You explain football odds to a casual fan, not a trader. You are given a VERIFIED de-margined fair line ' +
-          '— true-probability estimates with the bookmaker margin removed, NOT offered prices. Return JSON {call, ' +
-          'confidence}: `call` is ONE short, plain-English sentence (under 30 words) - who is favoured, how ' +
-          'decisively, and the next-most-likely outcome. No jargon: never say "implied probability", "1X2", ' +
-          '"underlay/overlay", or "value" - say "likely to win", "close match", or "big favourite" instead. Do NOT ' +
-          'claim a betting edge — you only have the fair line, not what any book is offering. confidence 0–1 is how ' +
-          'decisive the favourite is.',
-        user: `${matchup}. Verified fair line: ${JSON.stringify(fair.outcomes.map((o) => ({ outcome: o.label, prob: `${o.pct.toFixed(1)}%`, fairOdds: o.fairOdds })))}`,
-        maxTokens: 160,
-      })
-      const parsed = parseJsonReply<{ call?: unknown; confidence?: unknown }>(raw)
-      if (isPlainEnough(parsed?.call)) {
-        const confidence = Number(parsed?.confidence)
-        analysis = { call: parsed!.call as string, ...(Number.isFinite(confidence) ? { confidence } : {}) }
-      }
-    } catch {
-      /* LLM unavailable → deterministic fallback below */
-    }
-  }
-
-  return { fixtureId, teams, market, fair, analysis: analysis ?? deterministicCall(market, teams) }
+  return { fixtureId, teams, market, fair, analysis: deterministicCall(market, teams) }
 }

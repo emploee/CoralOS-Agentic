@@ -16,22 +16,23 @@ const messages: RawMessage[] = [
   { sender: 'seller-premium', text: 'BID round=1 price=0.0005 by=seller-premium note=available' },
   { sender: 'seller-cheap', text: 'BID round=1 price=0.0002 by=seller-cheap note=available' },
   { sender: 'buyer-agent', text: 'AWARD round=1 to=seller-premium reason="verified data worth the premium"' },
-  { sender: 'seller-premium', text: 'ESCROW_REQUIRED round=1 reference=DKQy seller=7jwB amount=0.0005 deadline=600' },
-  { sender: 'buyer-agent', text: 'DEPOSITED round=1 reference=DKQy buyer=47Dp sig=5syz' },
+  { sender: 'seller-premium', text: 'PAYMENT_REQUIRED round=1 rail=x402 amount=0.0005 currency=SOL reference=DKQy seller=7jwB' },
+  { sender: 'buyer-agent', text: 'PAYMENT_PROOF round=1 rail=x402 reference=DKQy proof=SIGNEDtxBase64 buyer=47Dp' },
+  { sender: 'seller-premium', text: 'PAYMENT_CONFIRMED round=1 rail=x402 reference=DKQy paid=true amount=0.0005 currency=SOL sig=5syz' },
   { sender: 'seller-premium', text: 'DELIVERED round=1 {"coin":"solana","usd":72.33}' },
-  { sender: 'buyer-agent', text: 'RELEASED round=1 sig=3PMa' },
+  { sender: 'buyer-agent', text: 'SETTLED round=1 rail=x402 reference=DKQy amount=0.0005 sig=5syz' },
   { sender: 'buyer-agent', text: 'WANT round=2 service=coingecko arg=BTC-USDC budget=0.001' },
   { sender: 'seller-cheap', text: 'BID round=2 price=0.0002 by=seller-cheap' },
 ]
 
-// A verifier-gated, arbiter-settled round (the CoralOS default settlement mode).
+// A verified x402 round with an upstream procurement leg alongside the primary settlement.
 const verifiedRound: RawMessage[] = [
   { sender: 'buyer-agent', text: 'WANT round=7 service=txline arg=999 budget=0.001' },
   { sender: 'seller-premium', text: 'BID round=7 price=0.0005 by=seller-premium' },
-  { sender: 'seller-premium', text: 'LLM_USED round=7 agent=seller-premium purpose=seller_quote status=used provider=openai model=gpt-4o-mini reason="model proposed bid terms" guardrail="service allowlist plus floor/budget price clamp"' },
   { sender: 'buyer-agent', text: 'AWARD round=7 to=seller-premium' },
-  { sender: 'seller-premium', text: 'ESCROW_REQUIRED round=7 reference=Ref7 seller=7jwB amount=0.0005 deadline=600' },
-  { sender: 'buyer-agent', text: 'DEPOSITED round=7 reference=Ref7 buyer=47Dp sig=depSig settlement=arbiter' },
+  { sender: 'seller-premium', text: 'PAYMENT_REQUIRED round=7 rail=x402 amount=0.0005 currency=SOL reference=Ref7 seller=7jwB' },
+  { sender: 'buyer-agent', text: 'PAYMENT_PROOF round=7 rail=x402 reference=Ref7 proof=SIGNEDtxBase64 buyer=47Dp' },
+  { sender: 'seller-premium', text: 'PAYMENT_CONFIRMED round=7 rail=x402 reference=Ref7 paid=true amount=0.0005 currency=SOL sig=depSig' },
   { sender: 'seller-premium', text: 'PAYMENT_REQUIRED round=7 rail=pay-sh amount=0.03 currency=USDC reference=pay-7 seller=pay.sh/txodds-context url=https://pay.sh/api/quicknode' },
   { sender: 'seller-premium', text: 'PAYMENT_PROOF round=7 rail=pay-sh reference=pay-7 proof=pay-sh-demo:abc buyer=seller-premium' },
   {
@@ -42,7 +43,7 @@ const verifiedRound: RawMessage[] = [
   { sender: 'seller-premium', text: 'DELIVERED round=7 {"ok":true}' },
   { sender: 'buyer-agent', text: 'VERIFY round=7 sha=abc service=txline arg=999 payload={"ok":true}' },
   { sender: 'verifier-agent', text: 'VERIFIED round=7 verdict=pass by=verifier-agent reason="hash + structure verified"' },
-  { sender: 'buyer-agent', text: 'ARBITER_RELEASED round=7 sig=relSig settlement=arbiter' },
+  { sender: 'buyer-agent', text: 'SETTLED round=7 rail=x402 reference=Ref7 amount=0.0005 sig=depSig' },
 ]
 
 describe('persist', () => {
@@ -57,14 +58,14 @@ describe('persist', () => {
     expect(rec.runId).toBe(`${session}/round-1`)
     expect(rec.status).toBe('settled')
     expect(rec.award).toEqual({ to: 'seller-premium', reason: 'verified data worth the premium' })
-    expect(rec.escrow?.deposit).toEqual({ sig: '5syz', buyer: '47Dp' })
+    expect(rec.payment?.confirmed).toEqual({ sig: '5syz', buyer: '47Dp' })
     expect(rec.delivery?.sha256).toBe(sha256Hex('{"coin":"solana","usd":72.33}'))
-    expect(rec.txs.map((t) => t.kind)).toEqual(['deposit', 'release'])
-    expect(rec.txs[1].explorer).toBe('https://explorer.solana.com/tx/3PMa?cluster=devnet')
+    expect(rec.txs.map((t) => t.kind)).toEqual(['payment'])
+    expect(rec.txs[0].explorer).toBe('https://explorer.solana.com/tx/5syz?cluster=devnet')
   })
 
   it('slices the transcript by round tag, dropping untagged chatter', () => {
-    expect(roundTranscript(messages, 1)).toHaveLength(8)
+    expect(roundTranscript(messages, 1)).toHaveLength(9)
     expect(roundTranscript(messages, 2)).toHaveLength(2)
   })
 
@@ -72,8 +73,8 @@ describe('persist', () => {
     persistRounds(base, session, foldRounds(messages, sellers), messages)
     expect(existsSync(join(runDir(base, session, 1), 'delivery.json'))).toBe(true)
     expect(existsSync(join(runDir(base, session, 2), 'want.json'))).toBe(true)
-    const escrow = JSON.parse(readFileSync(join(runDir(base, session, 1), 'escrow.json'), 'utf8'))
-    expect(escrow.reference).toBe('DKQy')
+    const payment = JSON.parse(readFileSync(join(runDir(base, session, 1), 'payment.json'), 'utf8'))
+    expect(payment.reference).toBe('DKQy')
   })
 
   it('replays a persisted session identically to the live fold (coral-server down)', () => {
@@ -100,14 +101,11 @@ describe('persist', () => {
     expect(threads[0].messages[0].mentions).toBeTruthy()
   })
 
-  it('folds a verifier-gated arbiter round to settled, and persists verification.json', () => {
+  it('folds a verified x402 round to settled, and persists verification.json', () => {
     const [r] = foldRounds(verifiedRound, sellers)
-    expect(r.status).toBe('settled') // ARBITER_RELEASED counts as settled
-    expect(r.release?.sig).toBe('relSig')
+    expect(r.status).toBe('settled')
+    expect(r.settled?.sig).toBe('depSig')
     expect(r.verification).toEqual({ verdict: 'pass', by: 'verifier-agent', reason: 'hash + structure verified' })
-    expect(r.llm).toEqual([
-      expect.objectContaining({ agent: 'seller-premium', purpose: 'seller_quote', status: 'used' }),
-    ])
     expect(r.proofReceipts[0]).toMatchObject({
       rail: 'pay-sh',
       provider: 'pay.sh/txodds-context',
@@ -122,8 +120,6 @@ describe('persist', () => {
       .toEqual({ verdict: 'pass', by: 'verifier-agent', reason: 'hash + structure verified' })
     expect(JSON.parse(readFileSync(join(dir, 'proof_receipts.json'), 'utf8'))[0])
       .toMatchObject({ rail: 'pay-sh', proof: 'pay-sh-demo:abc', amount: '0.03', currency: 'USDC' })
-    expect(JSON.parse(readFileSync(join(dir, 'llm.json'), 'utf8'))[0])
-      .toMatchObject({ agent: 'seller-premium', purpose: 'seller_quote', status: 'used' })
     expect(replaySession(base, session, sellers)).toEqual([r])
   })
 

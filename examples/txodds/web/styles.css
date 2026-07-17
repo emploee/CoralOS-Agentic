@@ -223,33 +223,6 @@ main { max-width: 1120px; margin: 0 auto; padding: 22px 24px 64px; }
   color: var(--muted);
   font: 13px/1.55 'Inter', ui-sans-serif, system-ui, sans-serif;
 }
-.story-reasoning {
-  display: grid;
-  gap: 5px;
-  margin-top: 8px;
-}
-.reasoning-row {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 6px;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.reasoning-agent {
-  color: var(--gold);
-  font-weight: 700;
-  text-transform: uppercase;
-  font-size: 10px;
-  letter-spacing: .03em;
-  white-space: nowrap;
-}
-.reasoning-text { color: var(--muted); }
-.reasoning-row .feed-chip {
-  margin-top: 0;
-  padding: 1px 7px;
-  font-size: 10px;
-}
 .story-toggle {
   margin-top: 8px;
   padding: 0;
@@ -278,13 +251,13 @@ main { max-width: 1120px; margin: 0 auto; padding: 22px 24px 64px; }
 .feed-row.actor-buyer { border-left-color: var(--home); }
 .feed-row.actor-seller { border-left-color: var(--gold); }
 .feed-row.actor-verifier { border-left-color: var(--draw); }
-.feed-row.verb-group-arbiter_released,
-.feed-row.verb-group-released {
+.feed-row.verb-group-settled {
   background: rgba(20,241,149,.06);
   border-radius: 8px;
 }
-.feed-row.verb-group-escrow_required,
-.feed-row.verb-group-deposited {
+.feed-row.verb-group-payment_required,
+.feed-row.verb-group-payment_proof,
+.feed-row.verb-group-payment_confirmed {
   background: rgba(255,206,77,.05);
 }
 .feed-icon { flex-shrink: 0; font-size: 15px; line-height: 1.5; }
@@ -356,8 +329,7 @@ a.feed-chip:hover { border-color: var(--sol); }
 .verb-delivered { background: rgba(74,168,255,.16); color: var(--home); }
 .verb-verify { background: rgba(159,201,179,.14); color: var(--muted); }
 .verb-verified-pass,
-.verb-arbiter_released,
-.verb-released { background: rgba(20,241,149,.16); color: var(--sol); }
+.verb-settled { background: rgba(20,241,149,.16); color: var(--sol); }
 .verb-verified-fail,
 .verb-error { background: rgba(255,122,138,.16); color: var(--away); }
 .agentic-fixture { margin-top: 18px; }

@@ -29,7 +29,7 @@
                 },
                 "startTime": "2026-06-26T18:00:19.704449927Z"
             },
-            "description": "LLM-driven marketplace buyer. Broadcasts a WANT into a shared CoralOS thread, collects competing bids, picks best value (LLM), and settles via the escrow contract.",
+            "description": "Marketplace buyer. Broadcasts a WANT into a shared CoralOS thread, collects competing bids, picks best value, and settles directly via x402.",
             "links": [],
             "runningBudget": {
                 "startBudget": 0,
@@ -65,7 +65,7 @@
                 },
                 "startTime": "2026-06-26T18:00:19.704449909Z"
             },
-            "description": "Marketplace seller persona — aggressive discounter. Reuses the seller-agent image; an LLM decides its bids, never below its floor.",
+            "description": "Marketplace seller persona — aggressive discounter. Reuses the seller-agent image; prices deterministically, never below its floor.",
             "links": [],
             "runningBudget": {
                 "startBudget": 0,
@@ -101,7 +101,7 @@
                 },
                 "startTime": "2026-06-26T18:00:19.704524055Z"
             },
-            "description": "Marketplace seller persona — premium, verified data. Reuses the seller-agent image; an LLM bids higher and justifies on quality.",
+            "description": "Marketplace seller persona — premium, verified data. Reuses the seller-agent image; prices higher, near recent clearing highs.",
             "links": [],
             "runningBudget": {
                 "startBudget": 0,
@@ -212,7 +212,7 @@
                 {
                     "id": "ab5aa64d-dc80-4629-9c80-6d39bf788cd8",
                     "threadId": "ec664328-8b62-4fd9-aab4-a125efda13d8",
-                    "text": "ESCROW_REQUIRED round=1 reference=43QLzy1aa6A7sxjFACmV6n3TvbfK9Ra8zDym8yPkYFsC seller=7jwB6M2DtuDuXJvFT9RiEwDQUX6Q3DhwtDwg3v8DpjZw amount=0.0002 deadline=600",
+                    "text": "PAYMENT_REQUIRED round=1 rail=x402 amount=0.0002 currency=SOL reference=43QLzy1aa6A7sxjFACmV6n3TvbfK9Ra8zDym8yPkYFsC seller=7jwB6M2DtuDuXJvFT9RiEwDQUX6Q3DhwtDwg3v8DpjZw",
                     "senderName": "seller-cheap",
                     "mentionNames": [
                         "buyer-agent"
@@ -222,10 +222,20 @@
                 {
                     "id": "d7222e26-2510-4c67-b06a-832b40b7904f",
                     "threadId": "ec664328-8b62-4fd9-aab4-a125efda13d8",
-                    "text": "DEPOSITED round=1 reference=43QLzy1aa6A7sxjFACmV6n3TvbfK9Ra8zDym8yPkYFsC buyer=47DpazckSKKXtyU4hnoJizJjMXmfodgm9pNBXTBN4L4Y sig=3RbEEMJ6DG9WUicwrTM96W7K97w4yj4SiTs4FM76TBGjWHSisY23Gqdmcbgoh3vjt46nUrbptT2QxBg5u8kRSEKM",
+                    "text": "PAYMENT_PROOF round=1 rail=x402 reference=43QLzy1aa6A7sxjFACmV6n3TvbfK9Ra8zDym8yPkYFsC proof=SIGNEDtxBase64Placeholder buyer=47DpazckSKKXtyU4hnoJizJjMXmfodgm9pNBXTBN4L4Y",
                     "senderName": "buyer-agent",
                     "mentionNames": [
                         "seller-cheap"
+                    ],
+                    "timestamp": "2026-06-26T18:00:58.554112004Z"
+                },
+                {
+                    "id": "0a6a3cbb-2a9c-4a0a-9c2f-9d2f2f5c2f11",
+                    "threadId": "ec664328-8b62-4fd9-aab4-a125efda13d8",
+                    "text": "PAYMENT_CONFIRMED round=1 rail=x402 reference=43QLzy1aa6A7sxjFACmV6n3TvbfK9Ra8zDym8yPkYFsC paid=true amount=0.0002 currency=SOL sig=3RbEEMJ6DG9WUicwrTM96W7K97w4yj4SiTs4FM76TBGjWHSisY23Gqdmcbgoh3vjt46nUrbptT2QxBg5u8kRSEKM",
+                    "senderName": "seller-cheap",
+                    "mentionNames": [
+                        "buyer-agent"
                     ],
                     "timestamp": "2026-06-26T18:00:59.013552638Z"
                 },
@@ -242,7 +252,7 @@
                 {
                     "id": "7dd16187-42a8-4284-aeb0-eaca11f9f5e8",
                     "threadId": "ec664328-8b62-4fd9-aab4-a125efda13d8",
-                    "text": "RELEASED round=1 sig=nzDKEzM6ynBxjzf98DRpdzYVP6aZ7R9KdbLSiGEb1V7JAF433doduhCRWtAxaDEwwZz4osa6Hx6saqU37xEHcJS",
+                    "text": "SETTLED round=1 rail=x402 reference=43QLzy1aa6A7sxjFACmV6n3TvbfK9Ra8zDym8yPkYFsC amount=0.0002 sig=nzDKEzM6ynBxjzf98DRpdzYVP6aZ7R9KdbLSiGEb1V7JAF433doduhCRWtAxaDEwwZz4osa6Hx6saqU37xEHcJS",
                     "senderName": "buyer-agent",
                     "mentionNames": [
                         "seller-cheap"

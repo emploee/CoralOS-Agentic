@@ -20,17 +20,16 @@ answerable.
 
 ## Adapters
 
-Pick one with `HARNESS=<name>` on the seller (default `node-llm`):
+Pick one with `HARNESS=<name>` on the seller (default `in-process`):
 
 | Name            | What runs                                                                                                                                                                                                                                                              |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `node-llm`    | The in-process baseline — wraps the seller's`deliverService()` fork point. Always works; every other harness is measured against it.                                                                                                                                |
+| `in-process`  | The baseline — wraps the seller's `deliverService()` fork point, in this process. Always works; every other harness is measured against it.                                                                                                                        |
 | `claude-code` | Headless Claude Code (`claude -p --output-format json`) in an isolated per-order workdir. Env: `CLAUDE_CODE_BIN`, `CLAUDE_CODE_MAX_TURNS`, `HARNESS_TIMEOUT_MS`.                                                                                               |
 | `cli`         | Any other harness CLI.`HARNESS_CMD` is the argv (JSON array or space-split; `{prompt}` substitutes the order prompt, otherwise it arrives on stdin). `HARNESS_NAME` labels it — e.g. Hermes: `HARNESS=cli HARNESS_CMD='hermes {prompt}' HARNESS_NAME=hermes`. |
 
-All adapters share the same LLM bidder (`quote.ts`) with **code-enforced economics**: never bid a
-service not carried, never below the cost floor, never above the buyer's budget — a prompt
-injection inside a WANT can't force a loss-making bid.
+All adapters share the same deterministic bidder (`quote.ts`) with **code-enforced economics**:
+never bid a service not carried, never below the cost floor, never above the buyer's budget.
 
 ## Coral config injection (the harness joins the session)
 

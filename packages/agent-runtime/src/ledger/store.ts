@@ -6,12 +6,11 @@
  *     want.json          …plus one file per facet, for humans auditing a run
  *     bids.json          without tooling. Facet files are only written when
  *     award.json         the facet exists on the record.
- *     escrow.json        (terms + deposit tx)
+ *     payment.json       (x402 terms + confirmed tx)
  *     delivery.json      (raw + parsed + sha256 content hash)
  *     verification.json
  *     proof_receipts.json (payment-rail receipts, e.g. upstream procurement)
  *     proof.json          (compact machine-readable e2e proof)
- *     llm.json           (provider/model/status metadata; no prompts or completions)
  *     txs.json
  *     transcript.jsonl   the round's raw Coral messages, one JSON per line
  *
@@ -41,12 +40,11 @@ export function writeRun(baseDir: string, run: RunRecord, transcript: Transcript
   if (run.want) writeJson(dir, 'want.json', run.want)
   if (run.bids.length) writeJson(dir, 'bids.json', run.bids)
   if (run.award) writeJson(dir, 'award.json', run.award)
-  if (run.escrow) writeJson(dir, 'escrow.json', run.escrow)
+  if (run.payment) writeJson(dir, 'payment.json', run.payment)
   if (run.delivery) writeJson(dir, 'delivery.json', run.delivery)
   if (run.verification !== undefined) writeJson(dir, 'verification.json', run.verification)
   if (run.proofReceipts?.length) writeJson(dir, 'proof_receipts.json', run.proofReceipts)
   writeJson(dir, 'proof.json', proofArtifact(run))
-  if (run.llm?.length) writeJson(dir, 'llm.json', run.llm)
   if (run.txs.length) writeJson(dir, 'txs.json', run.txs)
   writeFileSync(
     join(dir, 'transcript.jsonl'),

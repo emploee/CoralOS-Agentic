@@ -14,16 +14,16 @@ const WATCHER = window.TXODDS_WATCHER ?? 'http://localhost:4600'
 // coral-server's own built-in console UI (raw sessions/threads/participants) - opened in a new tab,
 // not proxied; the browser talks to it directly since it's a devnet dev tool, not paid delivery.
 const CORAL_CONSOLE = window.CORAL_CONSOLE_URL ?? 'http://localhost:5555/ui/console'
-const MARKET_VERBS =['WANT', 'BID', 'AWARD', 'ESCROW_REQUIRED', 'DEPOSITED', 'DELIVERED', 'LLM_USED', 'VERIFY', 'VERIFIED', 'RELEASED', 'ARBITER_RELEASED', 'REFUNDED', 'ERROR']
+const MARKET_VERBS =['WANT', 'BID', 'AWARD', 'PAYMENT_REQUIRED', 'PAYMENT_PROOF', 'PAYMENT_CONFIRMED', 'DELIVERED', 'VERIFY', 'VERIFIED', 'SETTLED', 'REFUNDED', 'ERROR']
 // The only round type the round launcher supports (examples/txodds/coral/round.ts's single seller
 // treats a fixture id as an edge-read request) - no picker needed for one option.
 const AGENTIC_SERVICE = 'txline'
 const AGENTIC_ROUND_LABEL = 'TxODDS edge'
 // Icon led with each feed row instead of a text-only badge.
 const VERB_ICON = {
-  WANT: '🙋', BID: '💬', AWARD: '🏅', ESCROW_REQUIRED: '🔒', DEPOSITED: '🔒',
-  DELIVERED: '📦', VERIFY: '⏳', VERIFIED: '✅', ARBITER_RELEASED: '🏆',
-  RELEASED: '🏆', REFUNDED: '↩️', ERROR: '⚠️',
+  WANT: '🙋', BID: '💬', AWARD: '🏅', PAYMENT_REQUIRED: '🔒', PAYMENT_PROOF: '🔒', PAYMENT_CONFIRMED: '🔓',
+  DELIVERED: '📦', VERIFY: '⏳', VERIFIED: '✅',
+  SETTLED: '🏆', REFUNDED: '↩️', ERROR: '⚠️',
 }
 // Which side of the conversation a message reads from - drives the feed row's accent color.
 const actorFamily = (sender) => (sender === 'buyer-agent' ? 'buyer' : sender === 'verifier-agent' ? 'verifier' : 'seller')
@@ -148,14 +148,20 @@ function humanMarketEvent(m) {
     const reason = fieldOf(text, 'reason')
     return `${agentLabel(m.sender)} selected ${to}${reason ? ` because ${reason}` : ''}.`
   }
-  if (v === 'ESCROW_REQUIRED') {
+  if (v === 'PAYMENT_REQUIRED') {
     const amount = fieldOf(text, 'amount')
     const seller = fieldOf(text, 'seller')
-    return `${agentLabel(m.sender)} returned escrow terms${amount ? ` for ${fmtSol(amount)}` : ''}${seller ? ` to payout ${shortAddr(seller)}` : ''}.`
+    return `${agentLabel(m.sender)} requested payment${amount ? ` for ${fmtSol(amount)}` : ''}${seller ? ` to payout ${shortAddr(seller)}` : ''}.`
   }
-  if (v === 'DEPOSITED') {
+  if (v === 'PAYMENT_PROOF') {
+    return `${agentLabel(m.sender)} signed and sent payment for round ${round ?? '?'}.`
+  }
+  if (v === 'PAYMENT_CONFIRMED') {
+    const paid = fieldOf(text, 'paid')
     const sig = fieldOf(text, 'sig')
-    return `${agentLabel(m.sender)} funded escrow for round ${round ?? '?'}${sig ? ` with tx ${shortAddr(sig)}` : ''}.`
+    return paid === 'true'
+      ? `${agentLabel(m.sender)} confirmed payment${sig ? ` with tx ${shortAddr(sig)}` : ''}.`
+      : `${agentLabel(m.sender)} could not confirm payment.`
   }
   if (v === 'DELIVERED') return `${agentLabel(m.sender)} delivered: ${deliveryPreview(text, round)}`
   if (v === 'VERIFY') return `${agentLabel(m.sender)} asked ${agentLabel('verifier-agent')} to check the exact delivered payload.`
@@ -165,9 +171,9 @@ function humanMarketEvent(m) {
     const reason = fieldOf(text, 'reason')
     return `${by} ${verdict === 'pass' ? 'passed' : 'failed'} the delivery${reason ? `: ${reason}` : ''}.`
   }
-  if (v === 'ARBITER_RELEASED' || v === 'RELEASED') {
+  if (v === 'SETTLED') {
     const sig = fieldOf(text, 'sig')
-    return `${agentLabel(m.sender)} released escrow to the seller${sig ? ` with tx ${shortAddr(sig)}` : ''}.`
+    return `${agentLabel(m.sender)} marked the round settled${sig ? ` (tx ${shortAddr(sig)})` : ''}.`
   }
   if (v === 'REFUNDED') return `${agentLabel(m.sender)} marked the round refundable or refunded.`
   if (v === 'ERROR') return `${agentLabel(m.sender)} reported an error: ${sentence(text.replace(/^ERROR:?\s*/i, ''), 120)}`
@@ -209,16 +215,21 @@ function roundNarrative(messages, by) {
     parts.push(`${bids.length} seller${bids.length === 1 ? '' : 's'} bid, awaiting award.`)
   }
 
-  if (by.DEPOSITED) {
-    const amount = by.ESCROW_REQUIRED ? fieldOf(by.ESCROW_REQUIRED.text, 'amount') : undefined
-    parts.push(`${agentLabel(by.DEPOSITED.sender)} locked${amount ? ` ${fmtSol(amount)}` : ' funds'} into escrow.`)
-  } else if (by.ESCROW_REQUIRED) {
-    parts.push('Escrow terms were issued; waiting on deposit.')
+  if (by.PAYMENT_CONFIRMED) {
+    const paid = fieldOf(by.PAYMENT_CONFIRMED.text, 'paid')
+    const amount = by.PAYMENT_REQUIRED ? fieldOf(by.PAYMENT_REQUIRED.text, 'amount') : undefined
+    parts.push(paid === 'true'
+      ? `${agentLabel(by.PAYMENT_CONFIRMED.sender)} confirmed payment${amount ? ` of ${fmtSol(amount)}` : ''}.`
+      : 'Payment could not be confirmed.')
+  } else if (by.PAYMENT_PROOF) {
+    parts.push('Payment was sent; waiting on confirmation.')
+  } else if (by.PAYMENT_REQUIRED) {
+    parts.push('Payment terms were issued; waiting on the buyer.')
   }
 
   // The delivered content itself is pulled out as its own headline (see roundHeadline) rather than
   // folded into this mechanics recap - a viewer wants the actual pick front and center, not one clause
-  // in a sentence about escrow and awards.
+  // in a sentence about payment and awards.
   if (by.DELIVERED) parts.push(`${agentLabel(by.DELIVERED.sender)} delivered the result below.`)
 
   if (by.VERIFIED) {
@@ -230,7 +241,7 @@ function roundNarrative(messages, by) {
     parts.push('Waiting on the verifier.')
   }
 
-  if (by.ARBITER_RELEASED || by.RELEASED) parts.push('Payment released on-chain.')
+  if (by.SETTLED) parts.push('Round settled.')
   else if (by.REFUNDED) parts.push('Funds were refunded.')
 
   if (by.ERROR) parts.push(`${agentLabel(by.ERROR.sender)} hit an error: ${sentence(by.ERROR.text.replace(/^ERROR:?\s*/i, ''), 120)}`)
@@ -239,8 +250,8 @@ function roundNarrative(messages, by) {
 }
 
 // The actual product of the round - the delivered pick/analysis, unattributed and unqualified by
-// escrow mechanics - is the headline a viewer came for. Everything roundNarrative recaps (who bid,
-// who won, escrow, verification, settlement) is real but secondary; this is not.
+// payment mechanics - is the headline a viewer came for. Everything roundNarrative recaps (who bid,
+// who won, payment, verification, settlement) is real but secondary; this is not.
 function roundHeadline(by) {
   if (!by.DELIVERED) return null
   return {
@@ -279,21 +290,21 @@ function metricChip(m) {
     const price = fieldOf(text, 'price')
     return price ? { label: 'price', value: fmtSol(price) } : null
   }
-  if (v === 'ESCROW_REQUIRED') {
+  if (v === 'PAYMENT_REQUIRED') {
     const amount = fieldOf(text, 'amount')
     return amount ? { label: 'amount', value: fmtSol(amount) } : null
   }
-  if (v === 'DEPOSITED') {
+  if (v === 'PAYMENT_CONFIRMED') {
     const sig = fieldOf(text, 'sig')
-    return sig ? { label: 'deposit tx', value: shortAddr(sig), href: txLink(sig) } : null
+    return sig ? { label: 'payment tx', value: shortAddr(sig), href: txLink(sig) } : null
   }
   if (v === 'VERIFIED') {
     const verdict = fieldOf(text, 'verdict')
     return verdict ? { label: 'verdict', value: verdict } : null
   }
-  if (v === 'ARBITER_RELEASED' || v === 'RELEASED') {
+  if (v === 'SETTLED') {
     const sig = fieldOf(text, 'sig')
-    return sig ? { label: 'release tx', value: shortAddr(sig), href: txLink(sig) } : null
+    return sig ? { label: 'settle tx', value: shortAddr(sig), href: txLink(sig) } : null
   }
   return null
 }
@@ -301,7 +312,7 @@ function metricChip(m) {
 // Short phrase for the typing indicator while the latest round is between steps.
 function roundStatusLabel(status) {
   const labels = {
-    bidding: 'collecting bids...', awarded: 'funding escrow...', deposited: 'awaiting delivery...',
+    bidding: 'collecting bids...', awarded: 'awaiting payment...', paid: 'awaiting delivery...',
     delivered: 'verifying delivery...', settled: 'settled', refunded: 'refunded',
   }
   return labels[status] ?? 'working...'
@@ -506,49 +517,6 @@ function FeedRow({ m, i }) {
     </div>`
 }
 
-// Human label per LLM_USED purpose (packages/agent-runtime/src/market/protocol.ts's LlmUse.purpose,
-// set by buyer-agent/award.ts, verifier-agent/verify.ts, harness-runtime's quote.ts/node-llm adapter).
-// seller_delivery is deliberately not shown here - its content (the edge-analysis "call") is already
-// the round narrative's DELIVERED highlight, so repeating it in the reasoning strip would be a
-// second copy of the same sentence rather than new information.
-const LLM_PURPOSE_LABEL = {
-  buyer_award: 'why this seller',
-  verifier_judgment: 'verifier read',
-  seller_quote: 'pricing logic',
-}
-
-// The model's own explanation text, or - when there wasn't one (no key configured, the call failed,
-// or policy skipped it outright) - a plain status note. Either way this is real signal, not filler:
-// it's the difference between "seller-agent won" and knowing *why*, or knowing the round ran on a
-// deterministic fallback rather than a live model.
-function llmReasonText(l) {
-  if (l.reason) return l.reason
-  if (l.status === 'fallback') return 'used a deterministic fallback — no LLM reasoning captured.'
-  if (l.status === 'skipped') return 'skipped the model call.'
-  if (l.status === 'error') return 'the model call failed.'
-  return null
-}
-
-// meta.llm is the round's folded LLM_USED messages (foldRounds.ts) - every agent's model-backed
-// decision for this round (award justification, verifier read, seller pricing/delivery notes),
-// already flowing over the wire and already parsed server-side but never rendered until now.
-function LlmReasoning({ llm }) {
-  const rows = (llm ?? [])
-    .filter((l) => l.purpose in LLM_PURPOSE_LABEL)
-    .map((l) => ({ ...l, text: llmReasonText(l) }))
-    .filter((l) => l.text)
-  if (!rows.length) return null
-  return html`
-    <div class="story-reasoning">
-      ${rows.map((l, i) => html`
-        <div class="reasoning-row" key=${i}>
-          <span class="reasoning-agent">🧠 ${agentLabel(l.agent)} — ${LLM_PURPOSE_LABEL[l.purpose] ?? l.purpose}</span>
-          <span class="reasoning-text">${l.text}</span>
-          ${l.model && html`<span class="feed-chip">${l.provider ? `${l.provider} · ` : ''}${l.model}</span>`}
-        </div>`)}
-    </div>`
-}
-
 // One round's story: a headline, a progress tracker, a plain-language recap, and the raw
 // protocol messages tucked behind "show play-by-play" for anyone who wants the wire-level detail.
 function RoundStoryCard({ round, meta, messages, defaultOpen }) {
@@ -573,7 +541,6 @@ function RoundStoryCard({ round, meta, messages, defaultOpen }) {
         ? html`<p class=${'story-headline' + (headline.error ? ' error' : '')}>${headline.text}</p>`
         : html`<p class="story-waiting">Waiting on a result…</p>`}
       <p class="story-text">${roundNarrative(messages, by)}</p>
-      <${LlmReasoning} llm=${meta?.llm} />
       <button class="story-toggle" onClick=${() => setOpen((o) => !o)}>${open ? '▾ hide' : '▸ show'} play-by-play (${messages.length})</button>
       ${open && html`<div class="story-detail">${messages.map((m, i) => html`<${FeedRow} key=${i} m=${m} i=${i} />`)}</div>`}
     </div>`
@@ -584,9 +551,7 @@ function RoundStoryCard({ round, meta, messages, defaultOpen }) {
 // click away, not the default view.
 function AgenticFeed({ bus, feed }) {
   const scrollRef = useRef(null)
-  // LLM_USED status messages (e.g. "model skipped - service not in seller inventory") are internal
-  // diagnostics, not something a viewer can act on - keep them out of the live story.
-  const rows = flattenBus(bus).filter((m) => verbOf(m.text) !== 'LLM_USED')
+  const rows = flattenBus(bus)
 
   useEffect(() => {
     const el = scrollRef.current

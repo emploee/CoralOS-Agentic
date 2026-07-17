@@ -1,5 +1,10 @@
 # Escrow IDL and Client
 
+**Not used by the default coral-agents flow** — `buyer-agent`/`seller-agent` settle over x402
+directly (see `references/market-protocol.md`). These programs remain deployed to devnet and are a
+real, working building block for a fork that wants conditional/delayed release instead of x402's
+direct-and-final payment.
+
 Two Anchor programs, both deployed to devnet, both under `examples/txodds/escrow/`:
 
 | Program | Path | Devnet ID | Role |
@@ -9,14 +14,20 @@ Two Anchor programs, both deployed to devnet, both under `examples/txodds/escrow
 
 Client: `examples/txodds/escrow/client/escrow.ts` (`deposit`/`release`/`refund`, `depositSpl`/`releaseSpl`/`refundSpl`). Tests: `examples/txodds/escrow/tests/escrow.ts`, run against the live devnet programs (not a local validator).
 
-The arbiter's TypeScript client actually used by the CoralOS round and the TxODDS proxy lives separately at `examples/txodds/agent/arbiter.ts`, backed by a bundled `examples/txodds/agent/arbiter_idl.json` — the arbiter program has no on-chain IDL account, so it can't `Program.fetchIdl` the way the escrow client does.
+An arbiter TypeScript client (IDL-backed, since the arbiter program has no on-chain IDL account and
+can't `Program.fetchIdl` the way the escrow client does) would need to be hand-rolled from
+`programs/arbiter/src/lib.rs`'s instruction shapes if you're re-enabling this path — the client that
+used to live at `examples/txodds/agent/arbiter.ts` was removed once nothing in the active codebase
+called it (the CoralOS round settles over x402 now, not escrow).
 
-## Two settlement modes
+## Two settlement modes (if you re-enable this path)
 
-- **`direct`** (`SETTLEMENT_MODE=direct`) — the buyer's own key opens and releases/refunds the base escrow directly. Simplest path, no arbiter dependency, but nothing on-chain stops the buyer from releasing without a verifier passing — the verifier gate is a policy-layer check (`references/verifier-gate.md`), not a program constraint, in this mode.
-- **`arbiter`** (default) — the payer funds a system-owned vault PDA controlled by the arbiter program; that vault PDA becomes the base escrow's `buyer`. Only the configured `ARBITER_KEYPAIR_B58` can call `arbitrate_release`/`arbitrate_refund`, which prevents the original payer from unilaterally releasing or refunding once the order is open. This is what CoralOS rounds use by default, and it's the on-chain backing for the verifier gate.
+- **`direct`** — the buyer's own key opens and releases/refunds the base escrow directly. Simplest path, no arbiter dependency, but nothing on-chain stops the buyer from releasing without a verifier passing — a verifier gate here would need to be a policy-layer check (`references/verifier-gate.md` describes the verifier's current, informational role), not a program constraint.
+- **`arbiter`** — the payer funds a system-owned vault PDA controlled by the arbiter program; that vault PDA becomes the base escrow's `buyer`. Only the configured arbiter keypair can call `arbitrate_release`/`arbitrate_refund`, which prevents the original payer from unilaterally releasing or refunding once the order is open.
 
-Escrow PDA seed: `[b"escrow", buyer, reference]`. `reference` is the same value carried in the market's `ESCROW_REQUIRED`/`DEPOSITED` messages (`references/market-protocol.md`) — it binds one specific order/delivery to one specific escrow account, and the seller derives its expected reference deterministically (`boundReference()` in `coral-agents/seller-agent/src/index.ts`) so it can't be replayed across rounds.
+Escrow PDA seed: `[b"escrow", buyer, reference]`. `reference` binds one specific order/delivery to
+one specific escrow account — mirror the same non-replayable-reference discipline the current x402
+flow uses (`generateReference()`, see `references/market-protocol.md`) if you wire this back in.
 
 ## Base escrow interface
 

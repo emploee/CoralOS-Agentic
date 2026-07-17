@@ -8,8 +8,8 @@ Each agent has a `coral-agent.toml` manifest and an implementation in its folder
 
 | Agent | Role |
 |---|---|
-| `buyer-agent` | Posts `WANT`, collects bids, awards, deposits through policy, optionally verifies delivery, and releases/refunds. |
-| `seller-agent` | Bids on supported services, verifies funded escrow, runs a harness adapter, and delivers hash-bound payloads. |
+| `buyer-agent` | Posts `WANT`, collects bids, awards, pays directly via x402 through policy, and optionally verifies delivery. |
+| `seller-agent` | Bids on supported services, submits + verifies the buyer's x402 payment, runs a harness adapter, and delivers hash-bound payloads. |
 | `verifier-agent` | Checks delivery hash/structure and replies `VERIFIED pass|fail`. No wallet authority. |
 
 Seller personas reuse the seller image with different manifest defaults such as `AGENT_NAME`, `PERSONA`, `FLOOR_SOL`, `SERVICES`, and `HARNESS`.

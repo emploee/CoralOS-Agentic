@@ -9,10 +9,11 @@ const round1: RawMessage[] = [
   { sender: 'seller-premium', text: 'BID round=1 price=0.0005 by=seller-premium note=available' },
   { sender: 'seller-cheap', text: 'BID round=1 price=0.0002 by=seller-cheap note=available' },
   { sender: 'buyer-agent', text: 'AWARD round=1 to=seller-premium reason="verified data worth the premium"' },
-  { sender: 'seller-premium', text: 'ESCROW_REQUIRED round=1 reference=DKQy seller=7jwB amount=0.0005 deadline=600' },
-  { sender: 'buyer-agent', text: 'DEPOSITED round=1 reference=DKQy buyer=47Dp sig=5syz' },
+  { sender: 'seller-premium', text: 'PAYMENT_REQUIRED round=1 rail=x402 amount=0.0005 currency=SOL reference=DKQy seller=7jwB' },
+  { sender: 'buyer-agent', text: 'PAYMENT_PROOF round=1 rail=x402 reference=DKQy proof=SIGNEDtxBase64 buyer=47Dp' },
+  { sender: 'seller-premium', text: 'PAYMENT_CONFIRMED round=1 rail=x402 reference=DKQy paid=true amount=0.0005 currency=SOL sig=5syz' },
   { sender: 'seller-premium', text: 'DELIVERED round=1 {"coin":"solana","usd":72.33}' },
-  { sender: 'buyer-agent', text: 'RELEASED round=1 sig=3PMa' },
+  { sender: 'buyer-agent', text: 'SETTLED round=1 rail=x402 reference=DKQy amount=0.0005 sig=5syz' },
 ]
 
 describe('foldRounds', () => {
@@ -22,10 +23,10 @@ describe('foldRounds', () => {
     expect(r.want).toEqual({ service: 'coingecko', arg: 'SOL-USDC', budgetSol: 0.001 })
     expect(r.bids).toHaveLength(2)
     expect(r.award).toEqual({ to: 'seller-premium', reason: 'verified data worth the premium' })
-    expect(r.escrow?.amountSol).toBe(0.0005)
-    expect(r.deposit?.sig).toBe('5syz')
+    expect(r.payment).toEqual({ reference: 'DKQy', seller: '7jwB', amountSol: 0.0005, buyer: '47Dp' })
+    expect(r.paid?.sig).toBe('5syz')
     expect(r.delivered?.data).toEqual({ coin: 'solana', usd: 72.33 })
-    expect(r.release?.sig).toBe('3PMa')
+    expect(r.settled?.sig).toBe('5syz')
     expect(r.status).toBe('settled')
   })
 
@@ -41,16 +42,6 @@ describe('foldRounds', () => {
       { sender: 'seller-cheap', text: 'BID round=2 price=0.0003 by=seller-cheap' },
     ]
     expect(foldRounds(msgs).find((r) => r.round === 2)?.bids).toHaveLength(1)
-  })
-
-  it('handles a refund-after-deadline round', () => {
-    const msgs: RawMessage[] = [
-      { sender: 'buyer-agent', text: 'WANT round=3 service=coingecko arg=x budget=0.001' },
-      { sender: 'seller-cheap', text: 'BID round=3 price=0.0002 by=seller-cheap' },
-      { sender: 'buyer-agent', text: 'AWARD round=3 to=seller-cheap' },
-      { sender: 'buyer-agent', text: 'REFUNDED round=3' },
-    ]
-    expect(foldRounds(msgs).find((r) => r.round === 3)?.status).toBe('refunded')
   })
 
   it('separates interleaved rounds and sorts ascending', () => {
@@ -88,25 +79,6 @@ describe('foldRounds', () => {
       simulated: true,
       issuedAt: '2026-07-06T00:00:00.000Z',
     }])
-  })
-
-  it('folds LLM metadata into the matching round', () => {
-    const [r] = foldRounds([
-      { sender: 'buyer-agent', text: 'WANT round=9 service=txline arg=18175397 budget=0.001' },
-      {
-        sender: 'buyer-agent',
-        text: 'LLM_USED round=9 agent=buyer-agent purpose=buyer_award status=used provider=openai model=gpt-4o-mini reason="selected best value" guardrail="winner must match collected BID set"',
-      },
-      {
-        sender: 'seller-worldcup',
-        text: 'LLM_USED round=9 agent=seller-worldcup purpose=seller_delivery status=fallback provider=anthropic model=claude-haiku-4-5-20251001 reason="LLM unavailable: key missing" guardrail="deterministic fair-line fallback plus verifier checks"',
-      },
-    ], sellers)
-
-    expect(r.llm).toEqual([
-      expect.objectContaining({ agent: 'buyer-agent', purpose: 'buyer_award', status: 'used', model: 'gpt-4o-mini' }),
-      expect.objectContaining({ agent: 'seller-worldcup', purpose: 'seller_delivery', status: 'fallback' }),
-    ])
   })
 
   it('leaves an in-progress round in a non-settled status', () => {

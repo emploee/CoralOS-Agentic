@@ -19,12 +19,11 @@ const settledRun = (): RunRecord => ({
   ],
   declined: ['seller-lazy'],
   award: { to: 'seller-premium', reason: 'verified data worth the premium' },
-  escrow: {
+  payment: {
     reference: 'DKQy',
     seller: '7jwB',
     amountSol: 0.0005,
-    deadlineSecs: 600,
-    deposit: { sig: '5syz', buyer: '47Dp' },
+    confirmed: { sig: '5syz', buyer: '47Dp' },
   },
   delivery: {
     raw: '{"coin":"solana","usd":72.33}',
@@ -32,8 +31,7 @@ const settledRun = (): RunRecord => ({
     sha256: sha256Hex('{"coin":"solana","usd":72.33}'),
   },
   txs: [
-    { kind: 'deposit', sig: '5syz', explorer: explorerTx('5syz') },
-    { kind: 'release', sig: '3PMa', explorer: explorerTx('3PMa') },
+    { kind: 'payment', sig: '5syz', explorer: explorerTx('5syz') },
   ],
   updatedAt: '2026-07-04T00:00:00.000Z',
 })
@@ -59,7 +57,7 @@ describe('ledger store', () => {
   it('writes one facet file per present facet, none for absent ones', () => {
     writeRun(base, settledRun(), transcript)
     const dir = runDir(base, session, 1)
-    for (const f of ['run.json', 'want.json', 'bids.json', 'award.json', 'escrow.json', 'delivery.json', 'proof.json', 'txs.json', 'transcript.jsonl'])
+    for (const f of ['run.json', 'want.json', 'bids.json', 'award.json', 'payment.json', 'delivery.json', 'proof.json', 'txs.json', 'transcript.jsonl'])
       expect(existsSync(join(dir, f)), f).toBe(true)
     expect(existsSync(join(dir, 'verification.json'))).toBe(false) // no verifier yet
     expect(existsSync(join(dir, 'proof_receipts.json'))).toBe(false) // no upstream payment leg
@@ -85,31 +83,12 @@ describe('ledger store', () => {
       want: 'coingecko SOL-USDC budget=0.001',
       bid: 'seller-premium price=0.0005',
       award: 'seller-premium',
-      escrow: 'DKQy seller=7jwB amount=0.0005',
-      depositSignature: '5syz',
+      payment: 'DKQy seller=7jwB amount=0.0005',
+      paymentSignature: '5syz',
       deliveryHash: sha256Hex('{"coin":"solana","usd":72.33}'),
       verified: true,
-      releaseSignature: '3PMa',
       finalState: 'SETTLED',
     })
-  })
-
-  it('persists LLM metadata as a first-class facet', () => {
-    const llm = [{
-      round: 1,
-      agent: 'buyer-agent',
-      purpose: 'buyer_award',
-      status: 'used' as const,
-      provider: 'openai',
-      model: 'gpt-4o-mini',
-      reason: 'selected best value',
-      guardrail: 'winner must match collected BID set',
-      createdAt: '2026-07-06T00:00:00.000Z',
-    }]
-    writeRun(base, { ...settledRun(), llm }, transcript)
-    const dir = runDir(base, session, 1)
-    expect(JSON.parse(readFileSync(join(dir, 'llm.json'), 'utf8'))).toEqual(llm)
-    expect(readRun(base, session, 1)?.run.llm).toEqual(llm)
   })
 
   it('binds the delivery content hash into delivery.json', () => {
@@ -119,7 +98,7 @@ describe('ledger store', () => {
   })
 
   it('re-persisting a round overwrites with the furthest state', () => {
-    const early: RunRecord = { ...settledRun(), status: 'bidding', award: undefined, escrow: undefined, delivery: undefined, txs: [] }
+    const early: RunRecord = { ...settledRun(), status: 'bidding', award: undefined, payment: undefined, delivery: undefined, txs: [] }
     writeRun(base, early, [transcript[0]])
     writeRun(base, settledRun(), transcript)
     expect(readRun(base, session, 1)?.run.status).toBe('settled')

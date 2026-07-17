@@ -14,9 +14,9 @@ Rail selection belongs in `src/rail-router.ts`.
 
 Three rails, deliberately — they solve different problems, not overlapping ones:
 
-- `solana-pay`: human checkout and simple one-off digital goods; also the direct-transfer primitive escrow's vault funding and x402's settlement leg build on.
-- `escrow`: disputed or verifier-gated work — money is locked in a program-owned PDA until release/refund conditions are met. This is the CoralOS round's core lifecycle.
-- `x402`: cheap, instant, per-call HTTP API payments — money moves immediately, no dispute window. Used for `coral-agents/seller-agent`'s real upstream-procurement leg (`PROCURE_RAIL=x402`), not just a standalone demo.
+- `x402`: cheap, instant, per-call payments — money moves immediately, no dispute window. **This is the CoralOS round's core settlement** (buyer pays seller, direct and final, before delivery — see `references/market-protocol.md`), and also `coral-agents/seller-agent`'s optional upstream-procurement leg (`PROCURE_RAIL=x402`).
+- `solana-pay`: human checkout and simple one-off digital goods; also the direct-transfer primitive x402's settlement leg builds on (`signTransferTransaction`/`verifyPayment`).
+- `escrow`: disputed or verifier-gated work — money is locked in a program-owned PDA until release/refund conditions are met. Deployed and available as a building block; the CoralOS round does not use it by default (x402 does instead).
 
 spl-usdc, allowance, embedded-wallet, payout, and pay-sh were removed — they either had no production consumer, were redundant with what escrow/x402 already provide, or (pay-sh) were replaced outright with a real x402 implementation rather than kept as a permanent scaffold.
 
@@ -58,5 +58,5 @@ callers that need to inspect or hold a signed-but-unsubmitted payload before dec
 
 ## See also
 
-- `references/escrow-idl.md` — the on-chain program `escrowRail` wraps, and the `direct`/`arbiter` settlement-mode split.
-- `references/market-protocol.md` — the `PAYMENT_REQUIRED`/`PAYMENT_PROOF`/`PAYMENT_CONFIRMED` messages `procureUpstream()` posts for the x402 leg, and how they differ from the core round's `ESCROW_REQUIRED`/`DEPOSITED`.
+- `references/escrow-idl.md` — the on-chain program `escrowRail` wraps; deployed but not used by the default coral-agents flow.
+- `references/market-protocol.md` — the `PAYMENT_REQUIRED`/`PAYMENT_PROOF`/`PAYMENT_CONFIRMED` messages, and how the round's primary settlement leg and the seller's optional procurement leg share the same message types but different references.

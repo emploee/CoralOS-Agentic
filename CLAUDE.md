@@ -9,17 +9,21 @@ The repository implements a devnet agent-commerce reference system. Agents coord
 Primary lifecycle:
 
 ```text
-WANT -> BID -> AWARD -> ESCROW_REQUIRED -> DEPOSITED -> DELIVERED -> VERIFIED -> RELEASED | ARBITER_RELEASED
+WANT -> BID -> AWARD -> PAYMENT_REQUIRED -> PAYMENT_PROOF -> PAYMENT_CONFIRMED -> DELIVERED -> VERIFIED -> SETTLED
 ```
 
-The Rust surface is limited to `examples/txodds/escrow`, which contains the escrow and arbiter programs. Most repository code is TypeScript.
+Settlement is x402: the buyer pays the seller directly and finally, before delivery. There is no
+escrow in the default flow — the escrow/arbiter Anchor programs still exist and are deployed
+(`examples/txodds/escrow`), available as an alternative building block, but unused by
+`coral-agents/buyer-agent`/`seller-agent`. The Rust surface is limited to that directory; most
+repository code is TypeScript.
 
 ## Layout
 
 | Path | Purpose |
 |---|---|
-| `packages/agent-runtime/` | LLM shim, Coral MCP client, Solana guard/helpers, market protocol, run ledger, reputation, and policy. |
-| `packages/harness-runtime/` | Seller execution adapter SDK for `node-llm`, `claude-code`, and arbitrary CLI harnesses. |
+| `packages/agent-runtime/` | Coral MCP client, Solana guard/helpers, market protocol, run ledger, reputation, and policy. |
+| `packages/harness-runtime/` | Seller execution adapter SDK for `in-process`, `claude-code`, and arbitrary CLI harnesses. |
 | `packages/payment-runtime/` | Rail interface/router, working devnet Solana Pay and escrow rails, scaffold rails, and proof receipts. |
 | `packages/solana-agent-tools/` | Read-only Solana context tools and optional Solana Agent Kit adapter. |
 | `examples/txodds/` | TxODDS proxy, web UI, service implementation, feed server, and escrow workspace. |
@@ -77,18 +81,17 @@ The market protocol is owned by `packages/agent-runtime/src/market/protocol.ts`;
 
 ## Agent Orchestration Framework
 
-`packages/agent-runtime/src/agent/` holds capability grants, process-level safety gates
-(`BudgetGuard`/`StepCounter`), a `Tool` contract with an audit-log shape, an evaluation/ranking
-helper, and a bounded provider-agnostic LLM tool-calling loop (`runToolLoop`), available for
-building new Coral-native agents.
+`packages/agent-runtime/src/agent/` holds small scoring/ranking helpers (`rank`/`best`/
+`evaluateDirectionalCall`) for picking the best of several options and grading past calls,
+available for building new Coral-native agents.
 
 ## Payment and Policy
 
 Solana value movement is devnet by default. Runtime helpers reject mainnet RPC URLs unless `ALLOW_MAINNET=1` is set.
 
-Policy checks are centralized in `packages/agent-runtime/src/policy` and cover spend caps, service allowlists, payout binding, award-price binding, rate limiting, and verifier gating.
+Policy checks are centralized in `packages/agent-runtime/src/policy` and cover spend caps, service allowlists, payout binding, award-price binding, and rate limiting — all checked before the buyer signs a payment, since x402 settlement is direct and final and there is no later release step to gate.
 
-Harness processes should not receive signing keys. Agent processes hold wallet authority and call policy before deposits/releases. See `PAY.md` for how the three payment rails (Solana Pay, escrow, x402) are actually used, `CORAL.md` for how the coordination layer works, and `LLM.md` for how LLM-backed decisions are proposed and enforced.
+Harness processes should not receive signing keys. Agent processes hold wallet authority and call policy before every payment. See `PAY.md` for how the three payment rails (x402, Solana Pay, escrow) are actually used and `CORAL.md` for how the coordination layer works.
 
 ## Environment
 
@@ -97,11 +100,8 @@ Common variables:
 | Variable | Purpose |
 |---|---|
 | `BUYER_KEYPAIR_B58` | Buyer funding keypair for devnet transactions. |
-| `ARBITER_KEYPAIR_B58` | Arbiter release/refund keypair. |
 | `WALLET` / `SELLER_WALLET` | Seller payout addresses. |
 | `SOLANA_RPC_URL` | Defaults to devnet if unset. |
-| `LLM_PROVIDER` | `groq`, `venice`, `openai`, or `anthropic`. Groq is the recommended free default — see `LLM.md`. |
-| `GROQ_API_KEY` / `VENICE_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Provider keys. |
 | `TXLINE_API_KEY` | TxLINE token for TxODDS examples. |
 
 Never commit `.env`, private keys, provider keys, seed phrases, or generated wallet secrets.

@@ -3,7 +3,7 @@ edition = 4
 [agent]
 name = "verifier-agent"
 version = "0.1.0"
-description = "Independent delivery verifier for the paid market. Re-checks the delivered payload's content hash and structure (plus an optional LLM acceptance judge) and replies VERIFIED pass|fail. The buyer gates escrow release on the verdict."
+description = "Independent delivery verifier for the paid market. Re-checks the delivered payload's content hash and structure and replies VERIFIED pass|fail. The buyer gates escrow release on the verdict."
 summary = "Verifies deliveries - release is gated on its verdict."
 readme = "On VERIFY round=<n> sha=<hash> service=<s> arg=<a> payload=<raw>, replies VERIFIED round=<n> verdict=pass|fail. Holds no keys, moves no funds."
 
@@ -13,12 +13,6 @@ expression = "MIT"
 
 [options]
 AGENT_NAME = { type = "string", default = "verifier-agent", description = "Market identity for this verifier" }
-ANTHROPIC_API_KEY = { type = "string", default = "", description = "Anthropic key for the acceptance judge" }
-OPENAI_API_KEY = { type = "string", default = "", description = "OpenAI key; set LLM_PROVIDER=openai to use it" }
-VENICE_API_KEY = { type = "string", default = "", description = "Venice AI key (OpenAI-compatible, free credits); set LLM_PROVIDER=venice to use it" }
-GROQ_API_KEY = { type = "string", default = "", description = "Groq key (OpenAI-compatible, free renewing rate limit - recommended once Venice's credits run out); set LLM_PROVIDER=groq to use it" }
-LLM_PROVIDER = { type = "string", default = "", description = "groq (recommended free default) | anthropic (last-resort default) | openai | venice - see LLM.md" }
-LLM_MODEL = { type = "string", default = "", description = "Override the LLM model id" }
 TRACE = { type = "string", default = "", description = "Set to 1 for verbose logs" }
 
 # Run as a container (coral-server in Docker launches it via the Docker socket).

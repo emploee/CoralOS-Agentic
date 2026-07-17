@@ -2,31 +2,28 @@
  * TxODDS seller agent for the CoralOS market.
  *
  * Flow:
- *   WANT -> BID -> AWARD -> ESCROW_REQUIRED -> DEPOSITED -> DELIVERED
+ *   WANT -> BID -> AWARD -> PAYMENT_REQUIRED -> PAYMENT_PROOF -> PAYMENT_CONFIRMED -> DELIVERED
  *
- * Settlement is arbiter-gated by default. The buyer opens escrow through the arbiter wrapper, then the
- * seller verifies the funded escrow using the vault PDA before delivering the TxODDS read.
+ * Settlement is x402: the buyer signs a transfer and hands it over; the seller submits it, verifies
+ * on-chain that it actually paid the right amount to the right address carrying the right reference,
+ * and only then delivers. Payment is direct and final - there is no escrow to fund/verify first, and
+ * no release step afterward.
  */
-import { createHash } from 'node:crypto'
-import type { Program } from '@coral-xyz/anchor'
-import { PublicKey } from '@solana/web3.js'
 import {
-  startCoralAgent, verb, parseWant, formatBid, parseAward, formatEscrowRequired, parseDeposited,
-  formatLlmUsed, envSigner, logLlmStartup, type WalletSigner,
+  startCoralAgent, verb, parseWant, formatBid, parseAward,
+  formatPaymentRequired, parsePaymentProof, formatPaymentConfirmed,
+  generateReference, submitSignedTransaction, verifyPayment,
+  envSigner, type WalletSigner,
 } from '@pay/agent-runtime'
 import { adapterFromEnv, sellerConfigFromEnv } from '@pay/harness-runtime'
 import { procureUpstream } from '@pay/payment-runtime'
-import { makeProgram, isFunded } from './escrow.js'
 import { deliverServiceResult } from './service.js'
 
 const NAME = process.env.AGENT_NAME ?? 'seller-agent'
 const SELLER_WALLET = process.env.SELLER_WALLET ?? ''
-const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
-const ESCROW_DEADLINE_SECS = Number(process.env.ESCROW_DEADLINE_SECS ?? '600')
-const SETTLEMENT_MODE = (process.env.SETTLEMENT_MODE ?? 'arbiter').toLowerCase() === 'direct' ? 'direct' : 'arbiter'
 // Upstream procurement: PROCURE_RAIL=x402 makes the seller buy an upstream resource for real,
-// paid over x402, after escrow funds and before delivering — the seller is a buyer too, in the same
-// round it's getting paid in. The PAYMENT_* leg is posted on the market thread (unmentioned:
+// paid over x402, after it's been paid and before delivering — the seller is a buyer too, in the
+// same round it's getting paid in. The PAYMENT_* leg is posted on the market thread (unmentioned:
 // bus-visible, buyer-loop-invisible); the feed folds it into the round's proof receipts, so the run
 // ledger records what the seller actually paid upstream. Needs its own spend key (SELLER_KEYPAIR_B58,
 // distinct from SELLER_WALLET which is just the receive address for the seller's own sale) funded
@@ -38,25 +35,17 @@ let procureSigner: WalletSigner | undefined
 const getProcureSigner = (): WalletSigner => (procureSigner ??= envSigner('SELLER_KEYPAIR_B58'))
 const cfg = sellerConfigFromEnv(NAME)
 const trace = process.env.TRACE === '1'
-// The harness does the work; this agent keeps the wallet, the protocol, and the escrow checks.
+// The harness does the work; this agent keeps the wallet, the protocol, and the payment checks.
 const adapter = adapterFromEnv(deliverServiceResult)
 
 interface Quote { service: string; arg: string; priceSol: number }
 const quoted = new Map<number, Quote>()
 const awarded = new Map<string, { round: number } & Quote>()
 
-let program: Program | null = null
-const escrowProgram = async (): Promise<Program> => (program ??= await makeProgram(RPC))
-
-function boundReference(order: Quote & { round: number }): string {
-  const preimage = `txodds-coral:${order.round}:${order.service}:${order.arg}:${SELLER_WALLET}:${order.priceSol}`
-  return new PublicKey(createHash('sha256').update(preimage).digest()).toBase58()
-}
-
-logLlmStartup(NAME)
+const expl = (sig: string): string => `https://explorer.solana.com/tx/${sig}?cluster=devnet`
 
 await startCoralAgent({ agentName: NAME }, async (ctx) => {
-  console.error(`[${NAME}] ready: services=[${cfg.services.join(',')}] floor=${cfg.floorSol} settlement=${SETTLEMENT_MODE} harness=${adapter.name} wallet=${SELLER_WALLET}`)
+  console.error(`[${NAME}] ready: services=[${cfg.services.join(',')}] floor=${cfg.floorSol} harness=${adapter.name} wallet=${SELLER_WALLET}`)
 
   while (true) {
     try {
@@ -68,7 +57,6 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
       const want = parseWant(text)
       if (want) {
         const decision = await adapter.quote(want, cfg)
-        if (decision.llm && mention.threadId) await ctx.send(formatLlmUsed(decision.llm), mention.threadId)
         if (decision.bid) {
           quoted.set(want.round, { service: want.service, arg: want.arg, priceSol: decision.priceSol })
           await ctx.reply(mention, formatBid({
@@ -87,49 +75,55 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
       if (award) {
         const quote = quoted.get(award.round)
         if (award.to !== NAME || !quote) continue
-        const reference = boundReference({ round: award.round, ...quote })
+        const reference = generateReference()
         awarded.set(reference, { round: award.round, ...quote })
         quoted.delete(award.round)
-        await ctx.reply(mention, formatEscrowRequired({
+        await ctx.reply(mention, formatPaymentRequired({
           round: award.round,
+          rail: 'x402',
+          amount: String(quote.priceSol),
+          currency: 'SOL',
           reference,
           seller: SELLER_WALLET,
-          amountSol: quote.priceSol,
-          deadlineSecs: ESCROW_DEADLINE_SECS,
-          settlement: SETTLEMENT_MODE,
         }))
         continue
       }
 
-      const deposited = parseDeposited(text)
-      if (deposited) {
-        const order = awarded.get(deposited.reference)
+      const proof = parsePaymentProof(text)
+      if (proof) {
+        const order = awarded.get(proof.reference)
         if (!order) {
-          await ctx.reply(mention, `ERROR: unknown reference ${deposited.reference}`)
+          await ctx.reply(mention, `ERROR: unknown reference ${proof.reference}`)
           continue
         }
         try {
-          const escrowBuyer = deposited.settlement === 'arbiter' && deposited.vault ? deposited.vault : deposited.buyer
-          const funded = await isFunded(
-            await escrowProgram(),
-            new PublicKey(escrowBuyer),
-            new PublicKey(SELLER_WALLET),
-            new PublicKey(deposited.reference),
-            order.priceSol,
-          )
-          if (!funded) {
-            await ctx.reply(mention, `ERROR: escrow not funded for reference=${deposited.reference}`)
+          // The buyer signed but never submitted (see buyer-agent/index.ts) - the merchant decides
+          // whether/when to broadcast. A submitted tx is never trusted on landing alone: verifyPayment
+          // re-checks recipient/amount/reference on-chain before anything is treated as paid.
+          const sig = await submitSignedTransaction(proof.proof)
+          const paid = await verifyPayment(sig, {
+            recipient: SELLER_WALLET,
+            amountSol: order.priceSol,
+            reference: proof.reference,
+          })
+          if (!paid) {
+            await ctx.reply(mention, formatPaymentConfirmed({ round: order.round, rail: 'x402', reference: proof.reference, paid: false }))
             continue
           }
-          awarded.delete(deposited.reference)
-          if (trace) console.error(`[${NAME}] escrow funded via ${deposited.settlement ?? 'direct'} -> delivering round ${deposited.round}`)
+          awarded.delete(proof.reference)
+          if (trace) console.error(`[${NAME}] payment confirmed (${expl(sig)}) -> delivering round ${order.round}`)
+          await ctx.reply(mention, formatPaymentConfirmed({
+            round: order.round, rail: 'x402', reference: proof.reference, paid: true,
+            amount: String(order.priceSol), currency: 'SOL', txSignature: sig,
+          }))
+
           if (PROCURE_RAIL === 'x402' && mention.threadId) {
             // Buy upstream context before doing the work, for real, over x402; a procurement failure
             // never blocks delivery (the harness has its own fallbacks) — it just leaves no receipt.
             try {
               const procurement = await procureUpstream({
-                orderId: `${NAME}/round-${deposited.round}`,
-                round: deposited.round,
+                orderId: `${NAME}/round-${order.round}`,
+                round: order.round,
                 buyer: NAME,
                 signer: getProcureSigner(),
                 url: PROCURE_X402_URL,
@@ -142,20 +136,17 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
             }
           }
           const delivery = await adapter.run(
-            { round: deposited.round, service: order.service, arg: order.arg, priceSol: order.priceSol, reference: deposited.reference },
+            { round: order.round, service: order.service, arg: order.arg, priceSol: order.priceSol, reference: proof.reference },
             trace ? (e) => console.error(`[${NAME}] harness ${e.kind}${e.text ? `: ${e.text}` : ''}`) : undefined,
           )
-          if (mention.threadId) {
-            for (const llm of delivery.llm ?? []) await ctx.send(formatLlmUsed(llm), mention.threadId)
-          }
-          await ctx.reply(mention, `DELIVERED round=${deposited.round} ${delivery.payload}`)
+          await ctx.reply(mention, `DELIVERED round=${order.round} ${delivery.payload}`)
         } catch (e) {
           await ctx.reply(mention, `ERROR: settlement failed - ${(e as Error).message}`)
         }
         continue
       }
 
-      if (verb(text) === 'ARBITER_RELEASED' || verb(text) === 'RELEASED') {
+      if (verb(text) === 'SETTLED') {
         if (trace) console.error(`[${NAME}] ${text}`)
       }
     } catch (e) {

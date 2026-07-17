@@ -22,7 +22,7 @@ In arbiter mode, the seller verifies the escrow buyer as the vault PDA from `DEP
 |---|---|
 | `src/index.ts` | Coral market loop and funding verification. |
 | `src/escrow.ts` | Read-only escrow funding check. |
-| `src/service.ts` | Service delivery for `txline` and `freelance`. |
+| `src/service.ts` | Service delivery for `txline`, `sharp-movement`, and `freelance`. |
 
 ## Harness Adapter
 
@@ -72,6 +72,22 @@ whole point is judging the first loop's output with no visibility into its reaso
 merge above doesn't apply to. Off by default: it doubles the LLM calls per bid decision. See `API.md`
 for the harness-runtime environment reference.
 
+## Sharp-Movement Analysis (opt-in)
+
+Set `SERVICES=txline,sharp-movement` to let this seller also bid on `sharp-movement` WANTs — a report
+on a fixture's *current* market state (magnitude/confidence from the leading outcome's spread, plus
+an LLM read via the same colorful `liveReadOrFallback()` prompt `txline`'s edge action uses) sold in
+response to a WANT the research watcher raised because a real odds move already happened. The seller
+doesn't re-detect the move itself — by the time the WANT exists, `examples/txodds/research/watcher.ts`
+already confirmed one — it just delivers a rich analysis of the fixture as it stands now. Delivered
+payload: `{service, fixtureId, magnitude, confidence, spreadPct, leadingLabel, market, analysis}`.
+`leadingLabel` (`part1` | `x` | `part2`) is what `examples/txodds/research/grade.ts` later grades
+against the real final score — see `research/GRADING.md`.
+
+Normally paired with `examples/txodds/coral/round.ts`'s `SHARP_MOVEMENT_ENABLED=1`, which sets this
+`SERVICES` value automatically and points the buyer's `WANT_FEED_URL` at the watcher's queue instead
+of a fixed rotating arg.
+
 ## Optional Upstream Procurement
 
 Set `PROCURE_RAIL=x402` to have the seller buy an upstream resource for real, paid over x402, after
@@ -101,9 +117,9 @@ Variables:
 |---|---|
 | `SELLER_WALLET` | Payout address. |
 | `AGENT_NAME` | Agent/persona name. |
-| `SERVICES` | Comma-separated supported services. Current coded services are `txline` and `freelance`. |
+| `SERVICES` | Comma-separated supported services. Current coded services are `txline`, `sharp-movement`, and `freelance`. |
 | `FLOOR_SOL` | Base business floor in SOL for a deterministic service; the real floor for an `LLM_DELIVERY_TOKENS`-listed service adds a derived surcharge on top — see Bid Decision Loop above. |
-| `LLM_DELIVERY_TOKENS` | JSON map of service → max_tokens, e.g. `{"txline":260}` — services this seller's delivery code actually calls an LLM for, so that service's floor is derived from real cost instead of `FLOOR_SOL` alone. |
+| `LLM_DELIVERY_TOKENS` | JSON map of service → max_tokens, e.g. `{"txline":260,"sharp-movement":260}` — services this seller's delivery code actually calls an LLM for, so that service's floor is derived from real cost instead of `FLOOR_SOL` alone. |
 | `PERSONA` | Persona label/config. |
 | `STRATEGY` | Pricing posture once `REPUTATION_URL` clearing data is available: `undercut` \| `premium` \| `balanced` (default). No-op without `REPUTATION_URL`. |
 | `BID_REVIEW_ENABLED` | Set to `1` to run a second, adversarial review loop before posting a bid — see above. |

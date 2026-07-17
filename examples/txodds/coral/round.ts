@@ -20,7 +20,7 @@ const REPO_ROOT = fileURLToPath(new URL('../../../.', import.meta.url))
 const NS = 'default'
 const SELLER = 'seller-agent'
 const VERIFIER = 'verifier-agent'
-const ROUND_SERVICES = ['txline'] as const
+const ROUND_SERVICES = ['txline', 'sharp-movement'] as const
 
 type RoundService = typeof ROUND_SERVICES[number]
 
@@ -184,6 +184,12 @@ export async function createTxOddsRound(options: TxOddsRoundOptions = {}): Promi
   const service = roundService(options.service)
   const arg = roundArg(fixtureId, options.arg)
 
+  // Opt-in (SHARP_MOVEMENT_ENABLED=1): the seller also offers sharp-movement analysis, and the buyer
+  // pulls its next WANT from the research watcher's queue (examples/txodds/research/watcher.ts,
+  // http://localhost:4600) instead of rotating a fixed arg - a real odds move drives the round, not
+  // a static schedule. Off by default so the default demo's wire trace is unaffected.
+  const sharpMovementEnabled = env.SHARP_MOVEMENT_ENABLED === '1'
+
   // The feed's /api/reputation - always running as part of `npm run dev` (see scripts/txodds.js) - so
   // the seller can price against real clearing data and the buyer can weigh its real track record
   // instead of both features sitting dormant behind an opt-in env var no one sets. Fails open on any
@@ -195,9 +201,13 @@ export async function createTxOddsRound(options: TxOddsRoundOptions = {}): Promi
     SELLER_WALLET: str(wallet),
     SOLANA_RPC_URL: str(rpc),
     ...(env.FLOOR_SOL ? { FLOOR_SOL: f64(Number(env.FLOOR_SOL)) } : {}),
-    // txline's numeric-arg 'edge' action calls the LLM at maxTokens=260 - lets the floor for that
-    // service be derived from real LLM cost (see cost.ts's deriveFloorSol) instead of FLOOR_SOL alone.
-    LLM_DELIVERY_TOKENS: str(JSON.stringify({ txline: 260 })),
+    ...(sharpMovementEnabled ? { SERVICES: str('txline,sharp-movement') } : {}),
+    // Both txline's numeric-arg 'edge' action and sharp-movement share liveReadOrFallback's LLM call
+    // (maxTokens=260) - lets each service's floor be derived from real LLM cost (see cost.ts's
+    // deriveFloorSol) instead of FLOOR_SOL alone.
+    LLM_DELIVERY_TOKENS: str(JSON.stringify(
+      sharpMovementEnabled ? { txline: 260, 'sharp-movement': 260 } : { txline: 260 },
+    )),
     REPUTATION_URL: str(reputationUrl),
     SETTLEMENT_MODE: str('arbiter'),
     TXLINE_API_KEY: str(env.TXLINE_API_KEY),
@@ -232,9 +242,12 @@ export async function createTxOddsRound(options: TxOddsRoundOptions = {}): Promi
     BID_WINDOW_MS: f64(Number(env.BID_WINDOW_MS ?? '20000')),
     CYCLE_INTERVAL_MS: f64(Number(env.CYCLE_INTERVAL_MS ?? '3600000')),
     // Event mode: when set, the buyer pulls its next WANT from this feed instead of rotating
-    // BUYER_ARGS — see coral-agents/buyer-agent/src/feed/wantFeed.ts. Optional and additive; the
-    // default demo doesn't set this.
-    ...(env.WANT_FEED_URL ? { WANT_FEED_URL: str(env.WANT_FEED_URL) } : {}),
+    // BUYER_ARGS — see coral-agents/buyer-agent/src/feed/wantFeed.ts. Defaults to the research
+    // watcher's queue under SHARP_MOVEMENT_ENABLED=1 (host.docker.internal since the buyer runs in
+    // Docker but the watcher runs on the host); explicit WANT_FEED_URL always wins.
+    ...(env.WANT_FEED_URL
+      ? { WANT_FEED_URL: str(env.WANT_FEED_URL) }
+      : sharpMovementEnabled ? { WANT_FEED_URL: str('http://host.docker.internal:4600/next') } : {}),
     ...llm,
   })
   const verifier = agent(VERIFIER, { AGENT_NAME: str(VERIFIER), ...llm }, VERIFIER, 'executable')

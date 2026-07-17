@@ -58,6 +58,7 @@ const KNOWN_SHAPES: Record<string, string[]> = {
   'txline-edge': ['teams', 'market', 'analysis'],
   'txline-odds': ['fixtureId', 'odds'],
   'txline-fixtures': ['count', 'fixtures'],
+  'sharp-movement': ['fixtureId', 'magnitude', 'confidence', 'analysis'],
   freelance: ['result'],
 }
 

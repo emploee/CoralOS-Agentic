@@ -30,6 +30,11 @@ describe('assessScrutiny', () => {
     expect(assessScrutiny({ payload })).toBe('low')
   })
 
+  it('is low for a well-formed sharp-movement delivery', () => {
+    const payload = JSON.stringify({ service: 'sharp-movement', fixtureId: '1', magnitude: 'sharp', confidence: 0.8, spreadPct: 20, leadingLabel: 'part1', market: {}, analysis: {} })
+    expect(assessScrutiny({ payload })).toBe('low')
+  })
+
   it('is high for a recognized service missing expected keys', () => {
     const payload = JSON.stringify({ service: 'txline-edge', analysis: {} })
     expect(assessScrutiny({ payload })).toBe('high')

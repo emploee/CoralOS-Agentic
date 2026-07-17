@@ -9,6 +9,8 @@ import htm from 'https://esm.sh/htm@3.1.1'
 
 const html = htm.bind(React.createElement)
 const PROXY = window.TXODDS_PROXY ?? 'http://localhost:8801'
+// The research watcher (examples/txodds/research/watcher.ts) — optional; the board degrades silently.
+const WATCHER = window.TXODDS_WATCHER ?? 'http://localhost:4600'
 // coral-server's own built-in console UI (raw sessions/threads/participants) - opened in a new tab,
 // not proxied; the browser talks to it directly since it's a devnet dev tool, not paid delivery.
 const CORAL_CONSOLE = window.CORAL_CONSOLE_URL ?? 'http://localhost:5555/ui/console'
@@ -324,6 +326,25 @@ const latestSessionFromRuns = (runs) => {
   return [...list].sort((a, b) => time(b) - time(a))[0].session
 }
 
+// Aggregate "did the flagged move call it right" scoreboard across the whole persisted run ledger
+// (every session, not just the one currently on screen) - only sharp-movement deliveries carry a
+// structured prediction to grade (see research/GRADING.md's scope note), so other services are
+// excluded rather than diluting the accuracy stat with rounds that never made a directional call.
+function sharpMovementAccuracy(runs) {
+  const list = Array.isArray(runs) ? runs.filter((r) => r?.want?.service === 'sharp-movement') : []
+  let correct = 0, incorrect = 0, pending = 0, ungraded = 0
+  for (const r of list) {
+    const outcome = r.outcome
+    if (!outcome) { ungraded++; continue }
+    if (outcome.status === 'pending') { pending++; continue }
+    if (outcome.correct === true) correct++
+    else if (outcome.correct === false) incorrect++
+    else ungraded++ // graded, but no prediction was made on this one to score
+  }
+  const graded = correct + incorrect
+  return { total: list.length, graded, correct, incorrect, pending, ungraded }
+}
+
 // -- flags + abbreviations (national teams) ----------------------------------
 const FLAGS = {
   brazil: 'br', argentina: 'ar', france: 'fr', england: 'gb-eng', spain: 'es', germany: 'de',
@@ -435,7 +456,7 @@ function Board({ fixture, odds, loading }) {
     </div>`
 }
 
-function MatchCard({ fx, on, onSelect }) {
+function MatchCard({ fx, on, onSelect, event }) {
   return html`
     <div class=${'mcard' + (on ? ' on' : '')} onClick=${() => onSelect(fx)}>
       <div class="mc-top">
@@ -444,6 +465,7 @@ function MatchCard({ fx, on, onSelect }) {
         <span class="mc-side r"><${Flag} name=${fx.Participant2} /><span class="mc-abbr">${abbr(fx.Participant2)}</span></span>
       </div>
       <div class="mc-comp"><span class="c">${fx.Competition}</span><span>${new Date(fx.StartTime).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</span></div>
+      ${event && html`<div class="mc-event" title=${event.note}>${event.kind === 'odds-move' ? '▲ line moved' : '● odds live'} — research WANT queued</div>`}
     </div>`
 }
 
@@ -599,8 +621,24 @@ function AgenticFeed({ bus, feed }) {
     </div>`
 }
 
+// "Did the flagged move call it right, over the whole run ledger" - the aggregate counterpart to
+// each story card's own per-round grade badge. Silent (renders nothing) until at least one
+// sharp-movement round has actually happened, so the default demo mode shows no empty scoreboard.
+function Scoreboard({ accuracy }) {
+  if (!accuracy || accuracy.total === 0) return null
+  const { graded, correct, pending, total } = accuracy
+  const pct = graded > 0 ? Math.round((correct / graded) * 100) : null
+  return html`
+    <div class="scoreboard" title="Sharp-movement predictions graded against the real final score">
+      <span class="scoreboard-label">Sharp-movement accuracy</span>
+      <span class="scoreboard-stat">${graded > 0 ? html`${correct}/${graded} correct (${pct}%)` : 'no grades yet'}</span>
+      ${pending > 0 && html`<span class="scoreboard-pending">${pending} pending</span>`}
+      <span class="scoreboard-total">${total} flagged move${total === 1 ? '' : 's'} total</span>
+    </div>`
+}
+
 function AgenticPanel({
-  selected, source, onStart, starting, startError, feed, bus, pollError, onClear,
+  selected, source, onStart, starting, startError, feed, bus, pollError, onClear, accuracy,
 }) {
   const fixture = selected ? `${selected.Participant1} vs ${selected.Participant2}` : 'current fixture'
   const liveTarget = selected && source === 'live'
@@ -614,6 +652,7 @@ function AgenticPanel({
         </button>
         <a class="coral-console-link" href=${CORAL_CONSOLE} target="_blank" rel="noreferrer">Open Coral Console ↗</a>
       </div>
+      <${Scoreboard} accuracy=${accuracy} />
       ${startError && html`<p class="agent-error">${startError}</p>`}
       ${pollError && html`<p class="agent-error">${pollError}</p>`}
       <section class="agentic-block feed-block">
@@ -639,6 +678,8 @@ function App() {
   const [agenticPollError, setAgenticPollError] = useState('')
   const [agenticFeed, setAgenticFeed] = useState(null)
   const [agenticBus, setAgenticBus] = useState(null)
+  const [events, setEvents] = useState({}) // fixtureId -> the watcher's queued research event
+  const [runs, setRuns] = useState(null) // the persisted run ledger, for the sharp-movement scoreboard
   // Set once the user explicitly clears the feed, so the auto-latest-session effect below doesn't
   // immediately re-adopt the same session it was just told to drop. Reset on a real page load only -
   // there's no "un-clear" action, just start a new round or reload.
@@ -743,6 +784,48 @@ function App() {
     return () => { alive = false; clearInterval(timer) }
   }, [agenticSession])
 
+  // The research watcher's queue -> event badges on the board ("line moved -> WANT queued").
+  // Entirely optional: when the watcher isn't running, the board renders exactly as before. Backs
+  // off (10s -> 20s -> 40s -> 60s cap) on repeated failures so an absent optional process doesn't
+  // spam the console with a connection-refused error every 10s forever; resets to 10s once it's
+  // reachable again, so it still picks the watcher up promptly if started later.
+  useEffect(() => {
+    let alive = true
+    let timer = null
+    let delay = 10000
+    const tick = async () => {
+      try {
+        const d = await (await fetch(`${WATCHER}/queue`)).json()
+        if (!alive) return
+        const byFixture = {}
+        for (const e of d.queue ?? []) byFixture[String(e.fixtureId)] = e
+        setEvents(byFixture)
+        delay = 10000
+      } catch {
+        delay = Math.min(delay * 2, 60000) // watcher down - no badges
+      }
+      if (alive) timer = setTimeout(tick, delay)
+    }
+    tick()
+    return () => { alive = false; if (timer) clearTimeout(timer) }
+  }, [])
+
+  // The persisted run ledger, polled independently of the current agenticSession - the sharp-movement
+  // scoreboard is a whole-tournament stat, not scoped to whichever round happens to be on screen.
+  // GRADE_POLL_MS on the proxy defaults to 5 minutes, so there's no need to poll faster than that.
+  useEffect(() => {
+    let alive = true
+    const tick = async () => {
+      try {
+        const d = await api('/api/agentic/runs')
+        if (alive) setRuns(d.runs)
+      } catch { /* no live feed yet - scoreboard just stays empty */ }
+    }
+    tick()
+    const timer = setInterval(tick, 30000)
+    return () => { alive = false; clearInterval(timer) }
+  }, [])
+
   // odds come inlined on live fixtures (from /api/board); demo fixtures use the baked-in board.
   useEffect(() => {
     if (!selected) return
@@ -766,7 +849,8 @@ function App() {
         feed=${agenticFeed}
         bus=${agenticBus}
         pollError=${agenticPollError}
-        onClear=${clearAgenticRound} />
+        onClear=${clearAgenticRound}
+        accuracy=${sharpMovementAccuracy(runs)} />
       ${!fixtures && html`<p class="muted" style=${{ textAlign: 'center' }}>loading fixtures...</p>`}
       ${selected && html`
         <section class="featured agentic-fixture">
@@ -787,7 +871,7 @@ function App() {
 
       <h3 class="grid-title">All fixtures - tap a match</h3>
       <div class="grid">
-        ${fixtures?.map((fx) => html`<${MatchCard} key=${fx.FixtureId} fx=${fx} on=${selected?.FixtureId === fx.FixtureId} onSelect=${select} />`)}
+        ${fixtures?.map((fx) => html`<${MatchCard} key=${fx.FixtureId} fx=${fx} on=${selected?.FixtureId === fx.FixtureId} onSelect=${select} event=${events[String(fx.FixtureId)]} />`)}
       </div>
     </main>`
 }

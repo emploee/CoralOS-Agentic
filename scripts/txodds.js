@@ -4,13 +4,17 @@
 //   node scripts/txodds.js        (= npm run dev)
 //
 // Processes:
-//   - proxy   (:8801)    TxODDS data, local settlement, /api/agentic/* facade
+//   - proxy   (:8801)    TxODDS data, local settlement, /api/agentic/* facade, and a background
+//                        grading pass (research/GRADING.md) that scores delivered predictions
+//                        against final match results once they finish
 //   - feed    (:4000)    CoralOS session reader + run ledger for live agent mode
 //   - web     (:3020)    no-build React tutorial/dashboard
+//   - watcher (:4600)    research-market odds-move watcher; read-only, purely additive - the board
+//                        UI already degrades silently (no event badges) if this were ever down
 //   - coral   (:5555)    Coral Server + built-in Coral Console when Docker is available
 //
 // startCoreServices() below is exported so scripts/txodds-agentic.js (npm run dev:agentic) can bring
-// up the same three processes and then layer a CoralOS round on top, without duplicating this logic.
+// up the same four processes and then layer a CoralOS round on top, without duplicating this logic.
 
 import { spawn, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -106,8 +110,10 @@ export async function startCoreServices({ openBrowser = true } = {}) {
   const feedPort = process.env.TXODDS_FEED_PORT ?? '4000'
   const proxyPort = process.env.TXODDS_PROXY_PORT ?? '8801'
   const webPort = process.env.TXODDS_WEB_PORT ?? '3020'
+  const watcherPort = process.env.TXODDS_WATCHER_PORT ?? '4600'
   const feedUrl = process.env.TXODDS_FEED_URL ?? `http://localhost:${feedPort}`
   const webUrl = `http://localhost:${webPort}`
+  const watcherUrl = `http://localhost:${watcherPort}`
   const coralBase = (process.env.CORAL_SERVER_URL ?? 'http://localhost:5555').replace(/\/$/, '')
   const coralConsoleUrl = process.env.CORAL_CONSOLE_URL ?? `${coralBase}/ui/console`
   const consoleEnabled = process.env.CORAL_CONSOLE !== '0'
@@ -122,12 +128,15 @@ export async function startCoreServices({ openBrowser = true } = {}) {
     RUNS_DIR: agenticRunsDir,
     MARKET_SELLERS: 'seller-agent',
   }
+  // Read-only: polls the proxy's /api/board and queues WANTs in memory - no wallet, no writes.
+  const watcherEnv = { ...process.env, PORT: watcherPort, PROXY_BASE: process.env.PROXY_BASE ?? `http://localhost:${proxyPort}` }
 
   const proxy = await spawnService('proxy', 'npm', ['run', 'proxy'], { cwd: txDir, shell: true, stdio: 'inherit', env: proxyEnv }, proxyPort)
   const feed = await spawnService('feed', 'npm', ['start'], { cwd: feedDir, shell: true, stdio: 'inherit', env: feedEnv }, feedPort)
   const web = await spawnService('web UI', 'npm', ['run', 'web'], { cwd: txDir, shell: true, stdio: 'inherit' }, webPort)
+  const watcher = await spawnService('watcher', 'npm', ['run', 'watch'], { cwd: txDir, shell: true, stdio: 'inherit', env: watcherEnv }, watcherPort)
 
-  const services = { proxy, feed, web, feedUrl, webUrl, coralConsoleUrl }
+  const services = { proxy, feed, web, watcher, feedUrl, webUrl, watcherUrl, coralConsoleUrl }
 
   setTimeout(() => {
     if (openBrowser) {
@@ -140,6 +149,7 @@ export async function startCoreServices({ openBrowser = true } = {}) {
     }
     console.log('[txodds] local proxy tutorial: http://localhost:8801')
     console.log(`[txodds] live CoralOS agent feed: ${feedUrl}`)
+    console.log(`[txodds] research watcher: ${watcherUrl}`)
     console.log(`[txodds] Coral Console: ${coralConsoleUrl}`)
     console.log('[txodds] set CORAL_CONSOLE=0 to skip the console probe, or CORAL_CONSOLE_REQUIRED=1 to fail dev when it is unavailable\n')
   }, 4000)
@@ -151,6 +161,7 @@ export function stopCoreServices(services) {
   services.proxy?.kill()
   services.feed?.kill()
   services.web?.kill()
+  services.watcher?.kill()
 }
 
 async function main() {

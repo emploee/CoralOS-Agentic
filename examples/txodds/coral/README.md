@@ -61,7 +61,43 @@ Default seller:
 
 | Agent | Services |
 |---|---|
-| `seller-agent` | `txline` |
+| `seller-agent` | `txline` (`sharp-movement` too under `SHARP_MOVEMENT_ENABLED=1`, see below) |
+
+## Sharp-Movement Round (opt-in)
+
+Instead of the buyer rotating fixed args, the research watcher (`../research/watcher.ts`) polls the
+proxy's live board every 60 seconds, detects odds moves, and drives the buyer autonomously through
+`WANT_FEED_URL` event mode:
+
+```sh
+# repo-root .env: SHARP_MOVEMENT_ENABLED=1
+
+npm run watch                  # in one terminal — starts the odds-move watcher (or `npm run dev`, which starts it too)
+npm run coral:sharp-movement   # in another — same launcher as `coral`, adds sharp-movement to the
+                                # seller's SERVICES and points the buyer's WANT_FEED_URL at the watcher
+```
+
+`round.ts` sets both automatically once `SHARP_MOVEMENT_ENABLED=1` is set — no separate agent, no
+persona roster, just the one `seller-agent` offering one more service. The seller's `sharp-movement`
+delivery doesn't re-detect the move — the watcher already confirmed one happened before the WANT
+existed — it reports the fixture's *current* market decisiveness (magnitude/confidence from the
+spread between the top two outcomes) plus an LLM read. See
+`coral-agents/seller-agent/README.md`'s Sharp-Movement Analysis section.
+
+Grading (was the flagged move's leading outcome actually right, once the match finished?) runs as a
+background pass on the proxy (`GRADE_POLL_MS`, default 5 minutes) and writes an `outcome`
+(`ScoreOutcome`, `packages/agent-runtime/src/ledger/run.ts`) onto the persisted run record — see
+`../research/GRADING.md`. The web UI's scoreboard (`examples/txodds/web/app.js`'s `Scoreboard`)
+shows the running accuracy across the whole run ledger.
+
+### TxLINE endpoints used
+
+| Endpoint | Used by |
+|---|---|
+| `POST /auth/guest/start` | `TxLineClient` (guest JWT, cached) — every other call needs it. |
+| `GET /api/fixtures/snapshot` | Board rendering, `txline` fixture/edge lookups, sharp-movement's teams lookup. |
+| `GET /api/odds/snapshot/{fixtureId}` | Board odds, `txline` edge reads, sharp-movement's market read. |
+| `GET /api/scores/snapshot/{fixtureId}` | Post-match grading (`research/grade.ts`) — was the prediction right? |
 
 ## Logs
 

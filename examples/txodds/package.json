@@ -12,7 +12,9 @@
     "mint": "tsx server/mint.ts",
     "proxy": "tsx server/proxy.ts",
     "web": "npx --yes serve web -l 3020",
-    "coral": "tsx coral/round.ts"
+    "coral": "tsx coral/round.ts",
+    "coral:sharp-movement": "tsx coral/round.ts",
+    "watch": "tsx research/watcher.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

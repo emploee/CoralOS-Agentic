@@ -2,6 +2,11 @@
  * Seller services.
  *
  * `txline` - verified TxLINE fair-line reads for a fixture.
+ * `sharp-movement` - a report on the CURRENT state of a fixture's 1X2 market (magnitude/confidence
+ * from the leader's spread over the field, plus an LLM read), sold in response to a WANT the
+ * research watcher raised because a real move already happened. The seller doesn't re-detect the
+ * move itself - by the time this WANT exists, examples/txodds/research/watcher.ts already confirmed
+ * one - it just delivers a rich analysis of the fixture as it stands now.
  * `freelance` - the generic LLM worker (the freelancer market's baseline seller): the brief goes to
  * the LLM, the deliverable comes back as JSON. Without an LLM key it returns an error payload, which
  * the verifier fails and the buyer refuses to pay for - no-capability sellers don't get released.
@@ -9,7 +14,7 @@
 import { complete, llmRuntimeInfo, parseJsonReply, sha256Hex, type LlmUse } from '@pay/agent-runtime'
 
 const TXLINE_BASE = process.env.TXLINE_BASE_URL || 'https://txline-dev.txodds.com'
-const SUPPORTED_SERVICES = ['txline', 'freelance']
+const SUPPORTED_SERVICES = ['txline', 'freelance', 'sharp-movement']
 type DeliveryOrder = { round?: number }
 
 export interface ServiceDelivery {
@@ -51,6 +56,7 @@ export async function deliverServiceResult(request: string, order?: DeliveryOrde
   const [first, ...rest] = request.trim().split(/\s+/).filter(Boolean)
   const service = (first ?? 'txline').toLowerCase()
   if (service === 'freelance') return freelanceService(rest.join(' '), order)
+  if (service === 'sharp-movement') return sharpMovementService(rest.join(' '), order)
   if (service !== 'txline') {
     return {
       payload: JSON.stringify({ error: 'unsupported service', service, supported: SUPPORTED_SERVICES }),
@@ -58,6 +64,67 @@ export async function deliverServiceResult(request: string, order?: DeliveryOrde
     }
   }
   return txlineService(rest.join(' '), order)
+}
+
+function fixtureIdFrom(request: string): string | undefined {
+  return request.trim().split(/\s+/).find((token) => /^\d+$/.test(token))
+}
+
+function hasFinitePrice(market: Record<string, unknown> | undefined): boolean {
+  const pct = (market?.Pct ?? []) as Array<string | number>
+  return pct.some((p) => Number.isFinite(Number(p)))
+}
+
+/** Same selection examples/txodds/agent/market.ts uses for the watcher - kept as a local copy since
+ *  this package is a separate npm workspace with no import path to that one. */
+function select1x2Market(odds: unknown): Record<string, unknown> | undefined {
+  if (!Array.isArray(odds)) return undefined
+  const markets = odds as Array<Record<string, unknown>>
+  return markets.find((m) => String(m.SuperOddsType ?? '').includes('1X2') && hasFinitePrice(m))
+    ?? markets.find(hasFinitePrice)
+}
+
+async function sharpMovementService(request: string, order?: DeliveryOrder): Promise<ServiceDelivery> {
+  const fixtureId = fixtureIdFrom(request) ?? request.trim()
+  const [odds, fixtures] = await Promise.all([
+    txlineGet(`/api/odds/snapshot/${fixtureId}`),
+    txlineGet('/api/fixtures/snapshot'),
+  ])
+  const market = select1x2Market(odds)
+  const fx = Array.isArray(fixtures)
+    ? (fixtures as Array<Record<string, unknown>>).find((f) => String(f.FixtureId) === String(fixtureId))
+    : undefined
+  const teams = fx ? { home: fx.Participant1, away: fx.Participant2, competition: fx.Competition } : undefined
+  const matchup = teams ? `${teams.home} v ${teams.away}` : `fixture ${fixtureId}`
+
+  if (!market) {
+    return {
+      payload: JSON.stringify({ service: 'sharp-movement', fixtureId, error: 'no priced 1X2 market available' }),
+      llm: [deliveryLlm(order, 'skipped', 'no priced market to analyze', 'deterministic market check', { includeModel: false })],
+    }
+  }
+
+  // Magnitude/confidence come from the CURRENT market's decisiveness (spread between the top two
+  // outcomes), not a delta against history - the watcher already confirmed a real move happened
+  // before this WANT existed, so the seller reports the fixture as it stands now rather than
+  // duplicating the watcher's own before/after diffing.
+  const pctNums = ((market.Pct ?? []) as Array<string | number>).map(Number).filter(Number.isFinite)
+  const sorted = [...pctNums].sort((a, b) => b - a)
+  const spread = sorted.length >= 2 ? sorted[0] - sorted[1] : 0
+  const magnitude: 'moderate' | 'sharp' | 'extreme' = spread >= 30 ? 'extreme' : spread >= 15 ? 'sharp' : 'moderate'
+  const confidence = Number(Math.max(0, Math.min(1, spread / 40)).toFixed(2))
+  const names = (market.PriceNames ?? []) as string[]
+  const leaderIndex = pctNums.indexOf(Math.max(...pctNums))
+  const leadingLabel = names[leaderIndex] ?? String(leaderIndex)
+
+  const analysis = await liveReadOrFallback(matchup, odds, market, teams, order)
+  return {
+    payload: JSON.stringify({
+      service: 'sharp-movement', fixtureId, magnitude, confidence,
+      spreadPct: Number(spread.toFixed(1)), leadingLabel, market, analysis: analysis.value,
+    }),
+    llm: [analysis.llm],
+  }
 }
 
 async function freelanceService(brief: string, order?: DeliveryOrder): Promise<ServiceDelivery> {

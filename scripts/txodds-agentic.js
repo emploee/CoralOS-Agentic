@@ -104,7 +104,7 @@ async function main() {
     console.error(`\n[txodds-agentic] round creation failed, or its session id couldn't be parsed from the log above - core services are still up at ${services.webUrl}; check coral-server logs (docker compose logs coral) and retry with: npm run demo:coral`)
   }
 
-  // Also clears the round's agent containers (not just the proxy/feed/web node processes) -
+  // Also clears the round's agent containers (not just the proxy/feed/web/watcher node processes) -
   // without this, Ctrl+C left them running until the next round's stopPreviousRound() happened to
   // clean them up (examples/txodds/coral/round.ts), which is exactly the kind of orphaned-container
   // confusion this is here to prevent.

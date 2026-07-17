@@ -107,6 +107,32 @@ Requirements:
 
 See `coral/README.md`.
 
+## Research Watcher
+
+The watcher polls `/api/board` every 60 seconds, extracts each fixture's 1X2 market with
+`agent/market.ts`'s `select1x2Market` (the proxy's board attaches `.odds` as an *array* of markets —
+this is the step that turns it into the single `{PriceNames,Pct}` object `research/detect.ts`'s
+`detectEvents` actually needs; skipping it, as this file used to, means no move is ever detected),
+diffs snapshots, and queues jobs when verified odds appear or implied probability moves beyond
+`MOVE_PCT`.
+
+```sh
+npm run proxy
+npm run watch
+```
+
+Watcher endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/health` | Health check. |
+| `GET /queue` | Current queued events. |
+| `GET /next` | Pop the next event for event-mode buyer — `odds-move` events request `sharp-movement`, `new-fixture` events request `txline`. |
+
+`buyer-agent`'s event-mode consumes this queue through `WANT_FEED_URL` (see
+`coral-agents/buyer-agent/src/feed/wantFeed.ts`), wired into the CoralOS round by
+`SHARP_MOVEMENT_ENABLED=1` — see `coral/README.md`'s Sharp-Movement Round section.
+
 ## TxODDS Notes
 
 | Item | Value |

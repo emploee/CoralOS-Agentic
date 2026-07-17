@@ -13,6 +13,7 @@
  */
 import http from 'node:http'
 import fs from 'node:fs'
+import { dirname, join } from 'node:path'
 import axios from 'axios'
 import * as anchor from '@coral-xyz/anchor'
 import { PublicKey, SystemProgram, Keypair, Connection } from '@solana/web3.js'
@@ -27,6 +28,7 @@ import { assertDevnet } from '@pay/agent-runtime'
 import { x402Challenge, settleX402, type X402Accept } from '@pay/payment-runtime'
 import { analyzeEdge } from '../agent/edge.js'
 import { createTxOddsRound } from '../coral/round.js'
+import { gradeRuns } from '../research/grade.js'
 
 // fileURLToPath (not .pathname) so the repo-root .env resolves on macOS/Linux too, not just Windows.
 const ENV_PATH = process.env.KIT_ENV ?? fileURLToPath(new URL('../../../.env', import.meta.url))
@@ -51,6 +53,10 @@ const BASE = process.env.TXLINE_BASE_URL ?? 'https://txline-dev.txodds.com'
 const RPC = process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
 const PORT = Number(process.env.PORT ?? 8801)
 const AGENTIC_FEED = process.env.TXODDS_FEED_URL ?? 'http://localhost:4000'
+// Same ledger the feed writes to (scripts/txodds.js sets RUNS_DIR identically for both processes so
+// a grading pass here and the feed's own reads agree on one run ledger).
+const RUNS_DIR = process.env.RUNS_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'runs')
+const GRADE_POLL_MS = Number(process.env.GRADE_POLL_MS ?? 300_000) // matches take 90+ min; no need to poll tightly
 
 async function forwardFeed(res: http.ServerResponse, path: string): Promise<void> {
   try {
@@ -262,6 +268,20 @@ async function handleEdgeX402(req: http.IncomingMessage, res: http.ServerRespons
   res.end(JSON.stringify(challenge.body))
 }
 
+/**
+ * Was a delivered prediction (sharp-movement's leadingLabel) actually right, once the match
+ * finished? See research/GRADING.md for the TxLINE scores schema this grades against and the
+ * design rationale. Never throws - a grading-pass failure should never take the proxy down.
+ */
+async function runGradingPass(): Promise<void> {
+  try {
+    const { checked, graded } = await gradeRuns(RUNS_DIR)
+    if (checked) console.error(`[grade] checked ${checked} round(s), graded ${graded}`)
+  } catch (e) {
+    console.error(`[grade] pass failed: ${(e as Error).message}`)
+  }
+}
+
 http
   .createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -294,6 +314,15 @@ http
         await forwardFeed(res, `/api/threads?${url.searchParams.toString()}`)
       } else if (url.pathname === '/api/agentic/runs') {
         await forwardFeed(res, '/api/runs')
+      } else if (url.pathname === '/api/grade') {
+        // On-demand grading pass (the interval below also runs this every GRADE_POLL_MS) - useful
+        // when demoing/testing without waiting for the interval. See research/GRADING.md.
+        if (req.method !== 'POST') {
+          res.statusCode = 405
+          res.end(JSON.stringify({ error: 'method not allowed' }))
+          return
+        }
+        res.end(JSON.stringify(await gradeRuns(RUNS_DIR)))
       } else {
         res.statusCode = 404
         res.end(JSON.stringify({ error: 'not found' }))
@@ -304,5 +333,7 @@ http
     }
   })
   .listen(PORT, () => {
-    console.error(`[proxy] http://localhost:${PORT}  (GET /api/board - /api/edge-x402?fixtureId= - /api/agentic/*)`)
+    console.error(`[proxy] http://localhost:${PORT}  (GET /api/board - /api/edge-x402?fixtureId= - /api/agentic/* - POST /api/grade)`)
+    runGradingPass() // don't wait a full GRADE_POLL_MS for the first pass
+    setInterval(runGradingPass, GRADE_POLL_MS)
   })

@@ -15,12 +15,23 @@ import {
   generateReference, submitSignedTransaction, verifyPayment,
   envSigner, type WalletSigner,
 } from '@pay/agent-runtime'
+import { verifyFundedEscrow } from '@patchbond/core'
+import { Connection, PublicKey } from '@solana/web3.js'
 import { adapterFromEnv, sellerConfigFromEnv } from '@pay/harness-runtime'
 import { procureUpstream } from '@pay/payment-runtime'
 import { deliverServiceResult } from './service.js'
 
 const NAME = process.env.AGENT_NAME ?? 'seller-agent'
 const SELLER_WALLET = process.env.SELLER_WALLET ?? ''
+const SETTLEMENT_RAIL = (process.env.SETTLEMENT_RAIL ?? 'x402').toLowerCase()
+const ESCROW_DEADLINE_SECONDS = Number(process.env.ESCROW_DEADLINE_SECONDS ?? '90')
+const connection = new Connection(process.env.SOLANA_RPC_URL ?? 'https://api.devnet.solana.com', 'confirmed')
+const PATCH_PROFILE = [
+  `eta=${Number(process.env.PATCH_ETA_SECONDS ?? '120')}`,
+  `rep=${Number(process.env.PATCH_REPUTATION ?? '50')}`,
+  `success=${Number(process.env.PATCH_SUCCESS_RATE ?? '50')}`,
+  `spec=${Number(process.env.PATCH_SPECIALIZATION ?? '50')}`,
+].join(' ')
 // Upstream procurement: PROCURE_RAIL=x402 makes the seller buy an upstream resource for real,
 // paid over x402, after it's been paid and before delivering — the seller is a buyer too, in the
 // same round it's getting paid in. The PAYMENT_* leg is posted on the market thread (unmentioned:
@@ -63,7 +74,7 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
             round: want.round,
             priceSol: decision.priceSol,
             by: NAME,
-            note: decision.note,
+            note: want.service === 'patchbond' ? `${decision.note} ${PATCH_PROFILE}` : decision.note,
           }))
         } else if (trace) {
           console.error(`[${NAME}] no bid on round ${want.round}: ${decision.note}`)
@@ -78,13 +89,15 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
         const reference = generateReference()
         awarded.set(reference, { round: award.round, ...quote })
         quoted.delete(award.round)
+        const rail = SETTLEMENT_RAIL === 'escrow' ? 'escrow' : 'x402'
         await ctx.reply(mention, formatPaymentRequired({
           round: award.round,
-          rail: 'x402',
+          rail,
           amount: String(quote.priceSol),
           currency: 'SOL',
           reference,
           seller: SELLER_WALLET,
+          ...(rail === 'escrow' ? { deadlineSecs: ESCROW_DEADLINE_SECONDS } : {}),
         }))
         continue
       }
@@ -97,23 +110,35 @@ await startCoralAgent({ agentName: NAME }, async (ctx) => {
           continue
         }
         try {
-          // The buyer signed but never submitted (see buyer-agent/index.ts) - the merchant decides
-          // whether/when to broadcast. A submitted tx is never trusted on landing alone: verifyPayment
-          // re-checks recipient/amount/reference on-chain before anything is treated as paid.
-          const sig = await submitSignedTransaction(proof.proof)
-          const paid = await verifyPayment(sig, {
-            recipient: SELLER_WALLET,
-            amountSol: order.priceSol,
-            reference: proof.reference,
-          })
+          let sig: string
+          let paid: boolean
+          if (proof.rail === 'escrow') {
+            if (!proof.buyer) throw new Error('escrow proof is missing buyer')
+            const funded = await verifyFundedEscrow({
+              connection,
+              buyer: new PublicKey(proof.buyer),
+              seller: new PublicKey(SELLER_WALLET),
+              reference: new PublicKey(proof.reference),
+              minimumSol: order.priceSol,
+            })
+            sig = proof.txSignature ?? proof.proof
+            paid = funded !== null
+          } else {
+            sig = await submitSignedTransaction(proof.proof)
+            paid = await verifyPayment(sig, {
+              recipient: SELLER_WALLET,
+              amountSol: order.priceSol,
+              reference: proof.reference,
+            })
+          }
           if (!paid) {
-            await ctx.reply(mention, formatPaymentConfirmed({ round: order.round, rail: 'x402', reference: proof.reference, paid: false }))
+            await ctx.reply(mention, formatPaymentConfirmed({ round: order.round, rail: proof.rail, reference: proof.reference, paid: false }))
             continue
           }
           awarded.delete(proof.reference)
-          if (trace) console.error(`[${NAME}] payment confirmed (${expl(sig)}) -> delivering round ${order.round}`)
+          if (trace) console.error(`[${NAME}] ${proof.rail} funded (${expl(sig)}) -> delivering round ${order.round}`)
           await ctx.reply(mention, formatPaymentConfirmed({
-            round: order.round, rail: 'x402', reference: proof.reference, paid: true,
+            round: order.round, rail: proof.rail, reference: proof.reference, paid: true,
             amount: String(order.priceSol), currency: 'SOL', txSignature: sig,
           }))
 

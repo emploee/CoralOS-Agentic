@@ -20,13 +20,13 @@ test-ledger/
 # Secrets — students fill these in themselves
 .env
 .env.local
+.secrets/
 *.key
 *.pem
 buyer-keypair.json
 seller-keypair.json
 
-# Locks (students generate on npm install)
-package-lock.json
+# Dependency lock (committed for reproducible judge installs)
 yarn.lock
 pnpm-lock.yaml
 bun.lock

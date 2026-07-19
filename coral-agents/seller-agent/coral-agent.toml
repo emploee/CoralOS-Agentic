@@ -18,6 +18,12 @@ expression = "MIT"
 [options]
 SELLER_WALLET = { type = "string", description = "Devnet wallet pubkey that receives payments" }
 AGENT_NAME = { type = "string", default = "seller-agent", description = "Market identity for this seller persona" }
+SETTLEMENT_RAIL = { type = "string", default = "x402", description = "Settlement rail offered after AWARD: x402 or escrow" }
+ESCROW_DEADLINE_SECONDS = { type = "f64", default = 90, description = "PatchBond escrow refund deadline" }
+PATCH_ETA_SECONDS = { type = "f64", default = 120, description = "PatchBond seller delivery estimate" }
+PATCH_REPUTATION = { type = "f64", default = 50, description = "PatchBond seller reputation score" }
+PATCH_SUCCESS_RATE = { type = "f64", default = 50, description = "PatchBond historical delivery success score" }
+PATCH_SPECIALIZATION = { type = "f64", default = 50, description = "PatchBond language specialization score" }
 SERVICES = { type = "string", default = "txline", description = "Inventory - default demo uses txline; set to txline,sharp-movement (with SHARP_MOVEMENT_ENABLED=1 on the round launcher) to also analyze research-watcher-flagged moves" }
 FLOOR_SOL = { type = "f64", default = 0.0005, description = "Minimum bid in SOL" }
 PERSONA = { type = "string", default = "a TxODDS specialist selling verified fair-line reads", description = "Bidding persona" }

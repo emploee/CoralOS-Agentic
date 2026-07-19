@@ -1,0 +1,27 @@
+{
+  "name": "@patchbond/demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "demo": "node --enable-source-maps dist/demo.js",
+    "platform": "node --enable-source-maps dist/platform-server.js",
+    "coral": "node --enable-source-maps dist/coral/round.js"
+  },
+  "dependencies": {
+    "@fontsource/inter": "5.3.0",
+    "@patchbond/core": "1.0.0",
+    "@solana/web3.js": "1.98.4",
+    "bs58": "6.0.0",
+    "gsap": "3.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.9",
+    "typescript": "5.8.3"
+  }
+}

@@ -7,17 +7,18 @@ edition = 4
 [agent]
 name = "buyer-agent"
 version = "0.1.0"
-description = "Marketplace buyer. Broadcasts a WANT, collects competing bids, picks best value, and settles directly via x402."
-summary = "Autonomous TypeScript buyer that runs an open TxODDS market and settles directly with the seller over x402."
-readme = "Market loop: WANT -> collect BIDs -> AWARD best value -> pay via x402 -> wait for verified delivery."
+description = "Marketplace buyer. Broadcasts a WANT, collects competing bids, picks best value, and settles verified outcomes through PatchBond escrow."
+summary = "Autonomous TypeScript buyer that runs a repair market and uses a policy signer for devnet escrow."
+readme = "Market loop: WANT -> BIDs -> AWARD -> DEPOSITED -> DELIVERED -> VERIFIED -> RELEASED/REFUNDED."
 
 [agent.license]
 type = "spdx"
 expression = "MIT"
 
 [options]
-BUYER_KEYPAIR_B58 = { type = "string", description = "Base58-encoded devnet keypair - signs payments" }
+SIGNER_URL = { type = "string", default = "", description = "Non-secret policy signer sidecar URL; supports devnet escrow deposit/release/refund without exposing the buyer key" }
 AGENT_NAME = { type = "string", default = "buyer-agent", description = "Market identity (matches the registry name)" }
+SETTLEMENT_RAIL = { type = "string", default = "x402", description = "Buyer settlement rail: x402 or escrow; PatchBond requires escrow" }
 SELLER_WALLET = { type = "string", default = "", description = "Expected seller payout wallet - the buyer binds the payment seller= to it before paying (F3)" }
 BUYER_MAX_SOL = { type = "f64", default = 0.001, description = "Budget cap per round (the WANT budget)" }
 BUYER_SERVICE = { type = "string", default = "txline", description = "Service to shop for (sellers self-select on it)" }

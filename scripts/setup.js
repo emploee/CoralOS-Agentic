@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Generates the devnet wallets the World Cup Oracle needs, writes .env, and saves the addresses to
-// WALLETS.txt. Safe to re-run: existing wallets/keys are preserved; only what's missing is generated.
+// Generates fresh local-only devnet wallets for PatchBond and writes them to .env.
+// Safe to re-run: existing wallets/keys are preserved; only missing values are generated.
 //
 // Usage: node scripts/setup.js            # buyer (signs payments) + seller (paid) wallets
 
 import { Keypair } from '@solana/web3.js'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, chmodSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import bs58 from 'bs58'
@@ -15,6 +15,8 @@ const root = join(__dir, '..')
 const envPath = join(root, '.env')
 const examplePath = join(root, '.env.example')
 const walletsPath = join(root, 'WALLETS.txt')
+const secretsDir = join(root, '.secrets')
+const buyerSecretPath = join(secretsDir, 'buyer-keypair')
 
 /** Set or append `KEY=value` without disturbing the rest of the file. */
 function setKv(text, key, value) {
@@ -42,14 +44,17 @@ env = setKv(env, 'WALLET', sellerPubkey) // the seller's public key - the x402 p
 env = setKv(env, 'SOLANA_RPC_URL', getKv(env, 'SOLANA_RPC_URL') || 'https://api.devnet.solana.com')
 
 writeFileSync(envPath, env)
+mkdirSync(secretsDir, { recursive: true, mode: 0o700 })
+writeFileSync(buyerSecretPath, `${buyerB58}\n`, { mode: 0o600 })
+try { chmodSync(buyerSecretPath, 0o600) } catch { /* Windows ACLs are managed by the host */ }
 
 // -- report --
 const block = [
-  'World Cup Oracle - devnet wallets',
+  'PatchBond - local devnet wallets',
   `Generated: ${new Date().toISOString()}`,
   '',
-  `  Buyer   wallet  ${buyerPubkey}   <- signs + funds x402 payments (FUND THIS)`,
-  `  Seller  wallet  ${sellerPubkey}   <- receives payment (no funding needed)`,
+  `  Buyer   wallet  ${buyerPubkey}   <- funds escrow deposit/release/refund (FUND THIS)`,
+  `  Seller  wallet  ${sellerPubkey}   <- receives released escrow (no funding needed)`,
   '',
   'FUND THE BUYER with devnet SOL - the only way is the web faucet',
   '(sign in with GitHub; CLI/RPC airdrops are gated):',
@@ -59,12 +64,12 @@ const block = [
 ].join('\n')
 writeFileSync(walletsPath, block)
 console.log('\n' + block)
-console.log('(saved to WALLETS.txt - keys written to .env)')
+console.log('(saved to WALLETS.txt; key stored in gitignored .env and .secrets/buyer-keypair)')
 console.log(`
-Next: fund the BUYER wallet above, then run the demo:
+Next: fund the BUYER wallet above, then run the PatchBond demo:
 
-  npm run dev          # starts the proxy (live data + x402 settlement) + the Oracle UI, opens the browser
+  npm run demo:patchbond          # local patch + verifier proof, no blockchain
+  npm run demo:patchbond:coral    # CoralOS + real Solana devnet escrow
 
-The board fills from live TxODDS data; selecting a fixture delivers the agent's read and the buyer
-pays the distinct seller directly over x402 on devnet automatically.
+Never paste .env keys into chat, issues, logs, or commits.
 `)

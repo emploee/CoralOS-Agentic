@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@patchbond/core": "1.0.0",
     "@pay/agent-runtime": "0.1.0"
   },
   "devDependencies": {

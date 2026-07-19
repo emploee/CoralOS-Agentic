@@ -2,7 +2,7 @@
   "name": "solana-coralos",
   "version": "0.1.0",
   "private": true,
-  "description": "Solana × CoralOS starter kit for agents that earn — fork deliverService() to sell your own service, settled via x402 on devnet. The World Cup oracle is the default demo (npm run dev).",
+  "description": "PatchBond — CoralOS agents compete to repair code; Solana devnet escrow pays only for verified outcomes.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -15,12 +15,13 @@
   ],
   "scripts": {
     "setup": "npm install --no-audit --no-fund && npm install --prefix scripts --no-audit --no-fund && node scripts/setup.js",
-    "build": "npm run build:packages && npm run build:agents",
-    "build:packages": "npm run build -w @pay/agent-runtime && npm run build -w @pay/harness-runtime && npm run build -w @pay/payment-runtime && npm run build -w @pay/solana-agent-tools",
+    "wallet:rotate-devnet": "node scripts/rotate-devnet-wallet.js",
+    "build": "npm run build:packages && npm run build:agents && npm run build -w @patchbond/demo",
+    "build:packages": "npm run build -w @patchbond/core && npm run build -w @pay/agent-runtime && npm run build -w @pay/harness-runtime && npm run build -w @pay/payment-runtime && npm run build -w @pay/solana-agent-tools",
     "build:agents": "npm run build -w buyer-agent && npm run build -w seller-agent && npm run build -w verifier-agent",
     "typecheck": "npm run build:packages && npm run typecheck:packages && npm run typecheck:examples && npm run typecheck:agents",
-    "typecheck:packages": "npm run typecheck -w @pay/agent-runtime && npm run typecheck -w @pay/harness-runtime && npm run typecheck -w @pay/payment-runtime && npm run typecheck -w @pay/solana-agent-tools",
-    "typecheck:examples": "npm run typecheck -w @pay/example-txodds && npm run typecheck -w txodds-feed",
+    "typecheck:packages": "npm run typecheck -w @patchbond/core && npm run typecheck -w @pay/agent-runtime && npm run typecheck -w @pay/harness-runtime && npm run typecheck -w @pay/payment-runtime && npm run typecheck -w @pay/solana-agent-tools",
+    "typecheck:examples": "npm run typecheck -w @patchbond/demo && npm run typecheck -w @pay/example-txodds && npm run typecheck -w txodds-feed",
     "typecheck:agents": "npm run typecheck -w buyer-agent && npm run typecheck -w seller-agent && npm run typecheck -w verifier-agent",
     "test": "npm run build:packages && npm run test:packages && npm run test:examples && npm run test:agents",
     "test:packages": "npm test -w @pay/agent-runtime && npm test -w @pay/harness-runtime && npm test -w @pay/payment-runtime && npm test -w @pay/solana-agent-tools",
@@ -31,6 +32,10 @@
     "dev": "node scripts/txodds.js",
     "dev:agentic": "node scripts/txodds-agentic.js",
     "agents:stop": "node scripts/stop-agents.js",
+    "agents:build": "node scripts/build-agent-images.js",
+    "demo:patchbond": "npm run build -w @patchbond/core && npm run build -w @patchbond/demo && npm run demo -w @patchbond/demo",
+    "platform:patchbond": "npm run build -w @patchbond/core && npm run build -w @patchbond/demo && npm run platform -w @patchbond/demo",
+    "demo:patchbond:coral": "npm run build -w @patchbond/core && npm run build:agents && npm run build -w @patchbond/demo && npm run coral -w @patchbond/demo",
     "demo:coral": "node scripts/run-example.js examples/txodds coral"
   },
   "devDependencies": {

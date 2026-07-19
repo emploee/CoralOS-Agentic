@@ -1,14 +1,36 @@
-# CoralOS coordinator for the TxODDS round — stock coral-server, wallet-free.
+# CoralOS coordinator plus PatchBond's policy-limited devnet signer.
 #
-#   docker compose up -d coral             # start coral-server (the MCP coordinator)
-#   cd examples/txodds && npm run coral     # launch one buyer + one World Cup seller round
+#   npm run setup                                # writes gitignored Docker secret
+#   docker compose up -d --build signer coral   # start signer + MCP coordinator
+#   npm run demo:patchbond:coral                 # launch the five-agent round
 #
-# coral-server is a PURE MCP coordinator (no [wallet]). It launches the buyer + seller as containers per
-# session via the Docker socket; settlement is direct x402 (agent-side) — coral never holds a key.
-# Per-agent config is sent by examples/txodds/coral/round.ts in the session request; the env below is a
-# fallback forwarded to the agents coral launches.
+# CoralOS never receives the buyer private key. The signer alone mounts it as a Docker secret;
+# PatchBond buyer agents receive only the non-secret SIGNER_URL session option.
 
 services:
+
+  # ── Policy signer — the only container that can read the buyer key ──────────
+  signer:
+    build:
+      context: .
+      dockerfile: docker/patchbond-signer.Dockerfile
+    container_name: patchbond-signer
+    ports:
+      - "127.0.0.1:8899:8899"
+    environment:
+      - SIGNER_PORT=8899
+      - SIGNER_MAX_SOL=0.02
+      - SOLANA_RPC_URL=${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+      - SELLER_WALLET=${WALLET}
+      - BUYER_KEYPAIR_FILE=/run/secrets/buyer_keypair
+    secrets:
+      - buyer_keypair
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8899/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+    restart: unless-stopped
 
   # ── CoralOS — MCP bus that launches the agents per session ──────────────────
   # Docs: running coral-server https://docs.coralos.ai/reference/server/docker · it spawns agent
@@ -25,6 +47,9 @@ services:
       context: .
       dockerfile: docker/coral-server.Dockerfile
     container_name: coral
+    depends_on:
+      signer:
+        condition: service_healthy
     ports:
       - "5555:5555"
     environment:
@@ -32,7 +57,6 @@ services:
       # Forwarded to the agents coral launches (round.ts also passes these per-agent):
       - SELLER_WALLET=${WALLET}
       - SOLANA_RPC_URL=${SOLANA_RPC_URL:-https://api.devnet.solana.com}
-      - BUYER_KEYPAIR_B58=${BUYER_KEYPAIR_B58}
       - BUYER_MAX_SOL=${BUYER_MAX_SOL:-0.001}
       # The TxLINE token the seller uses to fetch verified World Cup odds (mint with `npm run mint`).
       - TXLINE_API_KEY=${TXLINE_API_KEY}
@@ -44,3 +68,7 @@ services:
       - ./examples/txodds/coral/coral.toml:/config/coral.toml:ro
       - ./coral-agents:/agents:ro
     restart: unless-stopped
+
+secrets:
+  buyer_keypair:
+    file: ./.secrets/buyer-keypair

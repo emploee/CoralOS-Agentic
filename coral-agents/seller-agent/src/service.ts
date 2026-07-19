@@ -8,8 +8,10 @@
  * the move itself - by the time this WANT exists, examples/txodds/research/watcher.ts already
  * confirmed one - it just delivers a rich analysis of the fixture as it stands now.
  */
+import { createDiscountDelivery, DISCOUNT_TASK } from '@patchbond/core'
+
 const TXLINE_BASE = process.env.TXLINE_BASE_URL || 'https://txline-dev.txodds.com'
-const SUPPORTED_SERVICES = ['txline', 'sharp-movement']
+const SUPPORTED_SERVICES = ['patchbond', 'txline', 'sharp-movement']
 type DeliveryOrder = { round?: number }
 
 export interface ServiceDelivery {
@@ -24,7 +26,14 @@ export async function deliverService(request: string): Promise<string> {
 
 export async function deliverServiceResult(request: string, order?: DeliveryOrder): Promise<ServiceDelivery> {
   const [first, ...rest] = request.trim().split(/\s+/).filter(Boolean)
-  const service = (first ?? 'txline').toLowerCase()
+  const service = (first ?? 'patchbond').toLowerCase()
+  if (service === 'patchbond') {
+    const taskId = rest[0] ?? DISCOUNT_TASK.id
+    if (taskId !== DISCOUNT_TASK.id) {
+      return { payload: JSON.stringify({ error: 'unsupported patch task', taskId, supported: [DISCOUNT_TASK.id] }) }
+    }
+    return { payload: JSON.stringify(createDiscountDelivery(process.env.AGENT_NAME ?? 'seller-agent')) }
+  }
   if (service === 'sharp-movement') return sharpMovementService(rest.join(' '))
   if (service !== 'txline') {
     return { payload: JSON.stringify({ error: 'unsupported service', service, supported: SUPPORTED_SERVICES }) }

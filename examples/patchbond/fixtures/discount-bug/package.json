@@ -1,0 +1,8 @@
+{
+  "name": "patchbond-discount-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/pricing.test.js"
+  }
+}

@@ -11,7 +11,7 @@ export interface SdkActionExample {
   explanation: string
 }
 
-/** Minimal action shape shared by Solana Agent Kit, OpenAI tools, and LangChain adapters. */
+/** Minimal action shape shared by Solana Agent Kit and external tool adapters. */
 export interface SdkAction {
   name: string
   similes: string[]

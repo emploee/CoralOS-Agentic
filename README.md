@@ -1,237 +1,223 @@
-# Solana CoralOS Agent Commerce
+# PatchBond
 
-Devnet reference system for paid agent services. Agents coordinate through CoralOS, exchange typed market messages, and settle orders through Solana payment rails. The default service uses TxODDS TxLINE football data; the protocol, runtime packages, and examples support any service.
+### Autonomous code repair with payment for verified outcomes
 
-Not mainnet production software. All value flows are devnet-only unless a separate launch review changes the policy.
+> **No fix, no pay.** A buyer agent posts a failing software task, solver agents compete on price and capability, an independent verifier runs the tests, and Solana devnet escrow releases payment only after a passing verdict.
 
-This is a fork-ready starter kit, not a submission to any specific hackathon or bounty. It exists so other builders can learn the agent-commerce pattern — market protocol, payment rails, policy gating, reputation — and fork `deliverService()` to sell their own thing. See [Forking This Kit](#forking-this-kit).
+PatchBond is an entry for the Imperial AI Agent Hackathon — Solana × CoralOS track. It turns software maintenance into an agent economy with objective delivery evidence instead of trusting an LLM's claim that a task is complete.
 
-## System Model
+## Short version
+
+**What it is:** a marketplace where autonomous solver agents compete to repair failing code. The buyer locks devnet SOL in escrow; the winner is paid only after an independent verifier runs the pinned tests successfully.
+
+**User journey:**
 
 ```text
-WANT -> BID -> AWARD -> PAYMENT_REQUIRED -> PAYMENT_PROOF -> PAYMENT_CONFIRMED -> DELIVERED -> VERIFIED -> SETTLED
+Connect GitHub repo → pin commit/failure → set budget → collect bids
+→ award best-value solver → verify patch → open PR → release or refund
 ```
 
-Settlement is x402: the buyer pays the seller directly and finally, before delivery. There is no
-escrow — a seller that takes payment and never delivers keeps it; reputation is the defense, not a
-refund path. See [PAY.md](PAY.md) for the trade-off this accepts.
+**Why it matters:** coding agents can claim that a patch works, but PatchBond purchases a measurable outcome—passing tests against an immutable base revision—with visible auction reasoning and Solana settlement proof.
 
-| Subsystem | Responsibility |
-|---|---|
-| CoralOS | Session orchestration, agent discovery, threads, mentions, blocking coordination. |
-| Agent runtime | Coral MCP client, market parsers, run ledger, Solana helpers, policy. |
-| Harness runtime | Seller execution adapter (`in-process`, `claude-code`, or arbitrary CLI). |
-| Payment runtime | Rail abstraction, routing, verification records, rail-specific policy. |
-| TxODDS example | Default paid service, proxy, browser UI, live agent feed, research watcher. Escrow/arbiter Anchor programs remain deployed and available, but unused by the default flow. |
-| Coral agents | Buyer, seller, and verifier agent processes. |
+**What works now:** repository validation and commit pinning, three-agent bidding, deterministic patch delivery, independent test execution, real devnet escrow instructions, release/refund paths, proof artifacts, and the platform dashboard. The current repair round uses a built-in deterministic fixture; automatic conversion of an arbitrary repository's failed CI/issue into a task and PR is the next adapter.
 
-## Coral Agents
+**Fastest review:**
 
-| Agent | Role | Launched as |
+```bash
+npm install --no-audit --no-fund --ignore-scripts
+npm run demo:patchbond       # terminal proof: auction + patch + 3/3 tests
+npm run platform:patchbond   # dashboard: http://127.0.0.1:4173
+```
+
+For the full CoralOS + Solana devnet lifecycle, see [Live CoralOS + Solana devnet](#live-coralos--solana-devnet).
+
+---
+
+## Detailed version
+
+### The 30-second demo
+
+```text
+WANT       failing discount calculation · budget 0.020 SOL
+BID        fast-fix       0.018 SOL · 45s  · score 73.9
+BID        budget-bot     0.005 SOL · 150s · score 59.6
+BID        reliable-patch 0.011 SOL · 80s  · score 88.9
+AWARD      reliable-patch — best verified value, not lowest price
+DEPOSITED  buyer funds a reference-bound Solana escrow
+DELIVERED  versioned patch artifact + SHA-256
+VERIFIED   3/3 allowlisted tests pass in an isolated verifier
+RELEASED   escrow pays the solver; Explorer proof is recorded
+```
+
+A no-show or failed verification follows `DEPOSITED → TIMEOUT/FAILED → REFUNDED` after the on-chain deadline.
+
+## Why this is worth buying
+
+AI coding agents can generate patches, but buyers still face a trust problem: payment happens before quality is known, while subjective LLM review is easy to game. PatchBond defines the purchased service narrowly—**a patch that passes a pinned test suite against a pinned base revision**—and binds the task, delivery, verdict, and settlement with hashes and an order reference.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  CI[CI Monitor] -->|WANT + budget| B[Buyer Agent]
+  B -->|open auction| S1[Fast Solver]
+  B --> S2[Budget Solver]
+  B --> S3[Reliable Solver]
+  B -->|DEPOSITED| E[(Solana Escrow)]
+  S3 -->|Patch artifact| V[Verifier Agent]
+  V -->|PASS| B
+  B -->|release| E
+  E -->|SOL| S3
+  V -->|FAIL / timeout| B
+  B -->|refund after deadline| E
+```
+## Agent economy
+
+| Agent | Economic role | Strategy |
 |---|---|---|
-| `buyer-agent` | Posts `WANT`, collects bids, awards, pays the seller directly via x402, waits for delivery. | CoralOS container. |
-| `seller-agent` | Bids, submits + verifies the buyer's x402 payment, runs harness adapter, delivers. | CoralOS container. |
-| `verifier-agent` | Checks delivery hash/structure, replies `VERIFIED pass\|fail` (informational — feeds reputation, doesn't gate a payment that already settled). Holds no wallet. | CoralOS container. |
+| Buyer | Publishes the task, enforces budget, funds escrow | Maximizes expected value, not lowest price |
+| Fast Solver | Sells speed | High price, short ETA |
+| Budget Solver | Sells low-cost capacity | Low price, weaker track record |
+| Reliable Solver | Sells specialized reliability | Balanced price, high success rate |
+| Verifier | Produces deterministic outcome evidence | Hash checks + allowlisted test execution |
+| Solana escrow | Holds and settles funds | Release after pass; refund after deadline |
 
-The TxODDS round (`examples/txodds/coral/round.ts`) runs one buyer, one seller, and the verifier — no persona roster to configure. To add a competing seller, copy `coral-agents/seller-agent/coral-agent.toml` into a new `coral-agents/` directory with its own `AGENT_NAME`/`PERSONA`/`FLOOR_SOL`/`SERVICES`, and add it to the round's agent list.
+The buyer's score weights reputation (30%), specialization (25%), success rate (20%), deadline fit (15%), and price value (10%). Every bid and the award reason are visible in the CoralOS transcript.
 
-**Agent discovery:** `examples/txodds/coral/coral.toml` uses `[registry] localAgents = ["/agents/*"]` to wildcard-scan `coral-agents/` for any `coral-agent.toml`. No manual registration needed.
+## Quick start: local proof
 
-## Forking This Kit
+Requirements: Node.js 20+.
 
-1. **Replace the service.** `examples/txodds/agent/service.ts` → `deliverService()` is marked "THE fork point."
-2. **Point sellers at it.** Set `SERVICES` in a persona manifest or env var.
-3. **Choose your rails.** x402 is the default buyer→seller settlement, no setup beyond a funded wallet. Solana Pay and escrow also ship as alternative rails (see below).
-4. **Devnet-only by default.** `ALLOW_MAINNET=1` must be explicitly set to use mainnet.
-5. **Three payment rails ship.** x402 (primary), Solana Pay, escrow — see [PAY.md](PAY.md) for how each is used.
+```bash
+npm install --no-audit --no-fund --ignore-scripts
+npm run demo:patchbond
+```
 
-## Repository Layout
+This command performs a real patch application and executes the fixture's tests. It writes inspectable artifacts to `.artifacts/patchbond/`:
 
-| Path | Purpose |
-|---|---|
-| `packages/agent-runtime/` | Shared runtime: Coral MCP client, market protocol, Solana guard/helpers, ledger, policy. |
-| `packages/harness-runtime/` | Seller execution adapter interface and implementations. |
-| `packages/payment-runtime/` | Payment rail interface, router, implementations, proof receipts. |
-| `packages/solana-agent-tools/` | Read-only Solana context tools and Solana Agent Kit plugin. |
-| `coral-agents/` | Dockerized agents registered with CoralOS. |
-| `examples/txodds/` | TxODDS oracle, proxy, web UI, feed, research watcher, escrow programs. |
-| `scripts/` | Setup, example launcher, wallet provisioning. |
+- `task.json` — immutable purchase specification;
+- `bids.json` — scored auction bids;
+- `delivery.json` — versioned patch artifact;
+- `proof.local.json` — verifier verdict and hashes;
+- `test-output.tap` — raw test evidence.
 
-## Requirements
+**The local command never fabricates a blockchain signature.** It prints `ESCROW_PLANNED` and `RELEASE_READY`; only the CoralOS devnet run may print `DEPOSITED`, `RELEASED`, or `REFUNDED` with Explorer URLs.
 
-| Requirement | Used by |
-|---|---|
-| Node.js 20+ | Runtime packages, scripts, TxODDS. |
-| Docker | CoralOS sessions and agent containers. |
-| Devnet SOL | Buyer and wallet checkout flows. |
-| Rust, Solana CLI, Anchor 0.32.x | Only for rebuilding `examples/txodds/escrow`. |
+## Repository platform
 
-Secrets and generated wallets go in `.env` (gitignored).
+Start the local dashboard manually:
 
-## Setup
+```bash
+npm run platform:patchbond
+# open http://127.0.0.1:4173
+```
 
-```sh
+Paste `owner/repository` or an HTTPS GitHub URL. The backend calls only the fixed GitHub API origin, verifies repository metadata, and pins the default branch's 40-character commit SHA. Public repositories require no credentials. Private access may use a local fine-grained `GITHUB_TOKEN`; it is never returned to the browser or logged.
+
+**Before the connector:** every round used only the bundled `discount-bug` fixture; no user repository was involved.
+
+**Current hybrid MVP:** Connect Repository performs real GitHub validation and immutable commit pinning, while the visible repair auction still uses the bundled deterministic fixture. This keeps the payment/verification demo reproducible and must not be mistaken for arbitrary-repository repair.
+
+**Target product:** select a failed GitHub Check or issue from the connected revision, turn it into a task-scoped artifact, let the winner publish a branch/PR, and settle against the resulting check verdict.
+
+```text
+CONNECT REPO → PIN COMMIT → SELECT FAILURE → SET BUDGET
+→ AGENT AUCTION → PATCH → VERIFY → PR → RELEASE/REFUND
+```
+
+Automated issue/check selection and PR publication are the next GitHub App adapter. Agents will receive task-scoped artifacts rather than a reusable account token.
+
+## Live CoralOS + Solana devnet
+
+Requirements: Node.js 20+, Docker Desktop, CoralOS container, and a newly generated buyer wallet funded with devnet SOL.
+
+**Why Docker is needed:** the dashboard and local proof do not need it. Docker is required only for the judged agentic run: it starts CoralOS, a policy signer, plus isolated buyer, three seller, and verifier processes. The raw buyer key is mounted only into the signer through a gitignored Docker secret; CoralOS and market-agent session options receive only the non-secret `SIGNER_URL`. Without Docker, the UI and local `3/3 tests` proof work, but there is no real CoralOS multi-agent session and therefore no complete judged lifecycle.
+
+```bash
 npm run setup
+# Fund only the public Buyer address printed by setup at https://faucet.solana.com
+npm run agents:build
+docker compose up -d --build signer coral
+npm run demo:patchbond:coral
 ```
 
-Installs the workspace, writes devnet wallet variables to `.env`, records public addresses in `WALLETS.txt`. Fund the buyer address with devnet SOL before running settlement flows.
-
-## Verify
-
-```sh
-npm run build
-npm run typecheck
-npm test
-```
-
-No Docker, devnet, or wallets required.
-
-## Live Devnet E2E
-
-```sh
-npm run e2e:devnet
-```
-
-Requires Docker/CoralOS, funded devnet wallets, and TxLINE access.
-
-### Prerequisites
-
-- **Docker running.** Checked with `docker info`.
-- **`.env` has `WALLET`, `BUYER_KEYPAIR_B58`, `TXLINE_API_KEY`.** `npm run setup` generates the first two; `TXLINE_API_KEY` needs `npm run mint`.
-- **Buyer wallet funded.** Devnet SOL from the web faucet (CLI/RPC airdrops are gated).
-- **`TXLINE_API_KEY` fresh.** Short-lived; re-run `cd examples/txodds && npm run mint` before each session.
-- **First run builds Docker images** (`build-agents.sh`). Set `BUILD_AGENT_IMAGES=0` to skip rebuilds.
-
-## Commands
-
-| Command | Description | Requirements |
-|---|---|---|
-| `npm run setup` | Install workspace, generate `.env` wallets. | Node 20+. |
-| `npm run build` | Build workspace packages and agents. | Workspace installed. |
-| `npm run typecheck` | Typecheck everything. | Workspace installed. |
-| `npm test` | Run all unit tests. | Workspace installed. |
-| `npm run dev` | Start TxODDS proxy, feed, UI, research watcher, Coral Console probe. | Funded buyer wallet; Docker optional for console. |
-| `npm run dev:agentic` | `npm run dev`, plus coral-server + agent images (building if missing) + one live CoralOS round, browser opened straight to it. Collapses the Multi-Agent Flow steps below into one command. | Docker; funded wallets; TxLINE key. |
-| `npm run e2e:devnet` | Live devnet CoralOS/x402 smoke. | Docker, CoralOS, TxLINE, funded wallets. |
-| `npm run demo:coral` | Launch one TxODDS CoralOS round against already-running core services. | Docker, built images, TxLINE, funded wallets. |
-
-## Single-Agent Flow
-
-`npm run dev` starts:
-
-| Process | Port | Responsibility |
-|---|---|---|
-| `examples/txodds/server/proxy.ts` | `8801` | TxLINE subscription, board data, edge analysis, settlement, Solana Pay verification, run persistence. |
-| Coral Server / Console | `5555` | CoralOS coordinator and visual console at `/ui/console` (when Docker available). |
-| `examples/txodds/feed` | `4000` | Coral session reader, thread API, run ledger replay, feed endpoints. |
-| `examples/txodds/web/` | `3020` | Static React UI for fixtures, analysis, settlement, runs, proof receipts, grading. |
-| `examples/txodds/research/watcher.ts` | `4600` | Polls `/api/board` every 60s for odds moves, queues sharp-movement WANTs for event-mode buyers. Read-only; the board UI degrades silently if this is down. |
-
-## Multi-Agent Flow
-
-```sh
-docker compose up -d coral
-bash build-agents.sh
-npm run demo:coral
-```
-
-Or one command for all three: `npm run dev:agentic`.
-
-Buyer opens a market thread, posts `WANT`, collects `BID`, awards a seller, pays directly via x402 (policy-checked before signing), waits for delivery, requests verification (informational). Watch it live at `http://localhost:3020/?agentSession=<sessionId>` (the round launcher prints this URL).
-
-## Payment Rails
-
-```ts
-interface PaymentRail {
-  kind: PaymentRailKind
-  quote(input: PaymentQuoteInput): Promise<PaymentQuote>
-  requestPayment(order: MarketOrder): Promise<PaymentRequest>
-  verifyPayment(request: PaymentRequest): Promise<PaymentVerification>
-  release?(order: MarketOrder): Promise<SettlementResult>
-  refund?(order: MarketOrder): Promise<SettlementResult>
-}
-```
-
-| Rail | Status |
-|---|---|
-| x402 | Working, and the default buyer→seller settlement — direct, final payment before delivery (`coral-agents/buyer-agent` + `seller-agent`). Also used for the seller's optional upstream procurement leg (`PROCURE_RAIL=x402`). |
-| Solana Pay | Working devnet demo with reference-bound verification. |
-| Escrow | Working devnet rail (SOL and SPL flows deployed and tested) — available as a building block, not used by the default coral-agents flow. |
-
-### x402 Upstream Procurement
-
-| Variable | Purpose |
-|---|---|
-| `PROCURE_RAIL=x402` | Enables the x402 procurement leg. Off by default. |
-| `SELLER_KEYPAIR_B58` | Seller's spend key for this leg (distinct from `SELLER_WALLET`). Needs devnet SOL. |
-| `PROCURE_X402_URL` | x402-protected resource URL. Defaults to `http://host.docker.internal:8801/api/edge-x402`. |
-
-```sh
-PROCURE_RAIL=x402 SELLER_KEYPAIR_B58=<base58> npm run demo:coral
-```
-
-## Escrow Programs
-
-Deployed and available as a building block, but not used by the default coral-agents flow (which
-settles via x402 — see [System Model](#system-model)).
-
-| Program | Devnet ID | Role |
-|---|---|---|
-| Escrow | `R5NWNg9eRLWWQU81Xbzz5Du1k7jTDeeT92Ty6qCeXet` | Per-order SOL PDA with `initialize`, `release`, `refund`. |
-| Arbiter | `FJtuVXsyXuRKqgJBEPAXmktkd13CqStapgevzGwYktXd` | Vault-as-buyer wrapper with neutral release/refund authority. |
-
-### Deploying Your Own
-
-```sh
-cd examples/txodds/escrow
-anchor keys sync   # for a genuinely new deploy
-anchor build
-anchor deploy --provider.cluster devnet
-```
-
-For upgrades to already-deployed programs, see `examples/txodds/escrow/README.md`.
-
-## Run Ledger
+Expected lifecycle:
 
 ```text
-runs/<session>/round-<n>/
-  run.json, want.json, bids.json, award.json, payment.json,
-  delivery.json, verification.json, proof_receipts.json,
-  proof.json, transcript.jsonl, txs.json
+WANT → BID × 3 → AWARD → DEPOSITED → DELIVERED → VERIFIED → RELEASED
 ```
 
-`proof.json` is the compact E2E success artifact. Used by `examples/txodds/feed`, reputation, and the proxy.
+**Recorded policy-signer round:** CoralOS session `046f5131-50b8-45f8-b80e-23ce1700ed0f` collected all three bids, awarded `reliable-patch` at score `88.9`, completed with `3 passed, 0 failed`, then finalized both devnet transactions:
 
-## Policy
+- [Deposit 0.011 SOL](https://explorer.solana.com/tx/42jciDxyNQXnjFrDW3XMjgaKWJ7Vb31acXP54reESD34YEFrxNTLsZphotns5Mar44TwP1rzCG3KFEoGiecAHcsP?cluster=devnet)
+- [Release after PASS](https://explorer.solana.com/tx/2GDCdZk1GjBrg6gP1bKnDkLM9keU4iHkkF5UJYHJMQBhSiEp8jdUNbCASNXCsPG7stAzKxihaTse6avqBdSTou2D?cluster=devnet)
+- Machine-readable evidence: [`proofs/devnet-policy-signer-round.json`](proofs/devnet-policy-signer-round.json)
 
-Policy checks in `packages/agent-runtime/src/policy`:
+The buyer rejects non-devnet RPC endpoints, applies per-round/session spending caps, binds the awarded price and seller wallet, and requires the independent verifier before escrow release.
 
-- Per-round and per-session spend caps
-- Service allowlist
-- Payout wallet binding
-- Award-price binding
-- Rate limiting
-- Devnet guard
+### Signer security boundary
 
-Harness processes hold no signing keys. The buyer calls policy before every payment — settlement is
-x402 (direct and final), so this pre-payment check is the only fund-moving gate; there is no later
-release step to gate.
+The buyer agent never receives `BUYER_KEYPAIR_B58` in a PatchBond CoralOS session. A localhost-only sidecar reads `.secrets/buyer-keypair` as a Docker secret and exposes only `health`, `deposit`, `release`, and `refund` operations. It refuses non-devnet RPCs, any seller outside the configured allowlist, deadlines outside 15–300 seconds, reused references, and more than `0.02 SOL` of cumulative deposits per signer lifetime. This bounds wallet exposure without claiming production-grade custody: any process able to reach the local signer can request policy-compliant actions, so production should additionally use authenticated workload identity or a managed policy signer.
 
-## Further Reading
+## Settlement design
 
-| Doc | Covers |
+PatchBond calls the deployed SOL escrow program directly rather than trusting a metadata-only payment facade.
+
+| Item | Value |
 |---|---|
-| [PAY.md](PAY.md) | Payment rails usage, policy enforcement, code examples. |
-| [CORAL.md](CORAL.md) | CoralOS session/agent mechanics. |
-| [API.md](API.md) | Service-agnostic API usage guide for any integration, including payment rail wiring. |
-| [TXODDS.md](TXODDS.md) | TxODDS TxLINE integration details. |
+| Network | Solana devnet only |
+| Escrow program | `R5NWNg9eRLWWQU81Xbzz5Du1k7jTDeeT92Ty6qCeXet` |
+| PDA seeds | `escrow`, buyer public key, order reference |
+| Deposit signer | Buyer |
+| Release signer | Buyer, after verifier PASS |
+| Refund signer | Buyer, after on-chain deadline |
 
-## Security
+The current contract protects buyer funds but does not make the off-chain verifier trustless: buyer-agent policy gates release on the verifier's hash-bound verdict. Production deployment would use the included arbiter pattern or a verifier committee to prevent a dishonest buyer from withholding release. This limitation is stated rather than hidden.
 
-- Do not commit `.env`, private keys, API keys, or seed phrases.
-- Treat RPC responses, receipts, and Coral messages as untrusted input.
-- Keep mainnet disabled unless a separate review approves.
+## Verification and threat model
+
+Patch deliveries are untrusted. The verifier:
+
+1. checks the delivered payload hash against the buyer's observed hash;
+2. validates the versioned schema and immutable task hash;
+3. rejects absolute paths, traversal, duplicate files, oversized files, and paths outside the allowlist;
+4. writes only the allowed artifact into an isolated temporary workspace;
+5. runs a fixed test command with a timeout and minimal environment;
+6. records pass/fail counts, duration, task hash, and delivery hash.
+
+The hackathon fixture is intentionally narrow and deterministic. Arbitrary public repositories require stronger container limits, disabled networking, frozen dependencies, syscall controls, and no wallet/secret mounts.
+
+## Repository map
+
+```text
+packages/patchbond-core/              task, scoring, artifacts, devnet escrow client
+examples/patchbond/src/demo.ts        deterministic local proof
+examples/patchbond/src/coral/round.ts five-agent CoralOS round launcher
+examples/patchbond/fixtures/          pinned failing project and tests
+coral-agents/buyer-agent/             auction, policy, deposit, verify, release/refund
+coral-agents/seller-agent/            three configurable personas and patch delivery
+coral-agents/verifier-agent/          independent hash + test gate
+examples/txodds/                      retained upstream reference implementation
+```
+
+## Implementation status
+
+- [x] Deterministic multi-seller best-value auction
+- [x] Versioned task, delivery, and proof artifacts
+- [x] Real patch application and test execution
+- [x] CoralOS buyer/seller/verifier wiring
+- [x] Direct Solana escrow deposit/release/refund instructions
+- [x] Devnet-only and spending policy guards
+- [x] No-show/refund branch
+- [x] GitHub repository connector with immutable base-commit pinning
+- [x] Responsive repository-to-auction platform dashboard
+- [x] Record a funded live round and add its Explorer deposit/release links
+- [ ] Add the final dashboard capture and 3-minute demo video
+
+## Credits
+
+Built on the MIT-licensed [Solana CoralOS Agent Commerce starter kit](https://github.com/trilltino/solana_coralOS). PatchBond's service, scoring, verifier, escrow lifecycle, agent graph, fixture, and submission documentation are new work.
 
 ## License
 
-MIT
+MIT — see [`LICENSE`](LICENSE).

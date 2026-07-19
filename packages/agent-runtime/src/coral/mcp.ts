@@ -24,6 +24,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 
 export interface CoralMention {
+  id?: string
   threadId?: string
   sender?: string
   text: string
@@ -38,6 +39,8 @@ export interface CoralMcpConfig {
 export class CoralMcpAgent {
   private client: Client | null = null
   private toolNames: { waitForMention: string; waitForAgent: string; sendMessage: string; createThread: string; closeThread: string } | null = null
+  /** Mentions returned together by CoralOS are drained one-by-one on subsequent waits. */
+  private pendingMentions: CoralMention[] = []
   private config: CoralMcpConfig
   /** Set by createThread() - lets closeThread() default to "whatever this agent last opened" on shutdown. */
   private lastThreadId: string | null = null
@@ -96,6 +99,8 @@ export class CoralMcpAgent {
    * @see https://docs.coralos.ai/concepts/threads — mentions are thread-scoped.
    */
   async waitForMention(maxWaitMs = 30_000): Promise<CoralMention | null> {
+    const pending = this.pendingMentions.shift()
+    if (pending) return pending
     if (!this.client || !this.toolNames) throw new Error("Not connected — call connect() first")
 
     const result = await this.client.callTool({
@@ -114,9 +119,10 @@ export class CoralMcpAgent {
       return null
     }
 
-    const mention = parseMention(text)
-    // parseMention returns empty text for timeout responses
-    if (!mention.text) return null
+    const mentions = parseMentions(text)
+    const mention = mentions.shift()
+    if (!mention?.text) return null
+    this.pendingMentions.push(...mentions)
     return mention
   }
 
@@ -287,10 +293,37 @@ export class CoralMcpAgent {
 }
 
 /**
+ * Parse every mention in a CoralOS response. The server may coalesce concurrent messages into one
+ * `messages` array; callers must not discard entries after the first.
+ */
+export function parseMentions(raw: string): CoralMention[] {
+  try {
+    const data = JSON.parse(raw) as Record<string, unknown>
+    if (data.status === "Timeout reached" || data.status === "timeout") return []
+    if (Array.isArray(data.messages) && data.messages.length > 0) {
+      return data.messages
+        .map((value) => {
+          const message = value as Record<string, unknown>
+          return parseMention(JSON.stringify({
+            ...message,
+            threadId: message.threadId ?? message.thread_id ?? data.threadId ?? data.thread_id,
+          }))
+        })
+        .filter((mention) => mention.text.length > 0)
+    }
+  } catch {
+    // The single-mention parser handles non-JSON responses.
+  }
+  const mention = parseMention(raw)
+  return mention.text ? [mention] : []
+}
+
+/**
  * Parse the JSON blob returned by coral_wait_for_mention.
  * Extracts threadId, sender, and the actual message text (not the JSON wrapper).
  */
 export function parseMention(raw: string): CoralMention {
+  let id: string | undefined
   let threadId: string | undefined
   let sender: string | undefined
   let messageText = raw // fallback to raw if not JSON
@@ -303,6 +336,7 @@ export function parseMention(raw: string): CoralMention {
       return { threadId: undefined, sender: undefined, text: "" }
     }
 
+    id = (data.id as string) ?? (data.messageId as string) ?? (data.message_id as string) ?? undefined
     threadId = (data.threadId as string) ?? (data.thread_id as string) ?? undefined
     sender =
       (data.senderName as string) ?? (data.sender as string) ??
@@ -311,6 +345,7 @@ export function parseMention(raw: string): CoralMention {
     // Nested messages list — current CoralOS format
     if (Array.isArray(data.messages) && data.messages.length > 0) {
       const m0 = data.messages[0] as Record<string, unknown>
+      id = id ?? (m0.id as string) ?? (m0.messageId as string) ?? (m0.message_id as string) ?? undefined
       threadId = threadId ?? (m0.threadId as string) ?? (m0.thread_id as string) ?? undefined
       sender = sender ?? (m0.senderName as string) ?? (m0.sender as string) ??
         (m0.senderId as string) ?? undefined
@@ -321,6 +356,7 @@ export function parseMention(raw: string): CoralMention {
     // Single message under "message" key
     if (data.message && typeof data.message === "object") {
       const m = data.message as Record<string, unknown>
+      id = id ?? (m.id as string) ?? (m.messageId as string) ?? (m.message_id as string) ?? undefined
       threadId = threadId ?? (m.threadId as string) ?? (m.thread_id as string) ?? undefined
       sender = sender ?? (m.senderName as string) ?? (m.sender as string) ??
         (m.senderId as string) ?? undefined
@@ -335,5 +371,5 @@ export function parseMention(raw: string): CoralMention {
     // Not JSON — use raw as message text
   }
 
-  return { threadId, sender, text: messageText }
+  return { id, threadId, sender, text: messageText }
 }

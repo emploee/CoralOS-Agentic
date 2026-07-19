@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "product": "PatchBond",
+  "network": "solana-devnet",
+  "sessionId": "046f5131-50b8-45f8-b80e-23ce1700ed0f",
+  "buyer": "BELD7dLvHdAhDtm419oAyScC8UvnUrunhMRAVHP56fu1",
+  "seller": "7tgmJUC7GF7hsQp8e1z3aHVwRQpwTKXtqkHFftSa4JTg",
+  "winner": "reliable-patch",
+  "winningScore": 88.9,
+  "bidCount": 3,
+  "amountSol": 0.011,
+  "verification": {
+    "verdict": "pass",
+    "passed": 3,
+    "failed": 0,
+    "durationMs": 335
+  },
+  "deposit": {
+    "signature": "42jciDxyNQXnjFrDW3XMjgaKWJ7Vb31acXP54reESD34YEFrxNTLsZphotns5Mar44TwP1rzCG3KFEoGiecAHcsP",
+    "confirmationStatus": "finalized",
+    "error": null,
+    "explorer": "https://explorer.solana.com/tx/42jciDxyNQXnjFrDW3XMjgaKWJ7Vb31acXP54reESD34YEFrxNTLsZphotns5Mar44TwP1rzCG3KFEoGiecAHcsP?cluster=devnet"
+  },
+  "release": {
+    "signature": "2GDCdZk1GjBrg6gP1bKnDkLM9keU4iHkkF5UJYHJMQBhSiEp8jdUNbCASNXCsPG7stAzKxihaTse6avqBdSTou2D",
+    "confirmationStatus": "finalized",
+    "error": null,
+    "explorer": "https://explorer.solana.com/tx/2GDCdZk1GjBrg6gP1bKnDkLM9keU4iHkkF5UJYHJMQBhSiEp8jdUNbCASNXCsPG7stAzKxihaTse6avqBdSTou2D?cluster=devnet"
+  },
+  "secretIsolation": {
+    "coralSecretOptionLogCount": 0,
+    "buyerSecretEnvironmentCount": 0,
+    "mechanism": "gitignored Docker secret mounted only into the policy signer"
+  }
+}
